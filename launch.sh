@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Starting TD Snap AI Assistant Pro..."
+echo "Starting TD Snap AI Assistant..."
 echo ""
 
 # Check if Python is installed
@@ -28,7 +28,7 @@ fi
 
 echo ""
 echo "Starting application..."
-python3 td_snap_ai_assistant_pro.py
+python3 td_snap_ai_assistant.py
 
 if [ $? -ne 0 ]; then
     echo ""

@@ -1,5 +1,5 @@
 @echo off
-echo Starting TD Snap AI Assistant Pro...
+echo Starting TD Snap AI Assistant...
 echo.
 
 REM Check if Python is installed
@@ -28,7 +28,7 @@ if errorlevel 1 (
 
 echo.
 echo Starting application...
-python td_snap_ai_assistant_pro.py
+python td_snap_ai_assistant.py
 
 if errorlevel 1 (
     echo.
