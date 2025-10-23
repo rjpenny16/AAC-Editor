@@ -4,7 +4,7 @@ import pyautogui
 import time
 import json
 import requests
-from typing import List, Dict
+from typing import List, Dict, Optional
 import threading
 import keyboard
 import os
@@ -12,15 +12,20 @@ import os
 class TDSnapAIAssistantPro:
     def __init__(self, root):
         self.root = root
-        self.root.title("TD Snap AI Assistant Pro")
+        self.root.title("TD Snap AI Assistant Pro - Ollama Edition")
         self.root.geometry("900x700")
-        
+
         # Store the current operation status
         self.is_processing = False
         self.recording_coordinates = False
         self.coordinates = {}
         self.load_coordinates()
-        
+
+        # Ollama configuration
+        self.ollama_host = "http://localhost:11434"
+        self.ollama_model = "llama3.2"  # Default model
+        self.use_ollama = True  # Use Ollama by default
+
         self.setup_ui()
         
     def load_coordinates(self):
@@ -90,10 +95,15 @@ class TDSnapAIAssistantPro:
                               relief=tk.SUNKEN, anchor=tk.W)
         status_bar.grid(row=3, column=0, sticky=(tk.W, tk.E))
         
-        self.log("TD Snap AI Assistant Pro initialized.")
-        self.log("Example commands: 'Add restaurants category', 'Add colors', etc.")
+        self.log("TD Snap AI Assistant Pro - Ollama Edition initialized.")
+        self.log("This version uses local Ollama LLM for privacy and offline operation.")
+        self.log("\nExample commands: 'Add restaurants category', 'Add colors', etc.")
+        self.log("\n⚠️  SETUP STEPS:")
         if not self.coordinates:
-            self.log("\n⚠️  IMPORTANT: Go to 'Setup Coordinates' tab to configure TD Snap button locations!")
+            self.log("1. Go to 'Setup Coordinates' tab to configure TD Snap button locations")
+        self.log("2. Go to 'Settings' tab and test Ollama connection")
+        self.log("3. Make sure Ollama is running with a model (e.g., llama3.2)")
+        self.log("\nFor help installing Ollama, visit: https://ollama.com")
         
     def setup_control_tab(self, parent):
         """Setup the main control tab"""
@@ -191,28 +201,51 @@ Instructions:
     def setup_settings_tab(self, parent):
         """Setup the settings tab"""
         parent.columnconfigure(0, weight=1)
-        
+
+        # Ollama Settings Frame
+        ollama_frame = ttk.LabelFrame(parent, text="Ollama AI Settings", padding="10")
+        ollama_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=10)
+
+        ttk.Label(ollama_frame, text="Ollama Host:").grid(
+            row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.ollama_host_var = tk.StringVar(value="http://localhost:11434")
+        ttk.Entry(ollama_frame, textvariable=self.ollama_host_var, width=30).grid(
+            row=0, column=1, padx=5, pady=5)
+
+        ttk.Label(ollama_frame, text="Ollama Model:").grid(
+            row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.ollama_model_var = tk.StringVar(value="llama3.2")
+        model_combo = ttk.Combobox(ollama_frame, textvariable=self.ollama_model_var, width=27)
+        model_combo['values'] = ('llama3.2', 'llama3.1', 'llama2', 'mistral', 'phi3', 'qwen2.5')
+        model_combo.grid(row=1, column=1, padx=5, pady=5)
+
+        # Test connection button
+        ttk.Button(ollama_frame, text="Test Ollama Connection",
+                  command=self.test_ollama_connection).grid(
+                      row=2, column=0, columnspan=2, pady=10)
+
+        # Automation Settings Frame
         settings_frame = ttk.LabelFrame(parent, text="Automation Settings", padding="10")
-        settings_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=10)
-        
+        settings_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=10)
+
         ttk.Label(settings_frame, text="Delay between actions (seconds):").grid(
             row=0, column=0, sticky=tk.W, padx=5, pady=5)
         self.delay_var = tk.StringVar(value="1.0")
         ttk.Entry(settings_frame, textvariable=self.delay_var, width=10).grid(
             row=0, column=1, padx=5, pady=5)
-        
+
         ttk.Label(settings_frame, text="Default items per category:").grid(
             row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.items_count_var = tk.StringVar(value="10")
         ttk.Entry(settings_frame, textvariable=self.items_count_var, width=10).grid(
             row=1, column=1, padx=5, pady=5)
-            
+
         ttk.Label(settings_frame, text="Countdown before start (seconds):").grid(
             row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.countdown_var = tk.StringVar(value="5")
         ttk.Entry(settings_frame, textvariable=self.countdown_var, width=10).grid(
             row=2, column=1, padx=5, pady=5)
-            
+
         ttk.Label(settings_frame, text="Typing speed (chars/sec):").grid(
             row=3, column=0, sticky=tk.W, padx=5, pady=5)
         self.typing_speed_var = tk.StringVar(value="0.05")
@@ -348,39 +381,54 @@ Instructions:
     def parse_command_with_ai(self, command: str) -> Dict:
         """Use AI to parse the user's natural language command"""
         try:
-            prompt = f"""Parse this command for a TD Snap AAC app automation tool. 
+            # Define JSON schema for structured output
+            schema = {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string"},
+                    "category": {"type": "string"},
+                    "count": {"type": "number"}
+                },
+                "required": ["action", "category"]
+            }
+
+            prompt = f"""Parse this command for a TD Snap AAC app automation tool.
 The user wants to add categories and items to TD Snap.
 
 User command: "{command}"
 
-Analyze the command and respond with ONLY a JSON object (no other text, no markdown, no code blocks):
-{{
-    "action": "add_category",
-    "category": "the category name",
-    "count": number of items (if specified, otherwise null)
-}}
+Extract the action (should be "add_category"), the category name, and optionally the count of items.
 
 Examples:
-"Add restaurants category" -> {{"action": "add_category", "category": "restaurants", "count": null}}
-"Add colors with 20 items" -> {{"action": "add_category", "category": "colors", "count": 20}}
-"Create an animals category" -> {{"action": "add_category", "category": "animals", "count": null}}
+"Add restaurants category" -> action: "add_category", category: "restaurants", count: null
+"Add colors with 20 items" -> action: "add_category", category: "colors", count: 20
+"Create an animals category" -> action: "add_category", category: "animals", count: null
 
-RESPOND ONLY WITH VALID JSON. DO NOT INCLUDE ANY OTHER TEXT."""
+Respond with JSON only."""
 
-            response = self.call_claude_api(prompt, max_tokens=200)
-            
+            response = self.call_ollama_api(prompt, json_schema=schema, max_tokens=200)
+
             if not response:
+                self.log("ERROR: No response from Ollama")
                 return None
-            
-            # Clean up the response
-            response_text = response.strip()
-            if response_text.startswith('```'):
-                lines = response_text.split('\n')
-                response_text = '\n'.join(lines[1:-1])
-            
-            parsed = json.loads(response_text)
+
+            # Parse and validate the JSON
+            parsed = json.loads(response.strip())
+
+            # Ensure count is None if not specified
+            if 'count' not in parsed or parsed['count'] is None:
+                parsed['count'] = None
+            else:
+                parsed['count'] = int(parsed['count'])
+
+            self.log(f"Parsed command: action={parsed.get('action')}, " +
+                    f"category={parsed.get('category')}, count={parsed.get('count')}")
+
             return parsed
-            
+
+        except json.JSONDecodeError as e:
+            self.log(f"Error: Could not parse JSON from Ollama: {str(e)}")
+            return None
         except Exception as e:
             self.log(f"Error parsing command: {str(e)}")
             return None
@@ -388,9 +436,20 @@ RESPOND ONLY WITH VALID JSON. DO NOT INCLUDE ANY OTHER TEXT."""
     def generate_category_items(self, category: str, count: int = 10) -> List[str]:
         """Use AI to generate common items for a category"""
         try:
-            prompt = f"""Generate a list of {count} common, practical items for the category "{category}" 
-that would be useful in an AAC (Augmentative and Alternative Communication) app for people with 
-speech disabilities.
+            # Define JSON schema for array of strings
+            schema = {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    }
+                },
+                "required": ["items"]
+            }
+
+            prompt = f"""Generate exactly {count} common, practical items for the category "{category}"
+for an AAC (Augmentative and Alternative Communication) app.
 
 Requirements:
 - Items should be commonly known and used
@@ -400,34 +459,183 @@ Requirements:
 - Make items practical for everyday communication
 - Use simple, everyday language
 
-Respond with ONLY a JSON array of strings (no markdown, no code blocks, no other text):
-["item1", "item2", "item3", ...]
+Provide exactly {count} items in a JSON object with an "items" array.
 
-Category: {category}
-Number of items: {count}
+Example format:
+{{"items": ["item1", "item2", "item3"]}}"""
 
-RESPOND ONLY WITH A VALID JSON ARRAY. DO NOT ADD ANY OTHER TEXT."""
+            response = self.call_ollama_api(prompt, json_schema=schema, max_tokens=800)
 
-            response = self.call_claude_api(prompt, max_tokens=500)
-            
             if not response:
+                self.log("ERROR: No response from Ollama")
                 return []
-            
-            # Clean up the response
-            response_text = response.strip()
-            if response_text.startswith('```'):
-                lines = response_text.split('\n')
-                response_text = '\n'.join(lines[1:-1])
-                
-            items = json.loads(response_text)
+
+            # Parse the JSON response
+            parsed = json.loads(response.strip())
+            items = parsed.get('items', [])
+
+            # Ensure we got a list of strings
+            if not isinstance(items, list):
+                self.log("ERROR: Response was not a list")
+                return []
+
+            # Filter to ensure all items are strings
+            items = [str(item) for item in items if item]
+
+            # Limit to requested count
+            items = items[:count]
+
+            self.log(f"Generated {len(items)} items for '{category}'")
+
             return items
-            
+
+        except json.JSONDecodeError as e:
+            self.log(f"Error: Could not parse JSON from Ollama: {str(e)}")
+            return []
         except Exception as e:
             self.log(f"Error generating items: {str(e)}")
             return []
             
+    def test_ollama_connection(self):
+        """Test connection to Ollama server"""
+        try:
+            host = self.ollama_host_var.get()
+            self.log(f"\nTesting connection to Ollama at {host}...")
+
+            # Try to get list of models
+            response = requests.get(f"{host}/api/tags", timeout=5)
+
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get('models', [])
+                if models:
+                    model_names = [m.get('name', 'unknown') for m in models]
+                    self.log(f"Connection successful!")
+                    self.log(f"Available models: {', '.join(model_names)}")
+                    messagebox.showinfo("Success",
+                        f"Connected to Ollama!\n\nAvailable models:\n" + "\n".join(model_names))
+                else:
+                    self.log("Connection successful but no models found.")
+                    messagebox.showwarning("Warning",
+                        "Connected to Ollama but no models are installed.\n\n" +
+                        "Install a model with: ollama pull llama3.2")
+            else:
+                self.log(f"Connection failed: {response.status_code}")
+                messagebox.showerror("Error",
+                    f"Failed to connect to Ollama.\n\nStatus: {response.status_code}")
+
+        except requests.exceptions.ConnectionError:
+            self.log("ERROR: Could not connect to Ollama. Is it running?")
+            messagebox.showerror("Connection Error",
+                "Could not connect to Ollama.\n\n" +
+                "Make sure Ollama is running:\n" +
+                "1. Install Ollama from https://ollama.com\n" +
+                "2. Start Ollama service\n" +
+                "3. Pull a model: ollama pull llama3.2")
+        except Exception as e:
+            self.log(f"ERROR: {str(e)}")
+            messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
+
+    def validate_json_schema(self, data: Dict, schema: Dict) -> bool:
+        """Simple JSON schema validation"""
+        try:
+            if schema.get('type') == 'object':
+                required = schema.get('required', [])
+                properties = schema.get('properties', {})
+
+                # Check all required fields exist
+                for field in required:
+                    if field not in data:
+                        self.log(f"Validation error: Missing required field '{field}'")
+                        return False
+
+                # Check field types
+                for field, field_schema in properties.items():
+                    if field in data:
+                        value = data[field]
+                        expected_type = field_schema.get('type')
+
+                        if expected_type == 'string' and not isinstance(value, str):
+                            self.log(f"Validation error: Field '{field}' should be string")
+                            return False
+                        elif expected_type == 'number' and not isinstance(value, (int, float)):
+                            # Allow null for optional number fields
+                            if value is not None:
+                                self.log(f"Validation error: Field '{field}' should be number")
+                                return False
+                        elif expected_type == 'array' and not isinstance(value, list):
+                            self.log(f"Validation error: Field '{field}' should be array")
+                            return False
+
+            return True
+
+        except Exception as e:
+            self.log(f"Validation error: {str(e)}")
+            return False
+
+    def call_ollama_api(self, prompt: str, json_schema: Optional[Dict] = None,
+                       max_tokens: int = 1000) -> Optional[str]:
+        """Call Ollama API with optional structured JSON output"""
+        try:
+            host = self.ollama_host_var.get()
+            model = self.ollama_model_var.get()
+
+            # Prepare the request payload
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {
+                    "num_predict": max_tokens,
+                    "temperature": 0.7
+                }
+            }
+
+            # Add JSON schema if provided (structured output)
+            if json_schema:
+                payload["format"] = json_schema
+
+            # Make the API call
+            response = requests.post(
+                f"{host}/api/chat",
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=60  # Ollama can be slower than cloud APIs
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                message_content = data.get('message', {}).get('content', '')
+
+                # If we requested structured output, validate it
+                if json_schema and message_content:
+                    try:
+                        parsed_json = json.loads(message_content)
+                        if self.validate_json_schema(parsed_json, json_schema):
+                            return message_content
+                        else:
+                            self.log("JSON validation failed, retrying without schema...")
+                            return None
+                    except json.JSONDecodeError:
+                        self.log("Failed to parse JSON response")
+                        return None
+
+                return message_content
+            else:
+                self.log(f"Ollama API Error: {response.status_code} - {response.text}")
+                return None
+
+        except requests.exceptions.ConnectionError:
+            self.log("ERROR: Cannot connect to Ollama. Make sure it's running.")
+            messagebox.showerror("Connection Error",
+                "Cannot connect to Ollama.\n\nPlease start Ollama and try again.")
+            return None
+        except Exception as e:
+            self.log(f"Ollama API call failed: {str(e)}")
+            return None
+
     def call_claude_api(self, prompt: str, max_tokens: int = 1000) -> str:
-        """Call the Claude API"""
+        """Call the Claude API (deprecated - use Ollama instead)"""
         try:
             response = requests.post(
                 "https://api.anthropic.com/v1/messages",
@@ -439,14 +647,14 @@ RESPOND ONLY WITH A VALID JSON ARRAY. DO NOT ADD ANY OTHER TEXT."""
                 },
                 timeout=30
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return data['content'][0]['text']
             else:
                 self.log(f"API Error: {response.status_code} - {response.text}")
                 return None
-                
+
         except Exception as e:
             self.log(f"API call failed: {str(e)}")
             return None
