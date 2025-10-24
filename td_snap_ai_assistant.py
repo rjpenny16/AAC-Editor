@@ -54,7 +54,8 @@ class TDSnapAIAssistantPro:
             try:
                 with open('td_snap_coordinates.json', 'r') as f:
                     self.coordinates = json.load(f)
-            except:
+            except (json.JSONDecodeError, IOError) as e:
+                self.log(f"Warning: Could not load coordinates: {str(e)}")
                 self.coordinates = {}
         else:
             self.coordinates = {}
@@ -837,6 +838,16 @@ Example format:
     def automate_td_snap(self, category: str, items: List[str]):
         """Automate TD Snap to add a category and items"""
         try:
+            # Validate that required coordinates are set
+            required_coords = ['add_button', 'button_label', 'save_button']
+            missing_coords = [coord for coord in required_coords if coord not in self.coordinates]
+
+            if missing_coords:
+                error_msg = f"Missing required coordinates: {', '.join(missing_coords)}\n\nPlease set these in the 'Setup Coordinates' tab."
+                self.log(f"❌ ERROR: {error_msg}")
+                messagebox.showerror("Missing Coordinates", error_msg)
+                return
+
             delay = float(self.delay_var.get())
             countdown = int(self.countdown_var.get())
             typing_speed = float(self.typing_speed_var.get())
@@ -868,7 +879,7 @@ Example format:
                     coord = self.coordinates['category_name']
                     pyautogui.click(coord['x'], coord['y'])
                     time.sleep(delay * 0.5)
-                    pyautogui.write(category, interval=typing_speed)
+                    pyautogui.typewrite(category, interval=typing_speed)
                     time.sleep(delay)
 
                     # Save if we have save button
@@ -897,7 +908,7 @@ Example format:
                         coord = self.coordinates['button_label']
                         pyautogui.click(coord['x'], coord['y'])
                         time.sleep(delay * 0.5)
-                        pyautogui.write(item, interval=typing_speed)
+                        pyautogui.typewrite(item, interval=typing_speed)
                         time.sleep(delay * 0.5)
 
                         # Save the item
