@@ -6,7 +6,6 @@ import json
 import requests
 from typing import List, Dict, Optional
 import threading
-import keyboard
 import os
 
 class TDSnapAIAssistantPro:
@@ -835,31 +834,6 @@ Example format:
             self.log(f"Ollama API call failed: {str(e)}")
             return None
 
-    def call_claude_api(self, prompt: str, max_tokens: int = 1000) -> str:
-        """Call the Claude API (deprecated - use Ollama instead)"""
-        try:
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": max_tokens,
-                    "messages": [{"role": "user", "content": prompt}]
-                },
-                timeout=30
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                return data['content'][0]['text']
-            else:
-                self.log(f"API Error: {response.status_code} - {response.text}")
-                return None
-
-        except Exception as e:
-            self.log(f"API call failed: {str(e)}")
-            return None
-            
     def automate_td_snap(self, category: str, items: List[str]):
         """Automate TD Snap to add a category and items"""
         try:
