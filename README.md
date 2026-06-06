@@ -1,186 +1,164 @@
 # TD Snap AI Assistant
 
-AI-powered automation tool for TD Snap that helps you quickly add categories and words using natural language.
+AI-powered tool for TD Snap that builds new vocabulary pages from natural language —
+then **edits your page set file directly** instead of automating mouse clicks.
 
-**NEW:** Now uses Ollama for local, private AI processing - no internet required!
+**NEW:** Uses Ollama for local, private AI processing — no internet required.
+**NEW:** Edits the TD Snap page set (`.spb`/`.sps`) file itself, so there are no
+fragile screen coordinates to record and nothing breaks when a window moves.
+
+## How it works (export → edit → import)
+
+A TD Snap page set is a SQLite database. This tool opens a *copy* of your exported
+page set, adds a new page full of word buttons, links to it from a page you choose,
+and writes a new `*.edited.spb`/`*.edited.sps` file. You re-import that file into
+TD Snap. No clicking, no timing, no coordinates.
+
+1. **Natural language → AI**: your command goes to Ollama running locally.
+2. **AI generates items**: Ollama produces appropriate vocabulary for the category.
+3. **Direct edit**: the app inserts a new page + buttons into the page set file.
+4. **Re-import**: you import the edited file and the new page appears in TD Snap.
 
 ## Quick Start
 
-### 1. Install Ollama (One-Time Setup)
+### 1. Install Ollama (one-time)
 
-**Windows:** Download from [ollama.com/download](https://ollama.com/download)
-**Mac/Linux:** Run `curl -fsSL https://ollama.com/install.sh | sh`
+**Windows:** download from [ollama.com/download](https://ollama.com/download)
+**Mac/Linux:** `curl -fsSL https://ollama.com/install.sh | sh`
 
 Then pull a model:
 ```bash
 ollama pull llama3.2
 ```
 
-### 2. Install and Run the App (One Click!)
+### 2. Install and run the app
 
-**Windows:** Double-click `launch.bat`
-**Mac/Linux:** Double-click `launch.sh` (or run `./launch.sh` in terminal)
+**Windows:** double-click `launch.bat`
+**Mac/Linux:** run `./launch.sh`
 
-That's it! The launcher automatically installs all Python dependencies.
+The launcher installs the (small) Python dependencies automatically.
 
-### 3. Setup Coordinates (First Time Only - 3 minutes)
+### 3. Export your page set from TD Snap
 
-1. Open TD Snap and enter **edit mode**
-2. In TD Snap AI Assistant, go to **"Setup Coordinates"** tab
-3. For each button, click "Record" then hover over the target in TD Snap:
-   - Add Category Button
-   - Add New Button/Word
-   - Button Label Field
-   - Category Name Field
-   - Save Button
+In TD Snap, export the page set you want to extend to a `.spb` or `.sps` file.
+Keep your original safe — the tool never modifies it, it writes a new edited copy.
 
-### 4. Configure Ollama (First Time Only)
+### 4. Load it in the app
 
-1. Go to **Settings** tab
-2. Verify **Ollama Host**: `http://localhost:11434`
-3. Select **Model**: `llama3.2` (or your preferred model)
-4. Click **Test Ollama Connection** to verify
+1. Go to the **Page Set** tab.
+2. Click **Load Page Set…** and pick your exported file.
+3. Choose the **parent page** where the new category button should appear.
 
-### 5. Start Using!
+### 5. Configure Ollama (first time only)
 
-Go to the **"Command"** tab and type natural language commands like:
+1. Go to the **Settings** tab.
+2. Verify **Ollama Host**: `http://localhost:11434`.
+3. Select a **Model** (e.g. `llama3.2`) and click **Test Ollama Connection**.
+
+### 6. Run a command
+
+On the **Command** tab, type natural language such as:
+- "Add a Favorite Places page with Walmart, McDonald's, Taco Bell"
 - "Add restaurants category"
-- "Add colors"
 - "Create animals with 15 items"
-- "Add food category"
 
-Click "Process Command" and watch the automation work!
+The app generates the items, writes `yourfile.edited.spb`/`.sps`, and logs the path.
 
-## Why Ollama?
+### 7. Re-import into TD Snap
 
-- **Privacy**: All processing happens locally - your data never leaves your device
-- **Offline**: Works without internet connection
-- **Free**: No API costs
-- **Fast**: Quick responses on decent hardware
+Import the edited file into TD Snap to see the new page and its navigation button.
 
-## Example Results
+## Verifying the file format (recommended once)
 
-**"Add restaurants"** generates:
-McDonald's, Burger King, Subway, Pizza Hut, Taco Bell, Wendy's, KFC, Chick-fil-A, Olive Garden, Chipotle
+The page-set schema this tool writes is based on the open-source `obf-node` Snap
+converter. Production TD Snap versions can differ, so before relying on it, confirm
+the format against a real export and discover any fields TD Snap requires on import:
 
-**"Add colors"** generates:
-Red, Blue, Green, Yellow, Orange, Purple, Pink, Brown, Black, White
+```bash
+# Inspect a real export: container type, tables, sample rows
+python inspect_pageset.py yourpageset.sps
 
-**"Add animals with 15 items"** generates:
-Dog, Cat, Bird, Fish, Horse, Cow, Pig, Chicken, Rabbit, Turtle, Bear, Lion, Elephant, Monkey, Giraffe
+# Diff two exports — e.g. before vs. after adding a page by hand in TD Snap —
+# to see exactly which rows/fields TD Snap expects
+python inspect_pageset.py before.sps after.sps
+```
+
+If TD Snap rejects an edited file on import, the diff above is what reveals the
+missing field; open an issue with what you find.
 
 ## Requirements
 
-- **Python 3.7+** (download from [python.org](https://www.python.org/downloads/))
-- **Ollama** with a model installed (see step 1 above)
-- **TD Snap** installed
-- **8GB RAM recommended** (for running local AI models)
+- **Python 3.8+** (from [python.org](https://www.python.org/downloads/))
+- **Ollama** with a model installed (see step 1)
+- **TD Snap** with export/import of page sets
+- **8GB RAM recommended** for running local AI models
 
-The launcher handles all Python package installation automatically.
+The editor itself uses only the Python standard library (`sqlite3`); `requests` is
+used to talk to Ollama.
 
 ## Settings
 
-Adjust in the **Settings** tab:
-- **Delay between actions**: Speed of automation (default: 1 second)
-- **Items per category**: Default number to generate (default: 10)
-- **Countdown before start**: Time to position windows (default: 5 seconds)
-- **Typing speed**: How fast to type (default: 0.05 seconds/character)
-- **Ollama Host**: Local Ollama server address (default: localhost:11434)
-- **Ollama Model**: Which AI model to use (e.g., llama3.2)
+In the **Settings** tab:
+- **Default items per category** — how many words to generate (default: 10)
+- **Grid columns on new page** — width of the new page's button grid (default: 4)
+- **Ollama Host** — local Ollama server address (default: `localhost:11434`)
+- **Ollama Model** — which model to use (e.g. `llama3.2`)
 
 ## Recommended Ollama Models
 
 | Model | Size | Best For |
 |-------|------|----------|
-| llama3.2 | 2GB | Most users - fast & accurate |
+| llama3.2 | 2GB | Most users — fast & accurate |
 | llama3.1 | 4.7GB | Better quality, slower |
 | phi3 | 2.3GB | Low-end hardware |
 
-To install a model:
 ```bash
 ollama pull <model-name>
 ```
 
+## Current scope & limitations
+
+- **Text buttons only.** Buttons get a label and spoken message; symbols/images are
+  not added yet (linking the symbol library is part of ongoing format verification).
+- **TD Snap only.** Other AAC apps (Grid 3, TouchChat, …) are out of scope here, but
+  the same data-level approach applies — they have their own file formats.
+- **Re-import is manual.** The app produces a file; TD Snap's own import brings it in.
+
 ## Troubleshooting
 
-**Cannot connect to Ollama:**
-- Check Ollama is running: `ollama list`
-- Start Ollama if needed: `ollama serve`
-- Verify port 11434 is accessible
+**Cannot connect to Ollama:** check it's running (`ollama list`), start it
+(`ollama serve`), verify port 11434.
 
-**Clicks in wrong place:**
-- Re-record coordinates in Setup tab
-- Keep TD Snap in same window position
-- Check screen resolution hasn't changed
+**"Please load an exported page set":** load a `.spb`/`.sps` on the Page Set tab first.
 
-**Too fast/slow:**
-- Adjust "Delay between actions" in Settings
-- Increase typing speed if characters are missed
+**"… is not a SQLite database":** the file isn't a recognised page set — confirm you
+exported a page set (not a screenshot/PDF) and check it with `inspect_pageset.py`.
 
-**Missing coordinates:**
-- Go to Setup Coordinates tab and record all positions
+**TD Snap won't import the edited file:** run the diff described in *Verifying the
+file format* to find the field TD Snap requires that the writer isn't setting yet.
 
-**Ollama too slow:**
-- Try a smaller model (phi3)
-- Close other applications
-- Ensure you have enough RAM
+**Ollama too slow:** try a smaller model (phi3), close other apps, ensure enough RAM.
 
-## Tips
+## What's included
 
-- Test with small categories first (5 items)
-- Keep TD Snap window in same position
-- Save TD Snap work before large batches
-- Use Stop button to interrupt anytime
-- Watch Activity Log for errors
+- `td_snap_ai_assistant.py` — main app (Tkinter UI + Ollama)
+- `td_snap_pageset.py` — page set editor (SQLite, no external deps)
+- `inspect_pageset.py` — format inspector / differ for verification
+- `test_td_snap_pageset.py` — unit tests (`python -m pytest`)
+- `launch.bat` / `launch.sh` — launchers
+- `requirements.txt`, `README.md`, `OLLAMA_INTEGRATION.md`
 
-## How It Works
+## Privacy
 
-1. **Natural Language → AI**: Your command is sent to Ollama running locally
-2. **AI Generates Items**: Ollama creates appropriate category items
-3. **Automation**: App uses recorded coordinates to click and type in TD Snap
-4. **Results**: Category and items appear in TD Snap automatically
-
-## Safety & Privacy
-
-- **100% Local**: All AI processing happens on your computer
-- **No Cloud**: No data sent to external servers
-- **Offline Capable**: Works completely offline once set up
-- **Always supervise**: Watch the automation as it runs
-- **Backup**: Keep backups of TD Snap configuration
-
-## What's Included
-
-- `td_snap_ai_assistant.py` - Main application
-- `launch.bat` - Windows launcher (auto-installs dependencies)
-- `launch.sh` - Mac/Linux launcher (auto-installs dependencies)
-- `requirements.txt` - Python dependencies (auto-installed)
-- `README.md` - This file
-- `OLLAMA_INTEGRATION.md` - Technical details about Ollama integration
-
-## Advanced Users
-
-For technical details about Ollama integration, API usage, and architecture, see [OLLAMA_INTEGRATION.md](OLLAMA_INTEGRATION.md).
-
-## Manual Installation (Optional)
-
-If you prefer manual installation:
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Install Ollama and pull a model
-ollama pull llama3.2
-
-# Run the app
-python td_snap_ai_assistant.py
-```
+- **100% local** AI processing; no data leaves your computer.
+- The tool edits a **copy** of your export and never touches the original file.
+- Keep backups of your TD Snap page sets before importing edited files.
 
 ## Support
 
-**For this tool:** Check Activity Log in the app for error messages
-**For Ollama:** Visit [github.com/ollama/ollama](https://github.com/ollama/ollama)
-**For TD Snap:** Contact Tobii Dynavox support
+**Ollama:** [github.com/ollama/ollama](https://github.com/ollama/ollama)
+**TD Snap:** Tobii Dynavox support
 
 ---
 
-**Made for the AAC community to make vocabulary building faster, easier, and more private**
+**Made for the AAC community to make vocabulary building faster, easier, and more private.**

@@ -1,13 +1,13 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
-import pyautogui
+from tkinter import ttk, scrolledtext, messagebox, filedialog
 import time
 import json
 import requests
 from typing import List, Dict, Optional
 import threading
-import keyboard
 import os
+
+import td_snap_pageset
 
 class TDSnapAIAssistantPro:
     def __init__(self, root):
@@ -36,9 +36,11 @@ class TDSnapAIAssistantPro:
 
         # Store the current operation status
         self.is_processing = False
-        self.recording_coordinates = False
-        self.coordinates = {}
-        self.load_coordinates()
+
+        # Page set editing state (export -> edit -> import workflow)
+        self.pageset_path = None          # the .spb/.sps the user exported
+        self.pageset_conn = None          # open SQLite connection to a working copy
+        self.pages = []                   # [(Id, name)] for the parent-page dropdown
 
         # Ollama configuration
         self.ollama_host = "http://localhost:11434"
@@ -48,23 +50,6 @@ class TDSnapAIAssistantPro:
         # Setup modern styles before UI
         self.setup_modern_styles()
         self.setup_ui()
-        
-    def load_coordinates(self):
-        """Load saved coordinates from file"""
-        if os.path.exists('td_snap_coordinates.json'):
-            try:
-                with open('td_snap_coordinates.json', 'r') as f:
-                    self.coordinates = json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
-                self.log(f"Warning: Could not load coordinates: {str(e)}")
-                self.coordinates = {}
-        else:
-            self.coordinates = {}
-            
-    def save_coordinates(self):
-        """Save coordinates to file"""
-        with open('td_snap_coordinates.json', 'w') as f:
-            json.dump(self.coordinates, f, indent=2)
 
     def setup_modern_styles(self):
         """Configure modern ttk styles"""
@@ -214,10 +199,10 @@ class TDSnapAIAssistantPro:
         notebook.add(control_tab, text="  Command  ")
         self.setup_control_tab(control_tab)
 
-        # Tab 2: Coordinate Setup
-        coord_tab = ttk.Frame(notebook, padding="20", style='Surface.TFrame')
-        notebook.add(coord_tab, text="  Setup Coordinates  ")
-        self.setup_coordinate_tab(coord_tab)
+        # Tab 2: Page Set (export -> edit -> import)
+        pageset_tab = ttk.Frame(notebook, padding="20", style='Surface.TFrame')
+        notebook.add(pageset_tab, text="  Page Set  ")
+        self.setup_pageset_tab(pageset_tab)
 
         # Tab 3: Settings
         settings_tab = ttk.Frame(notebook, padding="20", style='Surface.TFrame')
@@ -264,12 +249,14 @@ class TDSnapAIAssistantPro:
 
         self.log("✓ TD Snap AI Assistant Pro - Ollama Edition initialized.")
         self.log("🔒 This version uses local Ollama LLM for privacy and offline operation.")
+        self.log("✏️  It edits your TD Snap page set file directly — no mouse automation.")
         self.log("💡 Example commands: 'Add restaurants category', 'Add colors', etc.")
-        self.log("\n⚠️  SETUP STEPS:")
-        if not self.coordinates:
-            self.log("1. Go to 'Setup Coordinates' tab to configure TD Snap button locations")
-        self.log("2. Go to 'Settings' tab and test Ollama connection")
-        self.log("3. Make sure Ollama is running with a model (e.g., llama3.2)")
+        self.log("\n⚠️  WORKFLOW:")
+        self.log("1. In TD Snap, export your page set to a .spb/.sps file")
+        self.log("2. Go to the 'Page Set' tab and load that file, then pick a parent page")
+        self.log("3. Go to 'Settings' and test the Ollama connection (model e.g. llama3.2)")
+        self.log("4. Enter a command on the 'Command' tab — a new page is written to disk")
+        self.log("5. Re-import the edited file into TD Snap")
         self.log("\n📚 For help installing Ollama, visit: https://ollama.com")
         
     def setup_control_tab(self, parent):
@@ -324,67 +311,93 @@ class TDSnapAIAssistantPro:
                            style='Secondary.TButton')
             btn.grid(row=i//2, column=i%2, padx=8, pady=8, sticky=(tk.W, tk.E))
             
-    def setup_coordinate_tab(self, parent):
-        """Setup the coordinate recording tab"""
+    def setup_pageset_tab(self, parent):
+        """Setup the page set load / parent-page selection tab"""
         parent.columnconfigure(0, weight=1)
 
-        # Info section with modern styling
-        info_frame = ttk.LabelFrame(parent, text="Instructions", padding="20",
+        # Info section
+        info_frame = ttk.LabelFrame(parent, text="How it works", padding="20",
                                    style='Modern.TLabelframe')
         info_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
 
-        info_text = """To automate TD Snap, the assistant needs to know where to click.
-Press the buttons below and then click on the corresponding location in TD Snap.
+        info_text = """This tool edits your TD Snap page set file directly (no mouse automation).
 
 Steps:
-1. Open TD Snap and enter edit mode
-2. Click a 'Record' button below (e.g., for 'Add Category Button')
-3. You have 3 seconds to move your mouse over the target button in TD Snap
-4. The program will record that position
-5. Repeat for all required positions"""
+1. In TD Snap: export your page set to a .spb or .sps file
+2. Load that file below
+3. Choose the parent page where the new category button should appear
+4. Run a command on the 'Command' tab — a new edited file is written
+5. Re-import the edited file into TD Snap"""
 
-        info_label = ttk.Label(info_frame, text=info_text, justify=tk.LEFT,
-                              style='Muted.TLabel')
-        info_label.grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(info_frame, text=info_text, justify=tk.LEFT,
+                  style='Muted.TLabel').grid(row=0, column=0, sticky=tk.W)
 
-        # Coordinate buttons with modern styling
-        coords_frame = ttk.LabelFrame(parent, text="Record Coordinates", padding="20",
-                                     style='Modern.TLabelframe')
-        coords_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
-        coords_frame.columnconfigure(1, weight=1)
+        # File + parent page selection
+        file_frame = ttk.LabelFrame(parent, text="Page Set File", padding="20",
+                                    style='Modern.TLabelframe')
+        file_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        file_frame.columnconfigure(1, weight=1)
 
-        coord_points = [
-            ("add_category", "Add Category Button"),
-            ("add_button", "Add New Button/Word"),
-            ("button_label", "Button Label Field"),
-            ("category_name", "Category Name Field"),
-            ("save_button", "Save Button"),
-        ]
+        ttk.Label(file_frame, text="Exported file:",
+                  style='Modern.TLabel').grid(row=0, column=0, sticky=tk.W,
+                                              padx=(0, 15), pady=8)
+        self.pageset_path_var = tk.StringVar(value="No file loaded")
+        ttk.Label(file_frame, textvariable=self.pageset_path_var,
+                  style='Coord.TLabel').grid(row=0, column=1, sticky=tk.W, pady=8)
+        ttk.Button(file_frame, text="📂 Load Page Set…",
+                   command=self.load_pageset,
+                   style='Secondary.TButton').grid(row=0, column=2, padx=10, pady=8)
 
-        self.coord_labels = {}
-        for idx, (key, label) in enumerate(coord_points):
-            # Label
-            ttk.Label(coords_frame, text=f"{label}:",
-                     style='Modern.TLabel').grid(row=idx, column=0, sticky=tk.W,
-                                                padx=(0, 15), pady=8)
+        ttk.Label(file_frame, text="Parent page:",
+                  style='Modern.TLabel').grid(row=1, column=0, sticky=tk.W,
+                                              padx=(0, 15), pady=8)
+        self.parent_page_var = tk.StringVar()
+        self.parent_page_combo = ttk.Combobox(file_frame,
+                                               textvariable=self.parent_page_var,
+                                               state='readonly', width=40)
+        self.parent_page_combo.grid(row=1, column=1, columnspan=2, sticky=(tk.W, tk.E),
+                                    pady=8)
 
-            # Coordinate display
-            coord_text = self.coordinates.get(key, "Not set")
-            self.coord_labels[key] = ttk.Label(coords_frame, text=str(coord_text),
-                                              style='Coord.TLabel')
-            self.coord_labels[key].grid(row=idx, column=1, sticky=tk.W, padx=10, pady=8)
+    def load_pageset(self):
+        """Prompt for an exported .spb/.sps file and load its pages."""
+        path = filedialog.askopenfilename(
+            title="Select exported TD Snap page set",
+            filetypes=[("TD Snap page set", "*.spb *.sps"), ("All files", "*.*")],
+        )
+        if not path:
+            return
 
-            # Record button
-            ttk.Button(coords_frame, text="● Record",
-                      command=lambda k=key: self.record_coordinate(k),
-                      style='Secondary.TButton').grid(row=idx, column=2, padx=10, pady=8)
+        # Close any previously opened working copy.
+        if self.pageset_conn is not None:
+            self.pageset_conn.close()
+            self.pageset_conn = None
 
-        # Clear all button
-        ttk.Button(coords_frame, text="Clear All Coordinates",
-                  command=self.clear_coordinates,
-                  style='Warning.TButton').grid(row=len(coord_points), column=0,
-                                               columnspan=3, pady=(15, 0))
-        
+        try:
+            self.pageset_conn = td_snap_pageset.open_pageset(path)
+            self.pages = td_snap_pageset.list_pages(self.pageset_conn)
+        except td_snap_pageset.PagesetError as e:
+            self.log(f"❌ Could not load page set: {e}")
+            messagebox.showerror("Invalid Page Set", str(e))
+            return
+        except Exception as e:
+            self.log(f"❌ Error loading page set: {e}")
+            messagebox.showerror("Error", str(e))
+            return
+
+        self.pageset_path = path
+        self.pageset_path_var.set(os.path.basename(path))
+        self.parent_page_combo['values'] = [name for _, name in self.pages]
+        if self.pages:
+            self.parent_page_combo.current(0)
+        self.log(f"✓ Loaded page set '{os.path.basename(path)}' with {len(self.pages)} pages")
+
+    def selected_parent_page_id(self) -> Optional[int]:
+        """Return the Page Id chosen in the parent-page dropdown, if any."""
+        idx = self.parent_page_combo.current()
+        if idx is None or idx < 0 or idx >= len(self.pages):
+            return None
+        return self.pages[idx][0]
+
     def setup_settings_tab(self, parent):
         """Setup the settings tab"""
         parent.columnconfigure(0, weight=1)
@@ -415,75 +428,28 @@ Steps:
                   command=self.test_ollama_connection,
                   style='Success.TButton').grid(row=2, column=0, columnspan=2, pady=(5, 0))
 
-        # Automation Settings Frame with modern styling
-        settings_frame = ttk.LabelFrame(parent, text="⚙️  Automation Settings", padding="20",
+        # Generation Settings Frame with modern styling
+        settings_frame = ttk.LabelFrame(parent, text="⚙️  Generation Settings", padding="20",
                                        style='Modern.TLabelframe')
         settings_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
         settings_frame.columnconfigure(1, weight=1)
 
-        # Delay setting
-        ttk.Label(settings_frame, text="Delay between actions (seconds):",
-                 style='Modern.TLabel').grid(row=0, column=0, sticky=tk.W,
-                                            padx=(0, 15), pady=12)
-        self.delay_var = tk.StringVar(value="1.0")
-        ttk.Entry(settings_frame, textvariable=self.delay_var, width=15,
-                 style='Modern.TEntry').grid(row=0, column=1, sticky=tk.W, pady=12)
-
         # Items count setting
         ttk.Label(settings_frame, text="Default items per category:",
-                 style='Modern.TLabel').grid(row=1, column=0, sticky=tk.W,
+                 style='Modern.TLabel').grid(row=0, column=0, sticky=tk.W,
                                             padx=(0, 15), pady=12)
         self.items_count_var = tk.StringVar(value="10")
         ttk.Entry(settings_frame, textvariable=self.items_count_var, width=15,
+                 style='Modern.TEntry').grid(row=0, column=1, sticky=tk.W, pady=12)
+
+        # Grid columns setting (how wide the new page's grid is)
+        ttk.Label(settings_frame, text="Grid columns on new page:",
+                 style='Modern.TLabel').grid(row=1, column=0, sticky=tk.W,
+                                            padx=(0, 15), pady=12)
+        self.grid_cols_var = tk.StringVar(value="4")
+        ttk.Entry(settings_frame, textvariable=self.grid_cols_var, width=15,
                  style='Modern.TEntry').grid(row=1, column=1, sticky=tk.W, pady=12)
 
-        # Countdown setting
-        ttk.Label(settings_frame, text="Countdown before start (seconds):",
-                 style='Modern.TLabel').grid(row=2, column=0, sticky=tk.W,
-                                            padx=(0, 15), pady=12)
-        self.countdown_var = tk.StringVar(value="5")
-        ttk.Entry(settings_frame, textvariable=self.countdown_var, width=15,
-                 style='Modern.TEntry').grid(row=2, column=1, sticky=tk.W, pady=12)
-
-        # Typing speed setting
-        ttk.Label(settings_frame, text="Typing speed (chars/sec):",
-                 style='Modern.TLabel').grid(row=3, column=0, sticky=tk.W,
-                                            padx=(0, 15), pady=12)
-        self.typing_speed_var = tk.StringVar(value="0.05")
-        ttk.Entry(settings_frame, textvariable=self.typing_speed_var, width=15,
-                 style='Modern.TEntry').grid(row=3, column=1, sticky=tk.W, pady=12)
-        
-    def record_coordinate(self, key):
-        """Record a coordinate position"""
-        self.log(f"\n🎯 Recording coordinate for: {key}")
-        self.log("Move your mouse to the target position in TD Snap...")
-
-        def capture():
-            for i in range(3, 0, -1):
-                self.log(f"⏱️  Recording in {i}...")
-                time.sleep(1)
-
-            pos = pyautogui.position()
-            self.coordinates[key] = {"x": pos.x, "y": pos.y}
-            self.save_coordinates()
-
-            # Update label with coordinate info (using config instead of style)
-            self.coord_labels[key].config(text=f"x={pos.x}, y={pos.y}")
-            self.log(f"✓ Recorded {key} at position ({pos.x}, {pos.y})")
-
-        thread = threading.Thread(target=capture)
-        thread.daemon = True
-        thread.start()
-
-    def clear_coordinates(self):
-        """Clear all saved coordinates"""
-        if messagebox.askyesno("Clear Coordinates", "Are you sure you want to clear all coordinates?"):
-            self.coordinates = {}
-            self.save_coordinates()
-            for label in self.coord_labels.values():
-                label.config(text="Not set")
-            self.log("✓ All coordinates cleared")
-        
     def log(self, message):
         """Add a message to the log with timestamp"""
         timestamp = time.strftime("%H:%M:%S")
@@ -508,11 +474,11 @@ Steps:
             messagebox.showwarning("Empty Command", "Please enter a command.")
             return
             
-        if not self.coordinates:
-            messagebox.showwarning("Setup Required", 
-                                 "Please configure coordinates in the 'Setup Coordinates' tab first.")
+        if self.pageset_conn is None:
+            messagebox.showwarning("Setup Required",
+                                 "Please load an exported page set in the 'Page Set' tab first.")
             return
-        
+
         # Disable the process button and enable stop button
         self.process_btn.config(state='disabled')
         self.stop_btn.config(state='normal')
@@ -561,9 +527,9 @@ Steps:
                 self.log(f"✓ Generated {len(items)} items")
                 self.log(f"📝 Items: {', '.join(items)}")
 
-                # Execute the automation
-                self.update_status("Automating TD Snap...")
-                self.automate_td_snap(parsed_command['category'], items)
+                # Edit the page set file directly
+                self.update_status("Editing page set...")
+                self.edit_pageset(parsed_command['category'], items)
 
             self.log("✅ Command completed successfully!")
 
@@ -836,119 +802,47 @@ Example format:
             self.log(f"Ollama API call failed: {str(e)}")
             return None
 
-    def call_claude_api(self, prompt: str, max_tokens: int = 1000) -> str:
-        """Call the Claude API (deprecated - use Ollama instead)"""
+    def edit_pageset(self, category: str, items: List[str]):
+        """Add a category page (with item buttons) to the loaded page set file.
+
+        Writes the result to a new ``*.edited.<ext>`` file alongside the original
+        export, which the user then re-imports into TD Snap.
+        """
+        if self.pageset_conn is None:
+            raise RuntimeError("No page set loaded. Load one in the 'Page Set' tab.")
+
         try:
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": max_tokens,
-                    "messages": [{"role": "user", "content": prompt}]
-                },
-                timeout=30
-            )
+            cols = int(self.grid_cols_var.get())
+        except ValueError:
+            cols = 4
 
-            if response.status_code == 200:
-                data = response.json()
-                return data['content'][0]['text']
-            else:
-                self.log(f"API Error: {response.status_code} - {response.text}")
-                return None
+        parent_page_id = self.selected_parent_page_id()
 
-        except Exception as e:
-            self.log(f"API call failed: {str(e)}")
-            return None
-            
-    def automate_td_snap(self, category: str, items: List[str]):
-        """Automate TD Snap to add a category and items"""
-        try:
-            # Validate that required coordinates are set
-            required_coords = ['add_button', 'button_label', 'save_button']
-            missing_coords = [coord for coord in required_coords if coord not in self.coordinates]
+        self.log("\n━━━ Editing Page Set ━━━")
+        self.log(f"📁 Adding page '{category}' with {len(items)} buttons "
+                 f"(grid {cols} columns wide)")
 
-            if missing_coords:
-                error_msg = f"Missing required coordinates: {', '.join(missing_coords)}\n\nPlease set these in the 'Setup Coordinates' tab."
-                self.log(f"❌ ERROR: {error_msg}")
-                messagebox.showerror("Missing Coordinates", error_msg)
-                return
+        new_page_id = td_snap_pageset.add_category_page(
+            self.pageset_conn, category, items, parent_page_id, cols=cols
+        )
 
-            delay = float(self.delay_var.get())
-            countdown = int(self.countdown_var.get())
-            typing_speed = float(self.typing_speed_var.get())
+        if parent_page_id is not None:
+            parent_name = next((n for i, n in self.pages if i == parent_page_id),
+                               str(parent_page_id))
+            self.log(f"🔗 Linked from '{parent_name}' via a new navigation button")
 
-            self.log("\n━━━ Starting TD Snap Automation ━━━")
-            self.log("⚠️  IMPORTANT: Make sure TD Snap is open and visible!")
-            self.log(f"⏰ Starting in {countdown} seconds... Position TD Snap window now.")
+        # Write the edited file next to the original export.
+        base, ext = os.path.splitext(self.pageset_path)
+        dest = f"{base}.edited{ext}"
+        td_snap_pageset.save_as(self.pageset_conn, dest)
 
-            # Countdown
-            for i in range(countdown, 0, -1):
-                if not self.is_processing:
-                    self.log("⏹️  Automation stopped by user")
-                    return
-                self.log(f"⏱️  {i}...")
-                time.sleep(1)
+        # Refresh the page list so subsequent commands see the new page.
+        self.pages = td_snap_pageset.list_pages(self.pageset_conn)
+        self.parent_page_combo['values'] = [name for _, name in self.pages]
 
-            self.log("▶️  Starting automation...")
-
-            # Step 1: Create category if we have the coordinate
-            if 'add_category' in self.coordinates:
-                self.log(f"📁 Step 1: Creating category '{category}'")
-                coord = self.coordinates['add_category']
-                pyautogui.click(coord['x'], coord['y'])
-                time.sleep(delay)
-
-                # Type category name if we have that field
-                if 'category_name' in self.coordinates:
-                    self.log(f"  ➜ Entering category name...")
-                    coord = self.coordinates['category_name']
-                    pyautogui.click(coord['x'], coord['y'])
-                    time.sleep(delay * 0.5)
-                    pyautogui.typewrite(category, interval=typing_speed)
-                    time.sleep(delay)
-
-                    # Save if we have save button
-                    if 'save_button' in self.coordinates:
-                        coord = self.coordinates['save_button']
-                        pyautogui.click(coord['x'], coord['y'])
-                        time.sleep(delay)
-
-            # Step 2: Add items
-            self.log(f"\n📝 Step 2: Adding {len(items)} items to category")
-            for idx, item in enumerate(items, 1):
-                if not self.is_processing:
-                    self.log("⏹️  Automation stopped by user")
-                    return
-
-                self.log(f"  ➜ [{idx}/{len(items)}] Adding '{item}'...")
-
-                # Click add button
-                if 'add_button' in self.coordinates:
-                    coord = self.coordinates['add_button']
-                    pyautogui.click(coord['x'], coord['y'])
-                    time.sleep(delay)
-
-                    # Type the item name
-                    if 'button_label' in self.coordinates:
-                        coord = self.coordinates['button_label']
-                        pyautogui.click(coord['x'], coord['y'])
-                        time.sleep(delay * 0.5)
-                        pyautogui.typewrite(item, interval=typing_speed)
-                        time.sleep(delay * 0.5)
-
-                        # Save the item
-                        if 'save_button' in self.coordinates:
-                            coord = self.coordinates['save_button']
-                            pyautogui.click(coord['x'], coord['y'])
-                            time.sleep(delay)
-
-            self.log("\n━━━ Automation Complete ━━━")
-            self.log(f"✅ Successfully processed category '{category}' with {len(items)} items!")
-
-        except Exception as e:
-            self.log(f"❌ Automation error: {str(e)}")
-            raise
+        self.log("\n━━━ Edit Complete ━━━")
+        self.log(f"💾 Saved edited page set to: {dest}")
+        self.log("📥 Re-import this file into TD Snap to see your new page.")
 
 def main():
     root = tk.Tk()

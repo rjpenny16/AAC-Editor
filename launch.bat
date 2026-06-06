@@ -14,7 +14,7 @@ if errorlevel 1 (
 
 REM Check if required packages are installed
 echo Checking dependencies...
-python -c "import pyautogui, requests, keyboard" >nul 2>&1
+python -c "import requests" >nul 2>&1
 if errorlevel 1 (
     echo Installing required packages...
     pip install -r requirements.txt

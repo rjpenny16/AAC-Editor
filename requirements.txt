@@ -1,4 +1,8 @@
-pyautogui==0.9.54
-pillow>=11.0.0
+# Runtime dependencies.
+# The app edits the TD Snap page set file directly (SQLite, via the Python
+# standard library), so no GUI-automation packages are required.
 requests>=2.32.0
-keyboard==0.13.5
+
+# Development / testing only:
+#   pip install pytest
+#   python -m pytest
