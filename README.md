@@ -45,19 +45,20 @@ Keep your original safe — the tool never modifies it, it writes a new edited c
 
 ### 4. Load it in the app
 
-1. Go to the **Page Set** tab.
-2. Click **Load Page Set…** and pick your exported file.
-3. Choose the **parent page** where the new category button should appear.
+1. Go to the **1 · Open File** tab.
+2. Click **Choose File…** and pick your exported file.
+3. Under **Where should the new button appear?**, choose the page that should get
+   the link to your new category.
 
 ### 5. Configure Ollama (first time only)
 
-1. Go to the **Settings** tab.
-2. Verify **Ollama Host**: `http://localhost:11434`.
-3. Select a **Model** (e.g. `llama3.2`) and click **Test Ollama Connection**.
+1. Go to the **3 · Settings** tab.
+2. Verify the **Server**: `http://localhost:11434`.
+3. Select a **Model** (e.g. `llama3.2`) and click **Test Connection**.
 
 ### 6. Run a command
 
-On the **Command** tab, type natural language such as:
+On the **2 · Build a Page** tab, type natural language such as:
 - "Add a Favorite Places page with Walmart, McDonald's, Taco Bell"
 - "Add restaurants category"
 - "Create animals with 15 items"
@@ -98,11 +99,11 @@ used to talk to Ollama.
 
 ## Settings
 
-In the **Settings** tab:
-- **Default items per category** — how many words to generate (default: 10)
-- **Grid columns on new page** — width of the new page's button grid (default: 4)
-- **Ollama Host** — local Ollama server address (default: `localhost:11434`)
-- **Ollama Model** — which model to use (e.g. `llama3.2`)
+In the **3 · Settings** tab:
+- **Buttons per page** — how many words to generate (default: 10)
+- **Columns** — width of the new page's button grid (default: 4)
+- **Server** — local Ollama server address (default: `http://localhost:11434`)
+- **Model** — which model to use (e.g. `llama3.2`)
 
 ## Recommended Ollama Models
 
@@ -129,7 +130,7 @@ ollama pull <model-name>
 **Cannot connect to Ollama:** check it's running (`ollama list`), start it
 (`ollama serve`), verify port 11434.
 
-**"Please load an exported page set":** load a `.spb`/`.sps` on the Page Set tab first.
+**"Open a file first":** open a `.spb`/`.sps` on the **1 · Open File** tab first.
 
 **"… is not a SQLite database":** the file isn't a recognised page set — confirm you
 exported a page set (not a screenshot/PDF) and check it with `inspect_pageset.py`.
