@@ -14,7 +14,7 @@ fi
 
 # Check if required packages are installed
 echo "Checking dependencies..."
-python3 -c "import pyautogui, requests, keyboard" 2>/dev/null
+python3 -c "import requests" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "Installing required packages..."
     pip3 install -r requirements.txt

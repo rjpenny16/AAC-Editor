@@ -43,16 +43,17 @@ The TD Snap AI Assistant now uses **Ollama** for local LLM processing, replacing
 │  └───────────────────────────────────────────────────────┘  │
 │                             ↓                                │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  4. Execute Automation                                 │  │
-│  │     → PyAutoGUI clicks & keyboard input                │  │
-│  │     → Based on recorded coordinates                    │  │
-│  │     → Adds category and items to TD Snap               │  │
+│  │  4. Edit the Page Set File                             │  │
+│  │     → Open a copy of the exported .spb/.sps (SQLite)   │  │
+│  │     → Insert a new Page + Buttons + grid placements    │  │
+│  │     → Add a navigation button on the chosen parent page│  │
+│  │     → Write yourfile.edited.spb/.sps                    │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                    TD Snap Application                       │
-│         (Category and items added automatically)             │
+│   (User re-imports the edited file; the new page appears)    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -182,7 +183,7 @@ The app implements multiple safety layers:
 2. **Type Checking**: Verifies all fields have correct data types
 3. **Required Field Checking**: Rejects incomplete responses
 4. **Error Handling**: Graceful fallback on invalid outputs
-5. **No Execution of Arbitrary Code**: Only predefined automation actions
+5. **No Execution of Arbitrary Code**: Only structured edits to the page set file
 6. **Localhost Only**: Ollama API not exposed to public internet
 
 ### Security Considerations
