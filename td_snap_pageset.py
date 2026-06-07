@@ -22,8 +22,10 @@ deferred until the real-export verification (see ``inspect_pageset.py``) pins do
 how ``LibrarySymbolId`` / ``PageSetData`` are linked.
 """
 
+import os
 import shutil
 import sqlite3
+import sys
 import uuid
 from typing import List, Tuple
 
@@ -103,6 +105,27 @@ def list_pages(conn: sqlite3.Connection) -> List[Tuple[int, str]]:
         "AS DisplayName FROM Page ORDER BY DisplayName COLLATE NOCASE"
     ).fetchall()
     return [(row["Id"], row["DisplayName"]) for row in rows]
+
+
+def find_page_id_by_name(conn: sqlite3.Connection, name: str) -> int:
+    """Return the Id of the page whose Title/Name matches *name* (case-insensitive).
+
+    Raises :class:`PagesetError` if no page matches or if the name is ambiguous
+    (more than one page shares it). Used by the CLI so users can pick a parent
+    page by its human-readable name instead of a numeric Id.
+    """
+    matches = [
+        page_id for page_id, display in list_pages(conn)
+        if display.casefold() == name.casefold()
+    ]
+    if not matches:
+        raise PagesetError(f"No page named {name!r} found.")
+    if len(matches) > 1:
+        raise PagesetError(
+            f"Page name {name!r} is ambiguous ({len(matches)} pages share it); "
+            "use the numeric page Id instead."
+        )
+    return matches[0]
 
 
 def _next_id(conn: sqlite3.Connection, table: str) -> int:
@@ -250,3 +273,112 @@ def _connection_path(conn: sqlite3.Connection) -> str:
         if name == "main":
             return filename or ""
     return ""
+
+
+def _default_output_path(source: str) -> str:
+    """Return the sibling ``<name>.edited<ext>`` path for *source*."""
+    base, ext = os.path.splitext(source)
+    return f"{base}.edited{ext}"
+
+
+def _cmd_list(args) -> int:
+    """``list`` subcommand: print every page's Id and name."""
+    conn = open_pageset(args.pageset)
+    try:
+        pages = list_pages(conn)
+    finally:
+        conn.close()
+    if not pages:
+        print("(no pages found)")
+        return 0
+    width = max(len(str(page_id)) for page_id, _ in pages)
+    for page_id, name in pages:
+        print(f"{page_id:>{width}}  {name}")
+    return 0
+
+
+def _cmd_add(args) -> int:
+    """``add`` subcommand: add a category page and write an edited copy.
+
+    Mirrors what the GUI does, but without Tkinter or Ollama: the items come
+    straight from the command line, so the tool is scriptable and headless.
+    """
+    items = [item.strip() for item in args.items.split(",") if item.strip()]
+    if not items:
+        raise PagesetError("No items given. Pass a comma-separated --items list.")
+
+    conn = open_pageset(args.pageset)
+    try:
+        if args.parent_id is not None:
+            parent_id = args.parent_id
+        elif args.parent_name is not None:
+            parent_id = find_page_id_by_name(conn, args.parent_name)
+        else:
+            parent_id = None
+
+        page_id = add_category_page(
+            conn, args.title, items, parent_id, cols=args.cols
+        )
+        dest = args.output or _default_output_path(args.pageset)
+        save_as(conn, dest)
+    finally:
+        conn.close()
+
+    print(f"Added page '{args.title}' (Id {page_id}) with {len(items)} buttons.")
+    if args.parent_id is not None or args.parent_name is not None:
+        print(f"Linked from parent page Id {parent_id}.")
+    print(f"Wrote edited page set to: {dest}")
+    print("Re-import this file into TD Snap to see your new page.")
+    return 0
+
+
+def main(argv: List[str] = None) -> int:
+    """Command-line entry point for editing a page set without the GUI."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="td_snap_pageset",
+        description="Edit a TD Snap page set (.spb/.sps) from the command line. "
+        "The original export is never modified; an edited copy is written.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_list = sub.add_parser("list", help="list the pages in a page set")
+    p_list.add_argument("pageset", help="path to the exported .spb/.sps file")
+    p_list.set_defaults(func=_cmd_list)
+
+    p_add = sub.add_parser("add", help="add a category page of word buttons")
+    p_add.add_argument("pageset", help="path to the exported .spb/.sps file")
+    p_add.add_argument("--title", required=True, help="title of the new page")
+    p_add.add_argument(
+        "--items", required=True,
+        help="comma-separated button labels, e.g. \"Water,Juice,Soda\"",
+    )
+    group = p_add.add_mutually_exclusive_group()
+    group.add_argument(
+        "--parent-id", type=int, default=None,
+        help="Id of the existing page to link from (see the 'list' command)",
+    )
+    group.add_argument(
+        "--parent-name", default=None,
+        help="name of the existing page to link from (case-insensitive)",
+    )
+    p_add.add_argument(
+        "--cols", type=int, default=4, help="grid width of the new page (default 4)"
+    )
+    p_add.add_argument(
+        "-o", "--output", default=None,
+        help="where to write the edited file (default: <name>.edited<ext>)",
+    )
+    p_add.set_defaults(func=_cmd_add)
+
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except PagesetError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

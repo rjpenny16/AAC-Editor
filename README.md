@@ -69,6 +69,29 @@ The app generates the items, writes `yourfile.edited.spb`/`.sps`, and logs the p
 
 Import the edited file into TD Snap to see the new page and its navigation button.
 
+## Command-line use (no GUI or Ollama)
+
+The page-set editor also works straight from the terminal — handy for scripting,
+automation, or when you already know the words you want and don't need AI to
+suggest them. It uses only the Python standard library.
+
+```bash
+# List the pages in an export (with their Ids)
+python td_snap_pageset.py list yourpageset.sps
+
+# Add a "Drinks" page of buttons and link it from your Home page
+python td_snap_pageset.py add yourpageset.sps \
+    --title "Drinks" --items "Water,Juice,Soda,Milk" --parent-name Home
+
+# Or link from a page by Id, set the grid width, and choose the output path
+python td_snap_pageset.py add yourpageset.sps \
+    --title "Colors" --items "Red,Green,Blue" --parent-id 1 --cols 3 \
+    -o colors.edited.sps
+```
+
+As with the GUI, your original export is never modified — an edited copy is
+written (default `yourpageset.edited.sps`) for you to re-import into TD Snap.
+
 ## Verifying the file format (recommended once)
 
 The page-set schema this tool writes is based on the open-source `obf-node` Snap
@@ -143,7 +166,8 @@ file format* to find the field TD Snap requires that the writer isn't setting ye
 ## What's included
 
 - `td_snap_ai_assistant.py` — main app (Tkinter UI + Ollama)
-- `td_snap_pageset.py` — page set editor (SQLite, no external deps)
+- `td_snap_pageset.py` — page set editor (SQLite, no external deps); also a CLI
+  (`python td_snap_pageset.py list|add …`)
 - `inspect_pageset.py` — format inspector / differ for verification
 - `test_td_snap_pageset.py` — unit tests (`python -m pytest`)
 - `launch.bat` / `launch.sh` — launchers

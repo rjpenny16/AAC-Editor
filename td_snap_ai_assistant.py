@@ -508,19 +508,36 @@ class TDSnapAIAssistantPro:
         field_row(gen_body, "Columns", "How wide the new grid of buttons is.",
                   cols_entry, 2)
 
+    def _on_main_thread(self, func, *args, **kwargs):
+        """Run *func* on the Tk main thread, scheduling it if we're off-thread.
+
+        Tkinter is not thread-safe: every widget call must happen on the thread
+        that owns the event loop. The build runs in a background thread, so any
+        UI update it triggers is marshaled back here via ``root.after``.
+        """
+        if threading.current_thread() is threading.main_thread():
+            func(*args, **kwargs)
+        else:
+            self.root.after(0, lambda: func(*args, **kwargs))
+
     def log(self, message):
-        """Add a message to the log with timestamp"""
+        """Add a message to the log with timestamp (thread-safe)."""
+        if threading.current_thread() is not threading.main_thread():
+            self._on_main_thread(self.log, message)
+            return
         timestamp = time.strftime("%H:%M:%S")
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
-        self.log_text.update()
-        
+
     def update_status(self, message, state="busy"):
-        """Update the status line and its colored dot.
+        """Update the status line and its colored dot (thread-safe).
 
         *state* drives the dot color: ``busy`` (blue), ``ready``/``success``
         (green), or ``error`` (red).
         """
+        if threading.current_thread() is not threading.main_thread():
+            self._on_main_thread(self.update_status, message, state)
+            return
         dot_colors = {
             'busy': self.colors['primary'],
             'ready': self.colors['success'],
@@ -530,7 +547,6 @@ class TDSnapAIAssistantPro:
         self.status_var.set(message)
         if hasattr(self, 'status_dot'):
             self.status_dot.config(fg=dot_colors.get(state, self.colors['text_muted']))
-        self.root.update()
         
     def stop_processing(self):
         """Stop the current processing"""
@@ -574,7 +590,8 @@ class TDSnapAIAssistantPro:
 
             if not parsed_command:
                 self.log("❌ ERROR: Could not understand the command")
-                messagebox.showwarning(
+                self._on_main_thread(
+                    messagebox.showwarning,
                     "Didn’t catch that",
                     "Sorry, I couldn’t understand that request. Try something "
                     "like “Add a drinks page”.")
@@ -589,7 +606,11 @@ class TDSnapAIAssistantPro:
                 self.update_status(
                     f"Choosing words for “{parsed_command['category']}”…", "busy")
 
-                items_count = int(self.items_count_var.get())
+                try:
+                    items_count = int(self.items_count_var.get())
+                except (ValueError, TypeError):
+                    self.log("⚠️ 'Buttons per page' is not a number; using 10.")
+                    items_count = 10
                 if 'count' in parsed_command and parsed_command['count']:
                     items_count = parsed_command['count']
 
@@ -600,7 +621,8 @@ class TDSnapAIAssistantPro:
 
                 if not items:
                     self.log("❌ ERROR: Could not generate items")
-                    messagebox.showwarning(
+                    self._on_main_thread(
+                        messagebox.showwarning,
                         "No words generated",
                         "I couldn’t come up with words for that category. "
                         "Check the AI connection on the Settings tab and try again.")
@@ -621,11 +643,12 @@ class TDSnapAIAssistantPro:
 
         except Exception as e:
             self.log(f"❌ ERROR: {str(e)}")
-            messagebox.showerror("Something went wrong", f"{str(e)}")
+            self._on_main_thread(
+                messagebox.showerror, "Something went wrong", f"{str(e)}")
             self.update_status("Something went wrong — see the activity log", "error")
         finally:
-            self.process_btn.config(state='normal')
-            self.stop_btn.config(state='disabled')
+            self._on_main_thread(self.process_btn.config, state='normal')
+            self._on_main_thread(self.stop_btn.config, state='disabled')
             self.is_processing = False
             
     def finalize_processing(self):
@@ -634,9 +657,9 @@ class TDSnapAIAssistantPro:
         The status line keeps its last meaningful message (done / error) so the
         result stays visible; only the controls are reset here.
         """
-        self.process_btn.config(state='normal')
-        self.stop_btn.config(state='disabled')
-        self.stop_btn.grid_remove()
+        self._on_main_thread(self.process_btn.config, state='normal')
+        self._on_main_thread(self.stop_btn.config, state='disabled')
+        self._on_main_thread(self.stop_btn.grid_remove)
         self.is_processing = False
         
     def parse_command_with_ai(self, command: str) -> Dict:
@@ -888,7 +911,7 @@ Example format:
 
         except requests.exceptions.ConnectionError:
             self.log("ERROR: Cannot connect to Ollama. Make sure it's running.")
-            messagebox.showerror("Connection Error",
+            self._on_main_thread(messagebox.showerror, "Connection Error",
                 "Cannot connect to Ollama.\n\nPlease start Ollama and try again.")
             return None
         except Exception as e:
@@ -931,7 +954,9 @@ Example format:
 
         # Refresh the page list so subsequent commands see the new page.
         self.pages = td_snap_pageset.list_pages(self.pageset_conn)
-        self.parent_page_combo['values'] = [name for _, name in self.pages]
+        self._on_main_thread(
+            self.parent_page_combo.configure,
+            values=[name for _, name in self.pages])
 
         self.log("\n━━━ Edit Complete ━━━")
         self.log(f"💾 Saved edited page set to: {dest}")
