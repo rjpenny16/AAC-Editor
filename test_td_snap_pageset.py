@@ -201,3 +201,97 @@ def test_save_as_writes_importable_copy(pageset_path, tmp_path):
         assert "Places" in titles
     finally:
         check.close()
+
+
+def test_find_page_id_by_name_is_case_insensitive(pageset_path):
+    conn = ps.open_pageset(pageset_path)
+    try:
+        assert ps.find_page_id_by_name(conn, "home") == 1
+        assert ps.find_page_id_by_name(conn, "HOME") == 1
+    finally:
+        conn.close()
+
+
+def test_find_page_id_by_name_unknown_raises(pageset_path):
+    conn = ps.open_pageset(pageset_path)
+    try:
+        with pytest.raises(ps.PagesetError):
+            ps.find_page_id_by_name(conn, "Nope")
+    finally:
+        conn.close()
+
+
+def test_find_page_id_by_name_ambiguous_raises(pageset_path):
+    conn = ps.open_pageset(pageset_path)
+    try:
+        # A second page sharing the same name makes the lookup ambiguous.
+        conn.execute(
+            "INSERT INTO Page (Id, UniqueId, Title, Name) "
+            "VALUES (2, 'home2-uid', 'Home', 'Home')"
+        )
+        conn.commit()
+        with pytest.raises(ps.PagesetError):
+            ps.find_page_id_by_name(conn, "Home")
+    finally:
+        conn.close()
+
+
+# --- Command-line interface -------------------------------------------------
+
+def test_cli_list_prints_pages(pageset_path, capsys):
+    rc = ps.main(["list", pageset_path])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Home" in out
+    assert "1" in out
+
+
+def test_cli_add_creates_edited_file(pageset_path, capsys):
+    rc = ps.main([
+        "add", pageset_path,
+        "--title", "Drinks",
+        "--items", "Water, Juice ,Soda",
+        "--parent-name", "Home",
+    ])
+    assert rc == 0
+
+    out_path = ps._default_output_path(pageset_path)
+    assert ps.is_sqlite_file(out_path)
+    check = sqlite3.connect(out_path)
+    try:
+        titles = [r[0] for r in check.execute("SELECT Title FROM Page")]
+        assert "Drinks" in titles
+        # Whitespace around comma-separated items is trimmed.
+        labels = {
+            r[0] for r in check.execute(
+                "SELECT b.Label FROM Button b "
+                "JOIN ElementReference er ON b.ElementReferenceId = er.Id "
+                "JOIN Page p ON er.PageId = p.Id WHERE p.Title = 'Drinks'"
+            )
+        }
+        assert labels == {"Water", "Juice", "Soda"}
+        # A navigation button was added to Home.
+        nav = check.execute(
+            "SELECT b.Label FROM Button b "
+            "JOIN ElementReference er ON b.ElementReferenceId = er.Id "
+            "WHERE er.PageId = 1"
+        ).fetchone()
+        assert nav[0] == "Drinks"
+    finally:
+        check.close()
+
+
+def test_cli_add_honors_output_flag(pageset_path, tmp_path):
+    out = str(tmp_path / "custom.sps")
+    rc = ps.main([
+        "add", pageset_path, "--title", "Colors",
+        "--items", "Red,Green,Blue", "-o", out,
+    ])
+    assert rc == 0
+    assert ps.is_sqlite_file(out)
+
+
+def test_cli_add_empty_items_returns_error(pageset_path, capsys):
+    rc = ps.main(["add", pageset_path, "--title", "X", "--items", "  , "])
+    assert rc == 1
+    assert "Error" in capsys.readouterr().err
