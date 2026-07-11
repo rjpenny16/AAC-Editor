@@ -41,3 +41,11 @@ td_snap_coordinates.json
 # Page set files (user data + generated working/edited copies)
 *.spb
 *.sps
+
+# Test fixtures: only the schema snapshot (text) is committed;
+# real page sets are proprietary Tobii content and must never be.
+tests/fixtures/*
+!tests/fixtures/*.sql
+
+# Web app working copies
+.tdsnap-sessions/

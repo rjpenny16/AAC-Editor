@@ -1,189 +1,94 @@
-# TD Snap AI Assistant
+# TD Snap Page Builder
 
-AI-powered tool for TD Snap that builds new vocabulary pages from natural language —
-then **edits your page set file directly** instead of automating mouse clicks.
+Add vocabulary pages to a [TD Snap](https://us.tobiidynavox.com/pages/td-snap)
+page set without clicking through Edit mode button by button. Export your page
+set from TD Snap, build pages here (with optional local-AI word suggestions),
+and re-import the edited copy.
 
-**NEW:** Uses Ollama for local, private AI processing — no internet required.
-**NEW:** Edits the TD Snap page set (`.spb`/`.sps`) file itself, so there are no
-fragile screen coordinates to record and nothing breaks when a window moves.
+Runs entirely on your computer. Your original file is never modified, and
+nothing is uploaded to the internet.
 
-## How it works (export → edit → import)
+![Web UI: build a page, preview the grid, download the edited page set](docs/screenshot.png)
 
-A TD Snap page set is a SQLite database. This tool opens a *copy* of your exported
-page set, adds a new page full of word buttons, links to it from a page you choose,
-and writes a new `*.edited.spb`/`*.edited.sps` file. You re-import that file into
-TD Snap. No clicking, no timing, no coordinates.
+## Why this is safe now (and wasn't before)
 
-1. **Natural language → AI**: your command goes to Ollama running locally.
-2. **AI generates items**: Ollama produces appropriate vocabulary for the category.
-3. **Direct edit**: the app inserts a new page + buttons into the page set file.
-4. **Re-import**: you import the edited file and the new page appears in TD Snap.
+Earlier versions of this project wrote to the page-set database using a
+guessed schema, and **TD Snap crashed after every edit**. The editor has been
+rebuilt around the real file format, verified against a genuine TD Snap 4.13
+export:
 
-## Quick Start
+- **Template cloning.** New rows are copies of rows TD Snap itself wrote, with
+  only the necessary fields changed — never hand-built rows with guessed
+  columns.
+- **Complete linkage.** Every button gets its `CommandSequence`; every
+  placement is tied to a `PageLayout`; navigation uses `ButtonPageLink` plus
+  the real serialized navigate command; every new page gets its `SyncData`
+  ledger row and .NET-ticks timestamps.
+- **Schema discovery at runtime.** Column lists come from the file itself
+  (`PRAGMA table_info`), so a TD Snap update that adds columns doesn't break
+  the clone.
+- **Validation after every edit.** SQLite integrity + foreign keys, chain
+  completeness for the new page, and a snapshot diff proving every table the
+  edit shouldn't touch is byte-for-byte identical. If any check fails, nothing
+  is saved.
 
-### 1. Install Ollama (one-time)
+One honest caveat: TD Snap's `SyncHash` algorithm is proprietary. Edited files
+open and work locally; if you use myTobiiDynavox *page-set sync*, see
+[docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
 
-**Windows:** download from [ollama.com/download](https://ollama.com/download)
-**Mac/Linux:** `curl -fsSL https://ollama.com/install.sh | sh`
+## Quick start
 
-Then pull a model:
-```bash
-ollama pull llama3.2
-```
-
-### 2. Install and run the app
+Requires [Python 3.9+](https://www.python.org/downloads/) (tick **"Add Python
+to PATH"** when installing on Windows).
 
 **Windows:** double-click `launch.bat`
-**Mac/Linux:** run `./launch.sh`
+**Mac/Linux:** `./launch.sh`
 
-The launcher installs the (small) Python dependencies automatically.
+The launcher installs two small dependencies (Flask, Requests) and opens the
+app in your browser at `http://127.0.0.1:8765`. Then:
 
-### 3. Export your page set from TD Snap
+1. **Export** your page set from TD Snap
+   (*Edit mode → Page Set → Import/Export → Export to file*).
+2. **Open** the `.sps`/`.spb` file in the app.
+3. **Build** a page: title, words (type them, paste a comma-separated list, or
+   let a local [Ollama](https://ollama.com) model suggest them), and the page
+   that should get the link button. The preview shows the grid exactly as TD
+   Snap will lay it out.
+4. **Download** the `.edited` copy and import it into TD Snap — **into a test
+   user first**: read [docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
 
-In TD Snap, export the page set you want to extend to a `.spb` or `.sps` file.
-Keep your original safe — the tool never modifies it, it writes a new edited copy.
+### Optional: AI word suggestions
 
-### 4. Load it in the app
+Install [Ollama](https://ollama.com/download), run `ollama pull llama3.2`, and
+the "Suggest words with AI" section in the app comes alive. Everything stays
+on your machine.
 
-1. Go to the **1 · Open File** tab.
-2. Click **Choose File…** and pick your exported file.
-3. Under **Where should the new button appear?**, choose the page that should get
-   the link to your new category.
+## Command line
 
-### 5. Configure Ollama (first time only)
-
-1. Go to the **3 · Settings** tab.
-2. Verify the **Server**: `http://localhost:11434`.
-3. Select a **Model** (e.g. `llama3.2`) and click **Test Connection**.
-
-### 6. Run a command
-
-On the **2 · Build a Page** tab, type natural language such as:
-- "Add a Favorite Places page with Walmart, McDonald's, Taco Bell"
-- "Add restaurants category"
-- "Create animals with 15 items"
-
-The app generates the items, writes `yourfile.edited.spb`/`.sps`, and logs the path.
-
-### 7. Re-import into TD Snap
-
-Import the edited file into TD Snap to see the new page and its navigation button.
-
-## Command-line use (no GUI or Ollama)
-
-The page-set editor also works straight from the terminal — handy for scripting,
-automation, or when you already know the words you want and don't need AI to
-suggest them. It uses only the Python standard library.
+Everything the web app does is scriptable:
 
 ```bash
-# List the pages in an export (with their Ids)
-python td_snap_pageset.py list yourpageset.sps
-
-# Add a "Drinks" page of buttons and link it from your Home page
-python td_snap_pageset.py add yourpageset.sps \
-    --title "Drinks" --items "Water,Juice,Soda,Milk" --parent-name Home
-
-# Or link from a page by Id, set the grid width, and choose the output path
-python td_snap_pageset.py add yourpageset.sps \
-    --title "Colors" --items "Red,Green,Blue" --parent-id 1 --cols 3 \
-    -o colors.edited.sps
+python -m tdsnap list "My Page Set.sps"              # show pages
+python -m tdsnap add  "My Page Set.sps" \
+    --title Snacks --items "Chips,Apple,Banana" \
+    --parent-name "My Things"                        # build + validate + save
+python -m tdsnap verify  "My Page Set.edited.sps"    # safety checks, any file
+python -m tdsnap inspect "My Page Set.sps"           # schema version, tables
 ```
 
-As with the GUI, your original export is never modified — an edited copy is
-written (default `yourpageset.edited.sps`) for you to re-import into TD Snap.
-
-## Verifying the file format (recommended once)
-
-The page-set schema this tool writes is based on the open-source `obf-node` Snap
-converter. Production TD Snap versions can differ, so before relying on it, confirm
-the format against a real export and discover any fields TD Snap requires on import:
+## Development
 
 ```bash
-# Inspect a real export: container type, tables, sample rows
-python inspect_pageset.py yourpageset.sps
-
-# Diff two exports — e.g. before vs. after adding a page by hand in TD Snap —
-# to see exactly which rows/fields TD Snap expects
-python inspect_pageset.py before.sps after.sps
+pip install -r requirements.txt pytest
+python -m pytest                      # unit tests (committed schema snapshot)
+python scripts/fetch_fixture.py       # downloads a real page set (not committed)
+python -m pytest                      # now includes integration tests
+python -m tdsnap.web --no-browser     # run the web app
 ```
 
-If TD Snap rejects an edited file on import, the diff above is what reveals the
-missing field; open an issue with what you find.
-
-## Requirements
-
-- **Python 3.8+** (from [python.org](https://www.python.org/downloads/))
-- **Ollama** with a model installed (see step 1)
-- **TD Snap** with export/import of page sets
-- **8GB RAM recommended** for running local AI models
-
-The editor itself uses only the Python standard library (`sqlite3`); `requests` is
-used to talk to Ollama.
-
-## Settings
-
-In the **3 · Settings** tab:
-- **Buttons per page** — how many words to generate (default: 10)
-- **Columns** — width of the new page's button grid (default: 4)
-- **Server** — local Ollama server address (default: `http://localhost:11434`)
-- **Model** — which model to use (e.g. `llama3.2`)
-
-## Recommended Ollama Models
-
-| Model | Size | Best For |
-|-------|------|----------|
-| llama3.2 | 2GB | Most users — fast & accurate |
-| llama3.1 | 4.7GB | Better quality, slower |
-| phi3 | 2.3GB | Low-end hardware |
-
-```bash
-ollama pull <model-name>
-```
-
-## Current scope & limitations
-
-- **Text buttons only.** Buttons get a label and spoken message; symbols/images are
-  not added yet (linking the symbol library is part of ongoing format verification).
-- **TD Snap only.** Other AAC apps (Grid 3, TouchChat, …) are out of scope here, but
-  the same data-level approach applies — they have their own file formats.
-- **Re-import is manual.** The app produces a file; TD Snap's own import brings it in.
-
-## Troubleshooting
-
-**Cannot connect to Ollama:** check it's running (`ollama list`), start it
-(`ollama serve`), verify port 11434.
-
-**"Open a file first":** open a `.spb`/`.sps` on the **1 · Open File** tab first.
-
-**"… is not a SQLite database":** the file isn't a recognised page set — confirm you
-exported a page set (not a screenshot/PDF) and check it with `inspect_pageset.py`.
-
-**TD Snap won't import the edited file:** run the diff described in *Verifying the
-file format* to find the field TD Snap requires that the writer isn't setting yet.
-
-**Ollama too slow:** try a smaller model (phi3), close other apps, ensure enough RAM.
-
-## What's included
-
-- `td_snap_ai_assistant.py` — main app (Tkinter UI + Ollama)
-- `td_snap_pageset.py` — page set editor (SQLite, no external deps); also a CLI
-  (`python td_snap_pageset.py list|add …`)
-- `inspect_pageset.py` — format inspector / differ for verification
-- `test_td_snap_pageset.py` — unit tests (`python -m pytest`)
-- `launch.bat` / `launch.sh` — launchers
-- `requirements.txt`, `README.md`, `OLLAMA_INTEGRATION.md`
-
-## Privacy
-
-- **100% local** AI processing; no data leaves your computer.
-- The tool edits a **copy** of your export and never touches the original file.
-- Keep backups of your TD Snap page sets before importing edited files.
-
-## Support
-
-**Ollama:** [github.com/ollama/ollama](https://github.com/ollama/ollama)
-**TD Snap:** Tobii Dynavox support
-
----
-
-**Made for the AAC community to make vocabulary building faster, easier, and more private.**
+Layout: `tdsnap/` (schema introspection, template cloning, page builder,
+validation, CLI), `tdsnap/web/` (Flask backend + single-page frontend),
+`tests/` (unit tests run against `tests/fixtures/schema_snapshot.sql`, a
+schema-only snapshot of a real export; integration tests run against the real
+downloaded file). The real page set is proprietary Tobii content and must
+never be committed — `.gitignore` enforces this.

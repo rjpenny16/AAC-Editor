@@ -1,6 +1,5 @@
-# Runtime dependencies.
-# The app edits the TD Snap page set file directly (SQLite, via the Python
-# standard library), so no GUI-automation packages are required.
+# Runtime dependencies for the web app.
+flask>=3.0
 requests>=2.32.0
 
 # Development / testing only:
