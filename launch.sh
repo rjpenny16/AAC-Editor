@@ -1,9 +1,8 @@
 #!/bin/bash
 
-echo "Starting TD Snap AI Assistant..."
+echo "Starting TD Snap Page Builder..."
 echo ""
 
-# Check if Python is installed
 if ! command -v python3 &> /dev/null; then
     echo "ERROR: Python 3 is not installed"
     echo "Please install Python from https://www.python.org/downloads/"
@@ -12,13 +11,9 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Check if required packages are installed
-echo "Checking dependencies..."
-python3 -c "import requests" 2>/dev/null
-if [ $? -ne 0 ]; then
+if ! python3 -c "import flask, requests" 2>/dev/null; then
     echo "Installing required packages..."
-    pip3 install -r requirements.txt
-    if [ $? -ne 0 ]; then
+    if ! python3 -m pip install -r requirements.txt; then
         echo "ERROR: Failed to install dependencies"
         echo ""
         read -p "Press Enter to exit..."
@@ -27,8 +22,8 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
-echo "Starting application..."
-python3 td_snap_ai_assistant.py
+echo "Opening the app in your browser..."
+python3 -m tdsnap.web
 
 if [ $? -ne 0 ]; then
     echo ""

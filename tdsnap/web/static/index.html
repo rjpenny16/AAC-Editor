@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>TD Snap Page Builder</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='6' height='6' rx='1.5' fill='%23177065'/%3E%3Crect x='9' y='1' width='6' height='6' rx='1.5' fill='%23177065' opacity='.55'/%3E%3Crect x='1' y='9' width='6' height='6' rx='1.5' fill='%23177065' opacity='.55'/%3E%3Crect x='9' y='9' width='6' height='6' rx='1.5' fill='%23177065' opacity='.3'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="wordmark" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor"/>
+        <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".55"/>
+        <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".55"/>
+        <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".3"/>
+      </svg>
+    </span>
+    <h1>TD Snap Page Builder</h1>
+    <span id="file-badge" class="file-badge" hidden></span>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- Step 1 · Load -->
+  <section id="step-load" class="panel" aria-labelledby="load-heading">
+    <div class="panel-head">
+      <h2 id="load-heading">Open your page set</h2>
+      <p class="panel-sub">Your original file is never modified. All edits happen in a
+      working copy that you download at the end.</p>
+    </div>
+
+    <div id="dropzone" class="dropzone" tabindex="0" role="button"
+         aria-label="Choose or drop a TD Snap page set file">
+      <svg class="dropzone-icon" width="28" height="28" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+      </svg>
+      <p class="dropzone-title">Drop your <strong>.sps</strong> or <strong>.spb</strong> export here</p>
+      <p class="dropzone-hint">or <span class="linklike">browse for the file</span></p>
+      <input type="file" id="file-input" accept=".sps,.spb" hidden>
+    </div>
+    <p id="upload-status" class="status-line" role="status" aria-live="polite"></p>
+
+    <details class="help">
+      <summary>How do I export a page set from TD Snap?</summary>
+      <ol>
+        <li>In TD Snap, open <strong>Edit&nbsp;mode → Page&nbsp;Set → Import/Export</strong>.</li>
+        <li>Choose <strong>Export to file</strong> and save the <code>.sps</code>/<code>.spb</code> file.</li>
+        <li>Open that file here. When you're done, import the edited copy into a
+            <em>test</em> TD Snap user first.</li>
+      </ol>
+    </details>
+  </section>
+
+  <!-- Step 2 · Build -->
+  <section id="step-build" class="panel" aria-labelledby="build-heading" hidden>
+    <div class="panel-head">
+      <h2 id="build-heading">Build a new page</h2>
+      <p class="panel-sub" id="build-sub"></p>
+    </div>
+
+    <form id="build-form" novalidate>
+      <div class="field">
+        <label for="title-input">Page title</label>
+        <input id="title-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Snacks" required maxlength="60">
+        <p class="field-hint">Also becomes the label of the link button on the page you pick below.</p>
+      </div>
+
+      <div class="field">
+        <div class="label-row">
+          <label for="word-input">Words</label>
+          <span id="capacity" class="capacity" aria-live="polite"></span>
+        </div>
+        <div id="chipbox" class="chipbox">
+          <input id="word-input" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="Type a word, press Enter — or paste a comma-separated list"
+                 aria-label="Add a word, press Enter to confirm">
+        </div>
+
+        <details class="ai-suggest" id="ai-suggest">
+          <summary>Suggest words with AI <span class="ai-tag">optional · local Ollama</span></summary>
+          <div class="ai-body">
+            <p class="field-hint">Uses an Ollama model running on this computer; nothing
+            is sent to the internet. <span id="ollama-state"></span></p>
+            <div class="ai-controls">
+              <input id="ai-count" type="number" min="1" max="40" value="10"
+                     aria-label="How many words to suggest">
+              <button type="button" id="ai-go" class="btn btn-secondary">Suggest words</button>
+            </div>
+            <div class="ai-settings">
+              <label>Server <input id="ai-host" type="text" value="http://localhost:11434"></label>
+              <label>Model <input id="ai-model" type="text" value="llama3.2"></label>
+            </div>
+            <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
+          </div>
+        </details>
+      </div>
+
+      <div class="field">
+        <label for="parent-select">Put the link button on…</label>
+        <div class="parent-picker">
+          <input id="parent-filter" type="search" placeholder="Filter pages"
+                 aria-label="Filter the page list">
+          <select id="parent-select" size="6" aria-describedby="parent-note"></select>
+        </div>
+        <p class="field-hint" id="parent-note">Pick the existing page that should get a
+        button opening your new page. <span id="parent-capacity"></span></p>
+      </div>
+
+      <div class="field">
+        <span class="label-row"><span class="label-text">Preview</span></span>
+        <div id="preview" class="preview" aria-label="Preview of the new page's button grid"></div>
+      </div>
+
+      <div id="build-error" class="alert" role="alert" hidden></div>
+
+      <div class="actions">
+        <button type="submit" id="build-btn" class="btn btn-primary">
+          <span class="btn-label">Add page to working copy</span>
+        </button>
+        <button type="button" id="reset-btn" class="btn btn-ghost">Start over with a different file</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Step 3 · Result -->
+  <section id="step-result" class="panel" aria-labelledby="result-heading" hidden>
+    <div class="panel-head">
+      <h2 id="result-heading">Page added <span id="edit-count" class="edit-count"></span></h2>
+      <p class="panel-sub" id="result-sub"></p>
+    </div>
+
+    <ul id="checks" class="checks" aria-label="Validation results"></ul>
+
+    <div class="actions">
+      <a id="download-btn" class="btn btn-primary" href="#" download>
+        <span class="btn-label">Download edited page set</span>
+      </a>
+      <button type="button" id="another-btn" class="btn btn-secondary">Add another page</button>
+    </div>
+
+    <div class="safety">
+      <h3>Before you import — protect your real setup</h3>
+      <ol>
+        <li><strong>Keep your original export.</strong> The downloaded file is a separate
+            <code>.edited</code> copy.</li>
+        <li><strong>Import into a test user first.</strong> In TD Snap, create a throwaway
+            user and import there. If anything is wrong, your real setup is untouched.</li>
+        <li><strong>Exercise the page:</strong> open the parent page, tap the new link
+            button, tap a few words, restart TD Snap, open it again.</li>
+        <li>Only after that, import into your real user.</li>
+      </ol>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <p>Runs entirely on this computer · nothing is uploaded to the internet</p>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

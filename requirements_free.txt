@@ -1,8 +1,0 @@
-pyautogui==0.9.54
-pillow==10.3.0
-requests==2.31.0
-keyboard==0.13.5
-pygetwindow==0.0.9
-pytesseract==0.3.10
-opencv-python==4.9.0.80
-cryptography==42.0.5
