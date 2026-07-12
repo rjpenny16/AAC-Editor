@@ -1,23 +1,22 @@
 # TD Snap Page Builder
 
 Add vocabulary pages to a [TD Snap](https://us.tobiidynavox.com/pages/td-snap)
-page set without clicking through Edit mode button by button. Export your page
-set from TD Snap, build pages here (with optional on-device AI suggestions),
-and re-import the edited copy.
+page set without clicking through Edit mode button by button. On Windows, the
+app can edit the page set already open in TD Snap through accessibility
+controls, so existing sharing and sync remain attached. Export/edit/import is
+still available as a fallback.
 
-Free and open source (MIT). Runs entirely on your computer: your original
-file is never modified, and nothing you edit is uploaded to the internet.
-Not affiliated with or endorsed by Tobii Dynavox.
+Free and open source (MIT). Runs entirely on your computer: direct mode edits
+the open TD Snap page set, while exported-file mode keeps its source file
+untouched. Nothing is uploaded to the internet. Not affiliated with or
+endorsed by Tobii Dynavox.
 
 ## Download
 
 **Windows app (no Python needed):** grab `TDSnapPageBuilder-windows.zip` from
 the [latest release](https://github.com/rjpenny16/AAC-Editor/releases/latest),
 unzip it anywhere, and double-click `TD Snap Page Builder.exe`. The app opens
-in its own window: opening a page set and saving the edited copy use the
-normal Windows file dialogs, closing the window quits the app, and
-double-clicking the .exe again brings the existing window to the front
-instead of starting a second copy.
+in your browser.
 
 The packaged app includes a built-in AI engine for word/phrase suggestions.
 The first time you use it, the app offers a one-time download of a free,
@@ -52,9 +51,10 @@ export:
   edit shouldn't touch is byte-for-byte identical. If any check fails, nothing
   is saved.
 
-One honest caveat: TD Snap's `SyncHash` algorithm is proprietary. Edited files
-open and work locally; if you use myTobiiDynavox *page-set sync*, see
-[docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
+One honest caveat for exported-file edits: TD Snap's `SyncHash` algorithm is
+proprietary. Edited files open and work locally; if you use myTobiiDynavox
+*page-set sync*, see [docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md). Direct
+mode uses TD Snap's own editor and does not have this limitation.
 
 ## Quick start
 
@@ -64,12 +64,16 @@ to PATH"** when installing on Windows).
 **Windows:** double-click `launch.bat`
 **Mac/Linux:** `./launch.sh`
 
-The launcher installs two small dependencies (Flask, Requests) and opens the
-app in your browser at `http://127.0.0.1:8765` (when you're done, the *Quit
-the app* link in the footer stops it; launching again while it's running
-reuses the open copy instead of failing). Prefer a real window over a
-browser tab? `pip install .[desktop]` and run `python -m tdsnap.web
---window`. Then:
+The launcher opens the app in your browser at `http://127.0.0.1:8765`. Then use
+either workflow:
+
+**Direct TD Snap editing (Windows):** open TD Snap and unlock Windows, select
+**Connect to TD Snap**, build the page, and select **Add directly to TD Snap**.
+The local runner finds the next free cell on **Topics Menu Page**, creates the
+linked page, fills its speaking buttons, and verifies the link. Sync normally
+inside TD Snap when you are ready.
+
+**Exported-file fallback:**
 
 1. **Export** your page set from TD Snap
    (*Edit mode → Page Set → Import/Export → Export to file*).
@@ -87,9 +91,8 @@ browser tab? `pip install .[desktop]` and run `python -m tdsnap.web
      red = negative, purple = personal). Click any button chip to change its
      color or give it a full spoken phrase while the label stays short
      (label "Lunch?", speaks "What are we having for lunch?").
-4. **Download** the `.edited` copy (the windowed app **saves** it wherever
-   you choose) and import it into TD Snap — **into a test user first**:
-   read [docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
+4. **Download** the `.edited` copy and import it into TD Snap — **into a test
+   user first**: read [docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
 
 ### Optional: AI word suggestions
 
@@ -118,6 +121,9 @@ python -m tdsnap add  "My Page Set.sps" \
     --parent-name "My Things"                        # quick-fire phrase buttons
 python -m tdsnap verify  "My Page Set.edited.sps"    # safety checks, any file
 python -m tdsnap inspect "My Page Set.sps"           # schema version, tables
+python -m tdsnap.live status                          # inspect open TD Snap
+python -m tdsnap.live add --yes --title Snacks \
+    --item Chips --item Apple                         # edit open TD Snap
 ```
 
 ## Development

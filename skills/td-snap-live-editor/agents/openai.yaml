@@ -1,0 +1,4 @@
+interface:
+  display_name: "Edit TD Snap Live"
+  short_description: "Add AI-built pages directly to open TD Snap"
+  default_prompt: "Use $td-snap-live-editor to add this word list directly to the open TD Snap Topics page."

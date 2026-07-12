@@ -12,6 +12,7 @@ requires-python = ">=3.9"
 dependencies = [
     "flask>=3.0",
     "requests>=2.32.0",
+    "uiautomation>=2.0.29; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

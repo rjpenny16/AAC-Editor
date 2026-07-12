@@ -291,6 +291,20 @@ body {
 .linklike { color: var(--accent-ink); font-weight: 500; }
 .dropzone:hover .linklike { text-decoration: underline; text-underline-offset: 2px; }
 
+.live-connect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 0.5px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.live-connect div { display: grid; gap: 0.15rem; }
+.live-connect span { color: var(--ink-soft); font-size: 0.875rem; }
+
 .status-line {
   min-height: 1.3rem;
   margin: 0.7rem 0 0;
@@ -938,6 +952,7 @@ input:disabled { background: var(--surface-2); color: var(--ink-soft); }
   .panel { padding: 1.35rem 1.15rem; border-radius: var(--radius-lg); }
   .panel h2 { font-size: 1.5rem; }
   .actions { flex-direction: column; align-items: stretch; }
+  .live-connect { align-items: stretch; flex-direction: column; }
   .preview .cell { font-size: 0.5625rem; }
   .file-badge { display: none; }
 }

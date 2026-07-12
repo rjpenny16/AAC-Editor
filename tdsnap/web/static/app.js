@@ -17,6 +17,7 @@ const FUNCTIONS = {
 };
 
 const state = {
+  mode: "file", // "file" | "live"
   sessionId: null,
   filename: "",
   grid: { cols: 8, rows: 5 },
@@ -27,21 +28,11 @@ const state = {
   parentId: null,
   parentFree: null,
   edits: 0,
-  native: false, // running inside the app's own window (pywebview)?
-  apiToken: "",
 };
 
 /* ---------- helpers ---------- */
 
 async function api(path, options) {
-  options = options || {};
-  // Every POST carries the per-run token; it forces a CORS preflight, so
-  // pages from other origins can't drive this local server.
-  options.headers = Object.assign(
-    {},
-    options.headers,
-    state.apiToken ? { "X-TDSnap-Token": state.apiToken } : {}
-  );
   const response = await fetch(path, options);
   let data = null;
   try {
@@ -77,18 +68,11 @@ function setBusy(button, busy) {
 const dropzone = $("dropzone");
 const fileInput = $("file-input");
 
-function browse() {
-  // In the native window, use the OS open dialog on the file in place;
-  // in a browser there's no path access, so fall back to the upload flow.
-  if (state.native && window.pywebview) openNative();
-  else fileInput.click();
-}
-
-dropzone.addEventListener("click", browse);
+dropzone.addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    browse();
+    fileInput.click();
   }
 });
 ["dragover", "dragenter"].forEach((name) =>
@@ -109,29 +93,6 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files[0]) uploadFile(fileInput.files[0]);
 });
 
-function applyLoadedPageset(data) {
-  state.sessionId = data.session_id;
-  state.filename = data.filename;
-  state.grid = data.grid;
-  state.pages = data.pages;
-  state.words = [];
-  state.parentId = null;
-  state.parentFree = null;
-  state.edits = 0;
-
-  $("file-badge").textContent = data.filename;
-  $("file-badge").hidden = false;
-  $("build-sub").textContent =
-    `${data.filename} · schema ${data.schema_version || "?"} · ` +
-    `${data.grid.cols}×${data.grid.rows} grid · ${data.pages.length} pages`;
-  $("upload-status").textContent = "";
-  renderParents("");
-  renderWords();
-  show("build");
-  $("title-input").focus();
-  checkAi();
-}
-
 async function uploadFile(file) {
   const status = $("upload-status");
   status.classList.remove("error");
@@ -141,7 +102,29 @@ async function uploadFile(file) {
     const form = new FormData();
     form.append("file", file, file.name);
     const data = await api("/api/pageset", { method: "POST", body: form });
-    applyLoadedPageset(data);
+
+    state.mode = "file";
+    state.sessionId = data.session_id;
+    state.filename = data.filename;
+    state.grid = data.grid;
+    state.pages = data.pages;
+    state.words = [];
+    state.parentId = null;
+    state.parentFree = null;
+    state.edits = 0;
+
+    $("file-badge").textContent = data.filename;
+    $("file-badge").hidden = false;
+    $("build-btn-label").textContent = "Add page to working copy";
+    $("build-sub").textContent =
+      `${data.filename} · schema ${data.schema_version || "?"} · ` +
+      `${data.grid.cols}×${data.grid.rows} grid · ${data.pages.length} pages`;
+    status.textContent = "";
+    renderParents("");
+    renderWords();
+    show("build");
+    $("title-input").focus();
+    checkAi();
   } catch (error) {
     status.classList.add("error");
     status.textContent = error.message;
@@ -151,22 +134,48 @@ async function uploadFile(file) {
   }
 }
 
-async function openNative() {
-  const status = $("upload-status");
+$("live-connect-btn").addEventListener("click", async () => {
+  const button = $("live-connect-btn");
+  const status = $("live-status");
   status.classList.remove("error");
-  dropzone.classList.add("busy");
+  status.textContent = "Checking TD Snap...";
+  setBusy(button, true);
   try {
-    const data = await window.pywebview.api.open_pageset();
-    if (data.cancelled) return;
-    if (!data.ok) throw new Error(data.error || "Could not open the file.");
-    applyLoadedPageset(data);
+    const data = await api("/api/tdsnap/status");
+    if (!data.available) throw new Error("Direct editing is available on Windows only.");
+    if (!data.running) throw new Error(data.error || "Open TD Snap, then try again.");
+    if (!data.unlocked) throw new Error("Unlock Windows, then try again.");
+
+    state.mode = "live";
+    state.sessionId = null;
+    state.filename = "Open TD Snap";
+    state.grid = data.grid;
+    state.pages = [{ id: 0, title: "Topics Menu Page" }];
+    state.words = [];
+    state.parentId = 0;
+    state.parentFree = 1;
+    state.edits = 0;
+
+    $("file-badge").textContent = "Live TD Snap";
+    $("file-badge").hidden = false;
+    $("build-sub").textContent =
+      `Editing the open TD Snap page set directly - ${data.grid.cols}x${data.grid.rows} grid`;
+    $("build-btn-label").textContent = "Add directly to TD Snap";
+    status.textContent = "";
+    renderParents("");
+    $("parent-capacity").textContent =
+      "The agent will find the next free cell on the Topics Menu Page.";
+    renderWords();
+    show("build");
+    $("title-input").focus();
+    checkAi();
   } catch (error) {
     status.classList.add("error");
     status.textContent = error.message;
   } finally {
-    dropzone.classList.remove("busy");
+    setBusy(button, false);
   }
-}
+});
 
 /* ---------- step 2: page style + function palette ---------- */
 
@@ -372,6 +381,12 @@ parentFilter.addEventListener("input", () => renderParents(parentFilter.value));
 
 parentSelect.addEventListener("change", async () => {
   state.parentId = Number(parentSelect.value);
+  if (state.mode === "live") {
+    state.parentFree = 1;
+    $("parent-capacity").textContent =
+      "The agent will find the next free cell on the Topics Menu Page.";
+    return;
+  }
   state.parentFree = null;
   const note = $("parent-capacity");
   note.textContent = "…";
@@ -624,20 +639,28 @@ $("build-form").addEventListener("submit", async (event) => {
   const button = $("build-btn");
   setBusy(button, true);
   try {
-    const data = await api(`/api/pageset/${state.sessionId}/page`, {
+    const path = state.mode === "live"
+      ? "/api/tdsnap/page"
+      : `/api/pageset/${state.sessionId}/page`;
+    const payload = {
+      title,
+      items: state.words.map((item) => ({
+        label: item.label,
+        message: item.message,
+        border_color: item.fn ? FUNCTIONS[item.fn].color : null,
+      })),
+    };
+    if (state.mode === "live") payload.parent = titleOf(state.parentId);
+    else payload.parent_page_id = state.parentId;
+    const data = await api(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        items: state.words.map((item) => ({
-          label: item.label,
-          message: item.message,
-          border_color: item.fn ? FUNCTIONS[item.fn].color : null,
-        })),
-        parent_page_id: state.parentId,
-      }),
+      headers: {
+        "Content-Type": "application/json",
+        ...(state.mode === "live" ? { "X-TDSnap-Editor": "1" } : {}),
+      },
+      body: JSON.stringify(payload),
     });
-    state.edits = data.edits;
+    state.edits = data.edits || state.edits + 1;
     renderResult(title, data);
     show("result");
   } catch (error) {
@@ -671,6 +694,9 @@ const CHECK_LABELS = {
   sqlite_integrity: "Database integrity and foreign keys",
   linkage_chains: "Every button, layout, link and sync record is complete",
   roundtrip_diff: "Everything else in your page set is untouched, byte for byte",
+  td_snap_edit: "TD Snap saved the page in the open page set",
+  navigation: "The Topics button opens the new page",
+  content: "Every requested speaking button is present",
 };
 
 const CHECK_SVG =
@@ -679,11 +705,17 @@ const CHECK_SVG =
   '<path d="M20 6 9 17l-5-5"/></svg>';
 
 function renderResult(title, data) {
+  $("result-heading").childNodes[0].textContent =
+    state.mode === "live" ? "TD Snap updated " : "Page added ";
   $("edit-count").textContent =
     state.edits > 1 ? `· ${state.edits} pages added this session` : "";
   $("result-sub").textContent =
     `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, ` +
     `and “${titleOf(state.parentId)}” now links to it.`;
+
+  if (data.warnings && data.warnings.length) {
+    $("result-sub").textContent += ` ${data.warnings.join(" ")}`;
+  }
 
   const checks = $("checks");
   checks.innerHTML = "";
@@ -699,43 +731,27 @@ function renderResult(title, data) {
     checks.append(item);
   });
 
-  $("download-btn").href = `/api/pageset/${state.sessionId}/download`;
-  $("download-btn").hidden = state.native;
-  $("save-btn").hidden = !state.native;
-  $("save-status").textContent = "";
-}
-
-$("save-btn").addEventListener("click", async () => {
-  // Native window: OS save dialog, written straight to disk — no Downloads
-  // folder detour.
-  const button = $("save-btn");
-  const status = $("save-status");
-  status.classList.remove("error");
-  setBusy(button, true);
-  try {
-    const data = await window.pywebview.api.save_pageset(state.sessionId);
-    if (data.cancelled) return;
-    if (!data.ok) throw new Error(data.error || "Could not save the file.");
-    status.textContent = `Saved to ${data.path}`;
-  } catch (error) {
-    status.classList.add("error");
-    status.textContent = error.message;
-  } finally {
-    setBusy(button, false);
+  $("download-btn").hidden = state.mode === "live";
+  $("live-result-note").hidden = state.mode !== "live";
+  $("file-result-safety").hidden = state.mode === "live";
+  if (state.mode === "file") {
+    $("download-btn").href = `/api/pageset/${state.sessionId}/download`;
   }
-});
+}
 
 $("another-btn").addEventListener("click", async () => {
   // Refresh the page list so the just-added page can be a parent too.
-  try {
-    const data = await api(`/api/pageset/${state.sessionId}/pages`);
-    state.pages = data.pages;
-  } catch {
-    /* keep the stale list; building will still validate server-side */
+  if (state.mode === "file") {
+    try {
+      const data = await api(`/api/pageset/${state.sessionId}/pages`);
+      state.pages = data.pages;
+    } catch {
+      /* keep the stale list; building will still validate server-side */
+    }
   }
   state.words = [];
-  state.parentId = null;
-  state.parentFree = null;
+  state.parentId = state.mode === "live" ? 0 : null;
+  state.parentFree = state.mode === "live" ? 1 : null;
   $("title-input").value = "";
   $("parent-capacity").textContent = "";
   parentFilter.value = "";
@@ -747,6 +763,7 @@ $("another-btn").addEventListener("click", async () => {
 });
 
 $("reset-btn").addEventListener("click", () => {
+  state.mode = "file";
   state.sessionId = null;
   state.words = [];
   state.parentId = null;
@@ -757,39 +774,7 @@ $("reset-btn").addEventListener("click", () => {
   show("load");
 });
 
-/* ---------- quit (browser mode) ---------- */
-
-$("quit-btn").addEventListener("click", async () => {
-  const opened = state.sessionId !== null;
-  const warning = opened
-    ? "Quit TD Snap Page Builder? Anything you haven't downloaded will be discarded."
-    : "Quit TD Snap Page Builder?";
-  if (!window.confirm(warning)) return;
-  try {
-    await api("/api/quit", { method: "POST" });
-  } catch {
-    /* the server may stop before the response arrives */
-  }
-  document.querySelector("main").hidden = true;
-  document.querySelector("footer").hidden = true;
-  $("quit-screen").hidden = false;
-});
-
 /* ---------- init ---------- */
 
-async function init() {
-  try {
-    const config = await api("/api/config");
-    state.apiToken = config.token;
-    state.native = Boolean(config.native);
-  } catch {
-    /* older server without /api/config; POSTs will fail loudly if so */
-  }
-  // In the native window the OS window close button quits the app;
-  // in browser mode the Quit button is the only clean way to stop it.
-  $("quit-btn").hidden = state.native;
-}
-
-init();
 renderWords();
 renderPreview();

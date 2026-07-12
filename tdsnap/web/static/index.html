@@ -34,8 +34,8 @@
     <div class="panel-head">
       <p class="step-eyebrow" aria-hidden="true">Step 1</p>
       <h2 id="load-heading">Open your page set</h2>
-      <p class="panel-sub">Your original file is never modified. All edits happen in a
-      working copy that you download at the end.</p>
+      <p class="panel-sub">Edit the page set that is already open in TD Snap, or use
+      an exported file and download a separate working copy.</p>
     </div>
 
     <div id="dropzone" class="dropzone" tabindex="0" role="button"
@@ -49,6 +49,17 @@
       <input type="file" id="file-input" accept=".sps,.spb" hidden>
     </div>
     <p id="upload-status" class="status-line" role="status" aria-live="polite"></p>
+
+    <div class="live-connect">
+      <div>
+        <strong>Edit the open TD Snap page set</strong>
+        <span>No export, import, subscription, or model download.</span>
+      </div>
+      <button type="button" id="live-connect-btn" class="btn btn-secondary">
+        Connect to TD Snap
+      </button>
+    </div>
+    <p id="live-status" class="status-line" role="status" aria-live="polite"></p>
 
     <details class="help">
       <summary>How do I export a page set from TD Snap?</summary>
@@ -172,7 +183,7 @@
 
       <div class="actions">
         <button type="submit" id="build-btn" class="btn btn-primary">
-          <span class="btn-label">Add page to working copy</span>
+          <span id="build-btn-label" class="btn-label">Add page to working copy</span>
         </button>
         <button type="button" id="reset-btn" class="btn btn-ghost">Start over with a different file</button>
       </div>
@@ -200,7 +211,12 @@
     </div>
     <p id="save-status" class="status-line" role="status" aria-live="polite"></p>
 
-    <div class="safety">
+    <p id="live-result-note" class="safety" hidden>
+      The original page set in TD Snap was edited and verified. Use TD Snap's normal
+      Sync button whenever you are ready to share the change.
+    </p>
+
+    <div id="file-result-safety" class="safety">
       <h3>Before you import — protect your real setup</h3>
       <ol>
         <li><strong>Keep your original export.</strong> The downloaded file is a separate
