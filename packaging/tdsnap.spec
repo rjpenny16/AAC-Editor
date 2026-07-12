@@ -52,7 +52,7 @@ exe = EXE(
     exclude_binaries=True,
     name="TD Snap Page Builder",
     console=False,
-    icon=None,
+    icon=os.path.join(here, "icon.ico"),
 )
 
 coll = COLLECT(

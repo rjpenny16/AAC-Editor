@@ -65,7 +65,9 @@ def _cmd_add(args) -> int:
                 "border_color": args.border_color,
             }
         )
-    with Pageset(args.pageset) as ps:
+    # cleanup=True: don't leave a stray .editing scratch file next to the
+    # user's export once the .edited result is written.
+    with Pageset(args.pageset, cleanup=True) as ps:
         if args.parent_id is not None:
             parent_id: Optional[int] = args.parent_id
         elif args.parent_name is not None:
