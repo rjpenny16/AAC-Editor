@@ -124,6 +124,7 @@
                  placeholder="Type a word, press Enter — or paste a comma-separated list"
                  aria-label="Add a word, press Enter to confirm">
         </div>
+        <p id="chip-note" class="status-line" role="status" aria-live="polite"></p>
 
         <details class="ai-suggest" id="ai-suggest">
           <summary><span id="ai-summary-text">Suggest words with AI</span> <span class="ai-tag">optional · runs on this computer</span></summary>
@@ -140,7 +141,8 @@
                 <span class="btn-label">Download AI model</span>
               </button>
               <div class="progress" id="ai-progress" hidden
-                   role="progressbar" aria-label="Model download progress">
+                   role="progressbar" aria-label="Model download progress"
+                   aria-valuemin="0" aria-valuemax="100">
                 <div class="progress-fill" id="ai-progress-fill"></div>
               </div>
               <p id="ai-download-status" class="status-line" role="status" aria-live="polite"></p>
@@ -204,8 +206,12 @@
       <a id="download-btn" class="btn btn-primary" href="#" download>
         <span class="btn-label">Download edited page set</span>
       </a>
+      <button type="button" id="save-btn" class="btn btn-primary" hidden>
+        <span class="btn-label">Save edited page set…</span>
+      </button>
       <button type="button" id="another-btn" class="btn btn-secondary">Add another page</button>
     </div>
+    <p id="save-status" class="status-line" role="status" aria-live="polite"></p>
 
     <p id="live-result-note" class="safety" hidden>
       The original page set in TD Snap was edited and verified. Use TD Snap's normal
@@ -266,7 +272,14 @@
 
 <footer class="foot">
   <p>Runs entirely on this computer · nothing is uploaded to the internet</p>
+  <button type="button" id="quit-btn" class="quit-btn" hidden>Quit the app</button>
 </footer>
+
+<section id="quit-screen" class="panel quit-screen" aria-live="polite" hidden>
+  <h2>The app has stopped</h2>
+  <p>TD Snap Page Builder is no longer running on this computer.
+  You can close this tab.</p>
+</section>
 
 <script src="/static/app.js"></script>
 </body>

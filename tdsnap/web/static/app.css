@@ -3,6 +3,10 @@
    system-blue pill buttons, iOS segmented controls, frosted-glass chrome,
    and full light/dark support. */
 
+/* The hidden attribute must beat display-setting classes (.btn etc.),
+   or JS-toggled elements stay visible. */
+[hidden] { display: none !important; }
+
 :root {
   color-scheme: light dark;
 
@@ -182,6 +186,24 @@ body {
   background: transparent;
 }
 .foot p { margin: 0; }
+
+.quit-btn {
+  margin-top: 0.5rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.quit-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.quit-screen {
+  max-width: 32rem;
+  margin: 4rem auto;
+  text-align: center;
+}
+.quit-screen p { color: var(--ink-soft); }
 
 /* ---------- panels: floating cards ---------- */
 

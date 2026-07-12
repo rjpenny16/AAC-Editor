@@ -38,7 +38,15 @@ def default_output_path(source: str) -> str:
 class Pageset:
     """An editable working copy of a TD Snap page set."""
 
-    def __init__(self, path: str, working_copy: Optional[str] = None):
+    def __init__(
+        self, path: str, working_copy: Optional[str] = None, cleanup: bool = False
+    ):
+        """Copy *path* to *working_copy* and open that copy for editing.
+
+        ``cleanup=True`` removes the working copy on :meth:`close`, so a
+        scratch file doesn't linger next to the user's page set after
+        ``save_as`` has written the result.
+        """
         if not is_sqlite_file(path):
             raise PagesetError(
                 f"{os.path.basename(path)!r} is not a SQLite database. TD Snap "
@@ -53,6 +61,7 @@ class Pageset:
         shutil.copyfile(path, working_copy)
         self.source_path = path
         self.working_path = working_copy
+        self._cleanup = cleanup
         self.conn = sqlite3.connect(working_copy)
         self.conn.row_factory = sqlite3.Row
         try:
@@ -72,6 +81,11 @@ class Pageset:
 
     def close(self) -> None:
         self.conn.close()
+        if self._cleanup:
+            try:
+                os.remove(self.working_path)
+            except OSError:
+                pass
 
     # -- reading ----------------------------------------------------------
 

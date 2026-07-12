@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ai = ["llama-cpp-python>=0.3"]
+desktop = ["pywebview>=5.0"]
 dev = ["pytest"]
 
 [project.scripts]

@@ -12,6 +12,7 @@ Override with the TDSNAP_MODEL_URL / TDSNAP_MODEL_FILE environment variables
 """
 
 import os
+import shutil
 import threading
 import urllib.request
 from typing import List, Optional, Tuple
@@ -70,10 +71,31 @@ def download_state() -> dict:
         return dict(_download)
 
 
+# The Q4_K_M file is ~1 GB; require headroom so the download can't fill the
+# disk and fail (or break the user's machine) at 99%.
+REQUIRED_FREE_BYTES = 2 * 1024**3
+
+
+def _free_disk_bytes() -> int:
+    try:
+        return shutil.disk_usage(_models_dir()).free
+    except OSError:
+        return REQUIRED_FREE_BYTES  # can't tell; let the download try
+
+
 def start_download() -> dict:
     """Kick off the one-time model download in a background thread."""
     with _download_lock:
         if _download["status"] == "downloading" or is_downloaded():
+            return dict(_download)
+        free = _free_disk_bytes()
+        if free < REQUIRED_FREE_BYTES:
+            _download.update(
+                status="error", done=0, total=0,
+                error=f"Not enough free disk space: the model needs about "
+                      f"2 GB free, but only {free / 1e9:.1f} GB is available. "
+                      "Free some space and try again.",
+            )
             return dict(_download)
         _download.update(status="downloading", done=0, total=0, error=None)
 
