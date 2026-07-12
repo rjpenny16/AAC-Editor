@@ -35,6 +35,30 @@ Provide exactly {count} items in a JSON object with an "items" array.
 Example format:
 {{"items": ["item1", "item2", "item3"]}}"""
 
+# Quick-fire phrases for topic pages, optionally narrowed to one
+# communicative function (the color-coding convention on topic pages).
+_PHRASE_PROMPT = """Generate exactly {count} ready-to-speak phrases about the topic "{category}"
+for an AAC (Augmentative and Alternative Communication) user's topic page.
+{function_line}
+Requirements:
+- Complete, natural sentences someone would actually say in conversation
+- Short enough to fit on a communication button (4-10 words)
+- First person, everyday language, no quotation marks
+- Varied — no two phrases should say the same thing
+
+Provide exactly {count} phrases in a JSON object with an "items" array.
+
+Example format:
+{{"items": ["phrase one", "phrase two"]}}"""
+
+_FUNCTION_LINES = {
+    "question": "Every phrase must be a QUESTION the user would ask about the topic.\n",
+    "comment": "Every phrase must be a general COMMENT or observation about the topic.\n",
+    "positive": "Every phrase must be a POSITIVE comment (liking, enjoying, praising).\n",
+    "negative": "Every phrase must be a NEGATIVE comment (disliking, complaining, refusing).\n",
+    "personal": "Every phrase must be a PERSONAL statement about the user's own life or preferences.\n",
+}
+
 
 def status(host: str = DEFAULT_HOST) -> Dict:
     """Return ``{reachable, models, message}`` for the Ollama server at *host*."""
@@ -65,15 +89,27 @@ def generate_words(
     count: int = 10,
     host: str = DEFAULT_HOST,
     model: str = DEFAULT_MODEL,
+    kind: str = "words",
+    function: Optional[str] = None,
 ) -> Tuple[List[str], Optional[str]]:
-    """Return ``(words, error)``; on any failure words is [] and error explains."""
+    """Return ``(words, error)``; on any failure words is [] and error explains.
+
+    ``kind='phrases'`` asks for quick-fire sentences instead of single words;
+    ``function`` narrows phrases to one communicative function ('question',
+    'comment', 'positive', 'negative', 'personal').
+    """
     count = max(1, min(int(count), 60))
+    if kind == "phrases":
+        prompt = _PHRASE_PROMPT.format(
+            count=count,
+            category=category,
+            function_line=_FUNCTION_LINES.get(function or "", ""),
+        )
+    else:
+        prompt = _PROMPT.format(count=count, category=category)
     payload = {
         "model": model,
-        "messages": [
-            {"role": "user",
-             "content": _PROMPT.format(count=count, category=category)}
-        ],
+        "messages": [{"role": "user", "content": prompt}],
         "stream": False,
         "format": _WORDS_SCHEMA,
         "options": {"num_predict": 800, "temperature": 0.7},

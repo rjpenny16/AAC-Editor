@@ -74,10 +74,36 @@
       </div>
 
       <div class="field">
+        <span class="label-row"><span class="label-text">Page style</span></span>
+        <div class="segmented" role="radiogroup" aria-label="Page style">
+          <button type="button" id="style-words" class="seg-btn selected"
+                  role="radio" aria-checked="true">Word page</button>
+          <button type="button" id="style-topic" class="seg-btn"
+                  role="radio" aria-checked="false">Topic page</button>
+        </div>
+        <p class="field-hint" id="style-hint">Single words — each button speaks its label.</p>
+      </div>
+
+      <div class="field">
         <div class="label-row">
-          <label for="word-input">Words</label>
+          <label for="word-input">Buttons</label>
           <span id="capacity" class="capacity" aria-live="polite"></span>
         </div>
+
+        <div id="fn-palette" class="fn-palette" hidden>
+          <span class="fn-label">Color-code new buttons as:</span>
+          <div class="fn-row" role="radiogroup" aria-label="Communicative function">
+            <button type="button" class="fn-pill selected" data-fn="" role="radio" aria-checked="true">None</button>
+            <button type="button" class="fn-pill" data-fn="question" style="--fn:#1E88E5" role="radio" aria-checked="false">Question</button>
+            <button type="button" class="fn-pill" data-fn="comment" style="--fn:#F57C00" role="radio" aria-checked="false">Comment</button>
+            <button type="button" class="fn-pill" data-fn="positive" style="--fn:#43A047" role="radio" aria-checked="false">Positive</button>
+            <button type="button" class="fn-pill" data-fn="negative" style="--fn:#E53935" role="radio" aria-checked="false">Negative</button>
+            <button type="button" class="fn-pill" data-fn="personal" style="--fn:#8E24AA" role="radio" aria-checked="false">Personal</button>
+          </div>
+          <p class="field-hint">Buttons get a matching colored border in TD Snap.
+          Click any button below to change its color or give it a full spoken phrase.</p>
+        </div>
+
         <div id="chipbox" class="chipbox">
           <input id="word-input" type="text" autocomplete="off" spellcheck="false"
                  placeholder="Type a word, press Enter — or paste a comma-separated list"
@@ -85,7 +111,7 @@
         </div>
 
         <details class="ai-suggest" id="ai-suggest">
-          <summary>Suggest words with AI <span class="ai-tag">optional · local Ollama</span></summary>
+          <summary><span id="ai-summary-text">Suggest words with AI</span> <span class="ai-tag">optional · local Ollama</span></summary>
           <div class="ai-body">
             <p class="field-hint">Uses an Ollama model running on this computer; nothing
             is sent to the internet. <span id="ollama-state"></span></p>
@@ -161,6 +187,42 @@
   </section>
 
 </main>
+
+<dialog id="chip-editor" class="chip-dialog" aria-labelledby="chip-editor-title">
+  <form method="dialog" id="chip-editor-form">
+    <h3 id="chip-editor-title">Edit button</h3>
+    <div class="field">
+      <label for="edit-label">Button label</label>
+      <input id="edit-label" type="text" autocomplete="off" maxlength="60">
+      <p class="field-hint">What's shown on the button.</p>
+    </div>
+    <div class="field">
+      <label for="edit-message">Spoken phrase <span class="optional-tag">optional</span></label>
+      <input id="edit-message" type="text" autocomplete="off" maxlength="200"
+             placeholder="Leave empty to speak the label">
+      <p class="field-hint">Say a full sentence while the button stays short —
+      e.g. label “Lunch?”, phrase “What are we having for lunch?”.</p>
+    </div>
+    <div class="field">
+      <span class="label-row"><span class="label-text">Color code</span></span>
+      <div class="fn-row" id="edit-fn-row" role="radiogroup" aria-label="Communicative function">
+        <button type="button" class="fn-pill" data-fn="" role="radio">None</button>
+        <button type="button" class="fn-pill" data-fn="question" style="--fn:#1E88E5" role="radio">Question</button>
+        <button type="button" class="fn-pill" data-fn="comment" style="--fn:#F57C00" role="radio">Comment</button>
+        <button type="button" class="fn-pill" data-fn="positive" style="--fn:#43A047" role="radio">Positive</button>
+        <button type="button" class="fn-pill" data-fn="negative" style="--fn:#E53935" role="radio">Negative</button>
+        <button type="button" class="fn-pill" data-fn="personal" style="--fn:#8E24AA" role="radio">Personal</button>
+      </div>
+    </div>
+    <div class="actions dialog-actions">
+      <button type="submit" id="edit-save" class="btn btn-primary" value="save">
+        <span class="btn-label">Save</span>
+      </button>
+      <button type="submit" class="btn btn-ghost" value="cancel">Cancel</button>
+      <button type="submit" id="edit-remove" class="btn btn-danger" value="remove">Remove button</button>
+    </div>
+  </form>
+</dialog>
 
 <footer class="foot">
   <p>Runs entirely on this computer · nothing is uploaded to the internet</p>

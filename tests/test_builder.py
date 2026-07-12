@@ -149,6 +149,63 @@ def test_validators_pass(built):
     assert result["warnings"] == []
 
 
+def test_phrase_and_border_buttons(seeded_pageset):
+    """Topic-page items: short label + full spoken phrase + function color."""
+    from tdsnap.colors import argb_from_hex
+
+    ps = seeded_pageset
+    parent_id = ps.find_page_id_by_name("Home Page")
+    report = add_category_page(
+        ps,
+        "About Me",
+        [
+            {"label": "How are you?", "message": "How are you doing today?",
+             "border_color": "#1E88E5"},                     # question → blue
+            {"label": "Love it", "message": "I really love this!",
+             "border_color": "#43A047"},                     # positive → green
+            {"label": "dog", "border_color": None},          # plain word
+            "cat",                                           # plain string still works
+        ],
+        parent_id,
+    )
+
+    rows = {
+        row["Label"]: row
+        for row in ps.conn.execute(
+            "SELECT * FROM Button WHERE Id IN (%s)"
+            % ",".join("?" * len(report["button_ids"])),
+            report["button_ids"],
+        )
+    }
+    question = rows["How are you?"]
+    assert question["Message"] == "How are you doing today?"
+    assert question["BorderColor"] == argb_from_hex("#1E88E5")
+    assert question["BorderThickness"] == 3.0
+    assert rows["Love it"]["BorderColor"] == argb_from_hex("#43A047")
+    assert rows["dog"]["Message"] is None
+    assert rows["dog"]["BorderColor"] is None
+    assert rows["dog"]["BorderThickness"] == 0.0
+    assert rows["cat"]["Message"] is None
+
+    # The report carries the specs and validation checks them.
+    from tdsnap import validate
+
+    assert validate.validate_new_page(ps.conn, report) == []
+
+
+def test_argb_encoding():
+    from tdsnap.colors import argb_from_hex, hex_from_argb
+    from tdsnap.errors import PagesetError
+    import pytest as _pytest
+
+    # The gray border TD Snap uses on its own toolbar buttons.
+    assert argb_from_hex("#888A8C") == -7828852
+    assert hex_from_argb(-7828852) == "#888A8C"
+    assert argb_from_hex("#1E88E5") == argb_from_hex("1E88E5")
+    with _pytest.raises(PagesetError):
+        argb_from_hex("#12")
+
+
 def test_error_paths(seeded_pageset):
     ps = seeded_pageset
     with pytest.raises(PagesetError, match="title"):

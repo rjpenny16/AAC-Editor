@@ -17,12 +17,45 @@ prints them for debugging.
 import random
 import sqlite3
 import uuid
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from . import templates
+from .colors import BORDER_THICKNESS, argb_from_hex
 from .errors import PagesetError
 from .pageset import Pageset
 from .ticks import net_ticks_now
+
+Item = Union[str, Dict[str, object]]
+
+
+def _normalize_items(items: List[Item]) -> List[Dict[str, object]]:
+    """Accept plain labels or ``{label, message, border_color}`` dicts.
+
+    ``message`` (optional) is the full sentence to speak while ``label`` stays
+    short on the button — how real TD Snap quick-fire phrase buttons work.
+    ``border_color`` (optional) is '#RRGGBB' or a signed ARGB int, the
+    color-coding convention used on topic pages.
+    """
+    normalized = []
+    for item in items:
+        if isinstance(item, str):
+            item = {"label": item}
+        elif not isinstance(item, dict):
+            raise PagesetError("Each word must be text or a {label, ...} object.")
+        label = str(item.get("label", "") or "").strip()
+        if not label:
+            continue
+        message = str(item.get("message", "") or "").strip() or None
+        if message == label:
+            message = None  # speaking the label is the default; don't duplicate
+        border = item.get("border_color")
+        if isinstance(border, str) and border.strip():
+            border = argb_from_hex(border)
+        elif not isinstance(border, int):
+            border = None
+        normalized.append({"label": label, "message": message,
+                           "border_color": border})
+    return normalized
 
 
 def _random_sync_hash() -> int:
@@ -102,10 +135,14 @@ def _insert_cell(
     label: str,
     command_flags: int,
     serialized_commands: str,
+    message: Optional[str] = None,
+    border_color: Optional[int] = None,
 ) -> Tuple[int, int]:
     """Clone one full cell (reference, button, commands, placement).
 
-    Returns ``(button_id, reference_id)``.
+    Returns ``(button_id, reference_id)``. ``message`` makes it a phrase
+    button (label shown, message spoken); ``border_color`` adds the 3px
+    colored border used for function coding on topic pages.
     """
     ref_id = templates.clone_row(
         conn,
@@ -116,11 +153,13 @@ def _insert_cell(
 
     button_overrides = {
         "Label": label,
-        "Message": None,
+        "Message": message,
         "UniqueId": str(uuid.uuid4()),
         "CommandFlags": command_flags,
         "ElementReferenceId": ref_id,
         "ContentTag": None,
+        "BorderColor": border_color,
+        "BorderThickness": BORDER_THICKNESS if border_color is not None else 0.0,
     }
     # Fields that exist in schema 4.13 but may not in older files: reset any
     # media/symbol linkage so the clone can't point at the template's assets.
@@ -157,18 +196,20 @@ def _insert_cell(
 def add_category_page(
     pageset: Pageset,
     title: str,
-    items: List[str],
+    items: List[Item],
     parent_page_id: Optional[int],
 ) -> Dict[str, object]:
     """Add a page of speaking buttons and (optionally) link it from a parent.
 
-    All writes happen in one transaction; any failure rolls the working copy
-    back to its pre-call state. Returns a report dict used by validation and
-    the UIs: ``{page_id, page_unique_id, button_ids, nav_button_id}``.
+    Items may be plain labels or ``{label, message, border_color}`` dicts
+    (see ``_normalize_items``). All writes happen in one transaction; any
+    failure rolls the working copy back to its pre-call state. Returns a
+    report dict used by validation and the UIs:
+    ``{page_id, page_unique_id, button_ids, buttons, nav_button_id, grid}``.
     """
     conn = pageset.conn
     title = (title or "").strip()
-    items = [item.strip() for item in items if item and item.strip()]
+    items = _normalize_items(items)
     if not title:
         raise PagesetError("The new page needs a title.")
     if not items:
@@ -231,6 +272,7 @@ def add_category_page(
         ).lastrowid
 
         button_ids = []
+        button_specs = []
         for index, item in enumerate(items):
             slot = (index % cols, index // cols)
             button_id, _ = _insert_cell(
@@ -239,11 +281,14 @@ def add_category_page(
                 page_id=page_id,
                 layout_id=layout_id,
                 slot=slot,
-                label=item,
+                label=item["label"],
                 command_flags=templates.COMMAND_FLAGS_SPEAK,
                 serialized_commands=templates.SPEAK_COMMANDS,
+                message=item["message"],
+                border_color=item["border_color"],
             )
             button_ids.append(button_id)
+            button_specs.append({"id": button_id, **item})
 
         conn.execute(
             "INSERT INTO SyncData (UniqueId, Type, Timestamp, SyncHash, Deleted, "
@@ -288,6 +333,7 @@ def add_category_page(
         "page_id": page_id,
         "page_unique_id": page_uuid,
         "button_ids": button_ids,
+        "buttons": button_specs,
         "nav_button_id": nav_button_id,
         "grid": (cols, rows),
     }

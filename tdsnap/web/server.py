@@ -235,6 +235,8 @@ def ollama_words():
         count=payload.get("count", 10),
         host=payload.get("host", ollama.DEFAULT_HOST),
         model=payload.get("model", ollama.DEFAULT_MODEL),
+        kind=payload.get("kind", "words"),
+        function=payload.get("function"),
     )
     if error:
         return jsonify({"ok": False, "error": error, "words": []}), 502

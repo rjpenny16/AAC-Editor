@@ -236,6 +236,38 @@ def validate_new_page(conn: sqlite3.Connection, report: Dict) -> List[str]:
                 "expected 1."
             )
 
+    # Every requested button must exist with exactly the requested content:
+    # label shown, message spoken (phrase buttons), border color + 3px
+    # thickness (function coding). Catches silent drops or mixups.
+    for spec in report.get("buttons", []):
+        button = conn.execute(
+            "SELECT * FROM Button WHERE Id = ?", (spec["id"],)
+        ).fetchone()
+        if button is None:
+            problems.append(f"Requested button {spec['label']!r} is missing.")
+            continue
+        if button["Label"] != spec["label"]:
+            problems.append(
+                f"Button {spec['id']} label is {button['Label']!r}; "
+                f"expected {spec['label']!r}."
+            )
+        if button["Message"] != spec.get("message"):
+            problems.append(
+                f"Button {spec['label']!r} speaks {button['Message']!r}; "
+                f"expected {spec.get('message')!r}."
+            )
+        expected_border = spec.get("border_color")
+        if button["BorderColor"] != expected_border:
+            problems.append(
+                f"Button {spec['label']!r} border color is "
+                f"{button['BorderColor']!r}; expected {expected_border!r}."
+            )
+        if expected_border is not None and not button["BorderThickness"]:
+            problems.append(
+                f"Button {spec['label']!r} has a border color but no "
+                "border thickness."
+            )
+
     sync = conn.execute(
         "SELECT * FROM SyncData WHERE UniqueId = ?", (page_uuid,)
     ).fetchone()

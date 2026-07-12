@@ -54,6 +54,15 @@ app in your browser at `http://127.0.0.1:8765`. Then:
    let a local [Ollama](https://ollama.com) model suggest them), and the page
    that should get the link button. The preview shows the grid exactly as TD
    Snap will lay it out.
+
+   Two page styles:
+   - **Word page** — single words; each button speaks its label.
+   - **Topic page** — quick-fire phrases with communicative-function
+     color-coding: each button gets the same 3px colored border TD Snap
+     renders (blue = question, orange = comment, green = positive,
+     red = negative, purple = personal). Click any button chip to change its
+     color or give it a full spoken phrase while the label stays short
+     (label "Lunch?", speaks "What are we having for lunch?").
 4. **Download** the `.edited` copy and import it into TD Snap — **into a test
    user first**: read [docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
 
@@ -72,6 +81,11 @@ python -m tdsnap list "My Page Set.sps"              # show pages
 python -m tdsnap add  "My Page Set.sps" \
     --title Snacks --items "Chips,Apple,Banana" \
     --parent-name "My Things"                        # build + validate + save
+python -m tdsnap add  "My Page Set.sps" \
+    --title "Lunch Talk" \
+    --items "Lunch?|What are we having for lunch?,More|Can I have some more?" \
+    --border-color "#1E88E5" \
+    --parent-name "My Things"                        # quick-fire phrase buttons
 python -m tdsnap verify  "My Page Set.edited.sps"    # safety checks, any file
 python -m tdsnap inspect "My Page Set.sps"           # schema version, tables
 ```
