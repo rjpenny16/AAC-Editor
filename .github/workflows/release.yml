@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies (with built-in AI engine)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt pyinstaller pywebview
           pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 
       - name: Run tests (including real-model AI smoke test)

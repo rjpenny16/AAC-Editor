@@ -23,6 +23,16 @@ try:
 except Exception:
     pass
 
+# Bundle pywebview (native window) when it's installed. Without it the app
+# still works — it falls back to opening the UI in the default browser.
+try:
+    wv_datas, wv_binaries, wv_hidden = collect_all("webview")
+    datas += wv_datas
+    binaries += wv_binaries
+    hiddenimports += wv_hidden
+except Exception:
+    pass
+
 a = Analysis(
     [os.path.join(here, "launcher.py")],
     pathex=[root],
@@ -44,7 +54,7 @@ exe = EXE(
     exclude_binaries=True,
     name="TD Snap Page Builder",
     console=False,
-    icon=None,
+    icon=os.path.join(here, "icon.ico"),
 )
 
 coll = COLLECT(

@@ -27,11 +27,21 @@ const state = {
   parentId: null,
   parentFree: null,
   edits: 0,
+  native: false, // running inside the app's own window (pywebview)?
+  apiToken: "",
 };
 
 /* ---------- helpers ---------- */
 
 async function api(path, options) {
+  options = options || {};
+  // Every POST carries the per-run token; it forces a CORS preflight, so
+  // pages from other origins can't drive this local server.
+  options.headers = Object.assign(
+    {},
+    options.headers,
+    state.apiToken ? { "X-TDSnap-Token": state.apiToken } : {}
+  );
   const response = await fetch(path, options);
   let data = null;
   try {
@@ -67,11 +77,18 @@ function setBusy(button, busy) {
 const dropzone = $("dropzone");
 const fileInput = $("file-input");
 
-dropzone.addEventListener("click", () => fileInput.click());
+function browse() {
+  // In the native window, use the OS open dialog on the file in place;
+  // in a browser there's no path access, so fall back to the upload flow.
+  if (state.native && window.pywebview) openNative();
+  else fileInput.click();
+}
+
+dropzone.addEventListener("click", browse);
 dropzone.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    fileInput.click();
+    browse();
   }
 });
 ["dragover", "dragenter"].forEach((name) =>
@@ -92,6 +109,29 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files[0]) uploadFile(fileInput.files[0]);
 });
 
+function applyLoadedPageset(data) {
+  state.sessionId = data.session_id;
+  state.filename = data.filename;
+  state.grid = data.grid;
+  state.pages = data.pages;
+  state.words = [];
+  state.parentId = null;
+  state.parentFree = null;
+  state.edits = 0;
+
+  $("file-badge").textContent = data.filename;
+  $("file-badge").hidden = false;
+  $("build-sub").textContent =
+    `${data.filename} · schema ${data.schema_version || "?"} · ` +
+    `${data.grid.cols}×${data.grid.rows} grid · ${data.pages.length} pages`;
+  $("upload-status").textContent = "";
+  renderParents("");
+  renderWords();
+  show("build");
+  $("title-input").focus();
+  checkAi();
+}
+
 async function uploadFile(file) {
   const status = $("upload-status");
   status.classList.remove("error");
@@ -101,33 +141,30 @@ async function uploadFile(file) {
     const form = new FormData();
     form.append("file", file, file.name);
     const data = await api("/api/pageset", { method: "POST", body: form });
-
-    state.sessionId = data.session_id;
-    state.filename = data.filename;
-    state.grid = data.grid;
-    state.pages = data.pages;
-    state.words = [];
-    state.parentId = null;
-    state.parentFree = null;
-    state.edits = 0;
-
-    $("file-badge").textContent = data.filename;
-    $("file-badge").hidden = false;
-    $("build-sub").textContent =
-      `${data.filename} · schema ${data.schema_version || "?"} · ` +
-      `${data.grid.cols}×${data.grid.rows} grid · ${data.pages.length} pages`;
-    status.textContent = "";
-    renderParents("");
-    renderWords();
-    show("build");
-    $("title-input").focus();
-    checkAi();
+    applyLoadedPageset(data);
   } catch (error) {
     status.classList.add("error");
     status.textContent = error.message;
   } finally {
     dropzone.classList.remove("busy");
     fileInput.value = "";
+  }
+}
+
+async function openNative() {
+  const status = $("upload-status");
+  status.classList.remove("error");
+  dropzone.classList.add("busy");
+  try {
+    const data = await window.pywebview.api.open_pageset();
+    if (data.cancelled) return;
+    if (!data.ok) throw new Error(data.error || "Could not open the file.");
+    applyLoadedPageset(data);
+  } catch (error) {
+    status.classList.add("error");
+    status.textContent = error.message;
+  } finally {
+    dropzone.classList.remove("busy");
   }
 }
 
@@ -663,7 +700,30 @@ function renderResult(title, data) {
   });
 
   $("download-btn").href = `/api/pageset/${state.sessionId}/download`;
+  $("download-btn").hidden = state.native;
+  $("save-btn").hidden = !state.native;
+  $("save-status").textContent = "";
 }
+
+$("save-btn").addEventListener("click", async () => {
+  // Native window: OS save dialog, written straight to disk — no Downloads
+  // folder detour.
+  const button = $("save-btn");
+  const status = $("save-status");
+  status.classList.remove("error");
+  setBusy(button, true);
+  try {
+    const data = await window.pywebview.api.save_pageset(state.sessionId);
+    if (data.cancelled) return;
+    if (!data.ok) throw new Error(data.error || "Could not save the file.");
+    status.textContent = `Saved to ${data.path}`;
+  } catch (error) {
+    status.classList.add("error");
+    status.textContent = error.message;
+  } finally {
+    setBusy(button, false);
+  }
+});
 
 $("another-btn").addEventListener("click", async () => {
   // Refresh the page list so the just-added page can be a parent too.
@@ -697,7 +757,39 @@ $("reset-btn").addEventListener("click", () => {
   show("load");
 });
 
+/* ---------- quit (browser mode) ---------- */
+
+$("quit-btn").addEventListener("click", async () => {
+  const opened = state.sessionId !== null;
+  const warning = opened
+    ? "Quit TD Snap Page Builder? Anything you haven't downloaded will be discarded."
+    : "Quit TD Snap Page Builder?";
+  if (!window.confirm(warning)) return;
+  try {
+    await api("/api/quit", { method: "POST" });
+  } catch {
+    /* the server may stop before the response arrives */
+  }
+  document.querySelector("main").hidden = true;
+  document.querySelector("footer").hidden = true;
+  $("quit-screen").hidden = false;
+});
+
 /* ---------- init ---------- */
 
+async function init() {
+  try {
+    const config = await api("/api/config");
+    state.apiToken = config.token;
+    state.native = Boolean(config.native);
+  } catch {
+    /* older server without /api/config; POSTs will fail loudly if so */
+  }
+  // In the native window the OS window close button quits the app;
+  // in browser mode the Quit button is the only clean way to stop it.
+  $("quit-btn").hidden = state.native;
+}
+
+init();
 renderWords();
 renderPreview();
