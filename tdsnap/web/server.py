@@ -9,25 +9,51 @@ session corrupted, and the download endpoint always serves the last good
 state.
 """
 
+import json
 import os
 import secrets
+import shutil
+import socket
 import sqlite3
 import tempfile
+import threading
+import time
+import urllib.parse
+import urllib.request
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
-from .. import builder, live, validate
+from .. import __version__, builder, live, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import localai, ollama
 
+APP_ID = "tdsnap-page-builder"
+DEFAULT_PORT = 8765
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # page sets with media can be large
+SESSION_MAX_AGE = 24 * 60 * 60  # leftover session dirs older than this are removed
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 
+API_TOKEN = secrets.token_urlsafe(32)
+
 _SESSION_ROOT = os.path.join(tempfile.gettempdir(), "tdsnap-editor")
 _sessions = {}
+
+# Set by the host process so endpoints can stop the server or raise the
+# native window.
+_runtime = {"native": False, "focus": None, "shutdown": None}
+
+
+def set_native(native: bool) -> None:
+    """Tell the frontend whether it is running in the native window."""
+    _runtime["native"] = native
+
+
+def set_focus_handler(handler) -> None:
+    """Called by POST /api/focus to bring the native window to the front."""
+    _runtime["focus"] = handler
 
 
 def _session_dir(session_id: str) -> str:
@@ -80,9 +106,147 @@ def _free_cells(path: str, page_id: int) -> int:
         conn.close()
 
 
+def _new_session_dir() -> tuple[str, str]:
+    session_id = secrets.token_urlsafe(16)
+    session_dir = os.path.join(_SESSION_ROOT, session_id)
+    os.makedirs(session_dir, exist_ok=True)
+    return session_id, session_dir
+
+
+def _register_session(session_id: str, session_dir: str, filename: str) -> dict:
+    """Validate the uploaded/opened file and activate the session.
+
+    Any failure removes the session directory so rejected files don't pile up
+    in the temp dir until the 24-hour cleanup.
+    """
+    original = os.path.join(session_dir, "original")
+    try:
+        if not is_sqlite_file(original):
+            raise PagesetError(
+                f"{filename!r} is not a TD Snap page set (.sps/.spb export)."
+            )
+        probe = Pageset(original, working_copy=os.path.join(session_dir, "probe"))
+        try:
+            schema_version = probe.schema_version
+            cols, rows = probe.grid_dimension()
+            baseline = validate.validate_pageset(probe.conn)
+        finally:
+            probe.close()
+        os.replace(
+            os.path.join(session_dir, "probe"), os.path.join(session_dir, "current")
+        )
+    except Exception:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
+
+    _sessions[session_id] = {
+        "dir": session_dir,
+        "filename": filename,
+        "baseline_warnings": baseline["warnings"],
+        "edits": 0,
+        "lock": threading.Lock(),  # one edit at a time per session
+    }
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "filename": filename,
+        "schema_version": schema_version,
+        "grid": {"cols": cols, "rows": rows},
+        "pages": _list_pages(os.path.join(session_dir, "current")),
+        "baseline_problems": baseline["problems"],
+    }
+
+
+def open_path(path: str) -> dict:
+    """Open a page-set file from disk into a fresh session."""
+    if not os.path.isfile(path):
+        raise PagesetError(f"{path!r} does not exist or is not a file.")
+    session_id, session_dir = _new_session_dir()
+    shutil.copyfile(path, os.path.join(session_dir, "original"))
+    return _register_session(session_id, session_dir, os.path.basename(path))
+
+
+def edited_filename(session_id: str) -> str:
+    """Suggested name for the edited copy."""
+    session = _sessions.get(session_id)
+    if session is None:
+        raise PagesetError("Unknown or expired session; re-upload the file.")
+    base, ext = os.path.splitext(session["filename"])
+    return f"{base}.edited{ext or '.sps'}"
+
+
+def save_current_as(session_id: str, dest_path: str) -> None:
+    """Write the current session copy to *dest_path*."""
+    current = _current_path(session_id)
+    if not os.path.exists(current):
+        raise PagesetError("Nothing to save yet; re-upload the file.")
+    shutil.copyfile(current, dest_path)
+
+
 @app.errorhandler(PagesetError)
 def _pageset_error(exc):
     return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+# Loopback names a request to this local server may legitimately carry. A
+# request with any other Host reached us through DNS rebinding (a hostile
+# domain resolving to 127.0.0.1), which would make the attacker's page
+# same-origin with this server and able to read the API token.
+_ALLOWED_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
+
+
+@app.before_request
+def _require_loopback_host():
+    try:
+        hostname = urllib.parse.urlsplit(f"//{request.host}").hostname or ""
+    except ValueError:
+        hostname = ""
+    if hostname.lower() not in _ALLOWED_HOSTNAMES:
+        return jsonify(
+            {"ok": False,
+             "error": "This local app only answers to 127.0.0.1/localhost."}
+        ), 403
+    return None
+
+
+@app.before_request
+def _require_api_token():
+    if request.method != "POST" or request.path in {"/api/focus", "/api/tdsnap/page"}:
+        return None
+    if request.headers.get("X-TDSnap-Token") != API_TOKEN:
+        return jsonify(
+            {"ok": False, "error": "Missing or invalid API token; reload the page."}
+        ), 403
+    return None
+
+
+@app.get("/api/health")
+def health():
+    return jsonify({"ok": True, "app": APP_ID, "version": __version__})
+
+
+@app.get("/api/config")
+def config():
+    return jsonify(
+        {"ok": True, "token": API_TOKEN, "native": _runtime["native"], "version": __version__}
+    )
+
+
+@app.post("/api/quit")
+def quit_app():
+    shutdown = _runtime.get("shutdown")
+    if shutdown is None:
+        raise PagesetError("The app wasn't started in a stoppable mode.")
+    threading.Timer(0.3, shutdown).start()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/focus")
+def focus():
+    handler = _runtime.get("focus")
+    if handler is not None:
+        handler()
+    return jsonify({"ok": True, "focused": handler is not None})
 
 
 @app.get("/")
@@ -120,45 +284,9 @@ def upload_pageset():
     if upload is None or not upload.filename:
         raise PagesetError("No file was uploaded.")
 
-    session_id = secrets.token_urlsafe(16)
-    session_dir = os.path.join(_SESSION_ROOT, session_id)
-    os.makedirs(session_dir, exist_ok=True)
-    original = os.path.join(session_dir, "original")
-    upload.save(original)
-
-    if not is_sqlite_file(original):
-        os.remove(original)
-        raise PagesetError(
-            f"{upload.filename!r} is not a TD Snap page set (.sps/.spb export)."
-        )
-
-    # Validate structure by opening it the same way an edit would.
-    probe = Pageset(original, working_copy=os.path.join(session_dir, "probe"))
-    try:
-        schema_version = probe.schema_version
-        cols, rows = probe.grid_dimension()
-        baseline = validate.validate_pageset(probe.conn)
-    finally:
-        probe.close()
-    os.replace(os.path.join(session_dir, "probe"), os.path.join(session_dir, "current"))
-
-    _sessions[session_id] = {
-        "dir": session_dir,
-        "filename": upload.filename,
-        "baseline_warnings": baseline["warnings"],
-        "edits": 0,
-    }
-    return jsonify(
-        {
-            "ok": True,
-            "session_id": session_id,
-            "filename": upload.filename,
-            "schema_version": schema_version,
-            "grid": {"cols": cols, "rows": rows},
-            "pages": _list_pages(os.path.join(session_dir, "current")),
-            "baseline_problems": baseline["problems"],
-        }
-    )
+    session_id, session_dir = _new_session_dir()
+    upload.save(os.path.join(session_dir, "original"))
+    return jsonify(_register_session(session_id, session_dir, upload.filename))
 
 
 @app.get("/api/pageset/<session_id>/pages")
@@ -185,10 +313,14 @@ def add_page(session_id):
         parent_page_id = int(parent_page_id)
 
     session = _sessions.get(session_id)
+    if session is None:
+        raise PagesetError("Unknown or expired session; re-upload the file.")
     current = _current_path(session_id)
-    scratch = os.path.join(_session_dir(session_id), "scratch")
+    scratch = os.path.join(session["dir"], "scratch")
 
-    with Pageset(current, working_copy=scratch) as ps:
+    # One edit at a time per session: concurrent requests would share the
+    # same scratch working copy and corrupt each other.
+    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
         baseline = validate.validate_pageset(ps.conn)
         before = validate.table_snapshot(ps.conn)
         report = builder.add_category_page(ps, title, items, parent_page_id)
@@ -214,8 +346,7 @@ def add_page(session_id):
                  "problems": problems, "checks": checks}
             ), 422
         ps.save_as(current)
-
-    session["edits"] += 1
+        session["edits"] += 1
     return jsonify(
         {
             "ok": True,
@@ -298,7 +429,10 @@ def ai_words():
         "function": payload.get("function"),
     }
     host = payload.get("host", ollama.DEFAULT_HOST)
-    if ollama.status(host)["reachable"]:
+    ollama_state = ollama.status(host)
+    # An Ollama server with no models can't generate anything; fall through
+    # to the built-in engine instead of failing with "model not found".
+    if ollama_state["reachable"] and ollama_state["models"]:
         words, error = ollama.generate_words(
             host=host, model=payload.get("model", ollama.DEFAULT_MODEL), **args
         )
@@ -318,15 +452,89 @@ def ai_words():
     return jsonify({"ok": True, "words": words, "engine": engine})
 
 
-def run(port: int = 8765, open_browser: bool = True) -> None:
-    os.makedirs(_SESSION_ROOT, exist_ok=True)
-    if open_browser:
-        import threading
-        import webbrowser
+def instance_running(port: int) -> bool:
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/health", timeout=1
+        ) as response:
+            return json.load(response).get("app") == APP_ID
+    except Exception:
+        return False
 
-        threading.Timer(
-            1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")
-        ).start()
-    # ponytail: one request thread keeps Windows COM/UI Automation on one
-    # thread; use a dedicated worker only if this local single-user app grows.
-    app.run(host="127.0.0.1", port=port, debug=False, threaded=False)
+
+def pick_port(preferred: int = DEFAULT_PORT) -> int:
+    with socket.socket() as probe:
+        try:
+            probe.bind(("127.0.0.1", preferred))
+            return probe.getsockname()[1]
+        except OSError:
+            pass
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def cleanup_stale_sessions(max_age: int = SESSION_MAX_AGE) -> None:
+    try:
+        entries = os.listdir(_SESSION_ROOT)
+    except OSError:
+        return
+    cutoff = time.time() - max_age
+    for name in entries:
+        path = os.path.join(_SESSION_ROOT, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def make_server(port: int):
+    from werkzeug.serving import make_server as _make_server
+
+    os.makedirs(_SESSION_ROOT, exist_ok=True)
+    cleanup_stale_sessions()
+    server = _make_server("127.0.0.1", port, app, threaded=True)
+    _runtime["shutdown"] = server.shutdown
+    return server
+
+
+def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
+    import webbrowser
+
+    if instance_running(port):
+        url = f"http://127.0.0.1:{port}"
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(f"{url}/api/focus", method="POST"),
+                timeout=2,
+            ) as response:
+                focused = json.load(response).get("focused", False)
+        except Exception:
+            focused = False
+        if focused:
+            print("Already running — brought its window to the front.")
+        elif open_browser:
+            webbrowser.open(url)
+            print(f"Already running at {url} — opened it in your browser.")
+        else:
+            print(f"Already running at {url}.")
+        return
+
+    port = pick_port(port)
+    server = make_server(port)
+    url = f"http://127.0.0.1:{port}"
+    if open_browser:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    print(f"TD Snap Page Builder running at {url} (press Ctrl+C to stop)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    print("TD Snap Page Builder stopped.")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    run()
