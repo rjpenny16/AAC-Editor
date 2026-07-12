@@ -14,7 +14,10 @@ Not affiliated with or endorsed by Tobii Dynavox.
 **Windows app (no Python needed):** grab `TDSnapPageBuilder-windows.zip` from
 the [latest release](https://github.com/rjpenny16/AAC-Editor/releases/latest),
 unzip it anywhere, and double-click `TD Snap Page Builder.exe`. The app opens
-in your browser.
+in its own window: opening a page set and saving the edited copy use the
+normal Windows file dialogs, closing the window quits the app, and
+double-clicking the .exe again brings the existing window to the front
+instead of starting a second copy.
 
 The packaged app includes a built-in AI engine for word/phrase suggestions.
 The first time you use it, the app offers a one-time download of a free,
@@ -62,7 +65,11 @@ to PATH"** when installing on Windows).
 **Mac/Linux:** `./launch.sh`
 
 The launcher installs two small dependencies (Flask, Requests) and opens the
-app in your browser at `http://127.0.0.1:8765`. Then:
+app in your browser at `http://127.0.0.1:8765` (when you're done, the *Quit
+the app* link in the footer stops it; launching again while it's running
+reuses the open copy instead of failing). Prefer a real window over a
+browser tab? `pip install .[desktop]` and run `python -m tdsnap.web
+--window`. Then:
 
 1. **Export** your page set from TD Snap
    (*Edit mode → Page Set → Import/Export → Export to file*).
@@ -80,8 +87,9 @@ app in your browser at `http://127.0.0.1:8765`. Then:
      red = negative, purple = personal). Click any button chip to change its
      color or give it a full spoken phrase while the label stays short
      (label "Lunch?", speaks "What are we having for lunch?").
-4. **Download** the `.edited` copy and import it into TD Snap — **into a test
-   user first**: read [docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
+4. **Download** the `.edited` copy (the windowed app **saves** it wherever
+   you choose) and import it into TD Snap — **into a test user first**:
+   read [docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
 
 ### Optional: AI word suggestions
 

@@ -1,7 +1,8 @@
 """Entry point for the packaged (PyInstaller) app.
 
-Double-clicking the executable starts the local web server and opens the
-browser — same as `python -m tdsnap.web`, with multiprocessing guarded for
+Double-clicking the executable opens the app in its own native window
+(falling back to the browser if the OS webview runtime is missing) — same
+as `python -m tdsnap.web --window`, with multiprocessing guarded for
 frozen Windows builds (llama-cpp workers would otherwise respawn the GUI).
 """
 
@@ -18,9 +19,9 @@ def main() -> None:
         sys.stdout = open(os.devnull, "w")
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
-    from tdsnap.web.server import run
+    from tdsnap.web.desktop import run_desktop
 
-    run()
+    run_desktop()
 
 
 if __name__ == "__main__":

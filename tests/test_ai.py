@@ -67,7 +67,7 @@ def test_generate_requires_download(isolated_model, monkeypatch):
 
 
 def test_ai_endpoints(monkeypatch, tmp_path):
-    from tdsnap.web.server import app
+    from tdsnap.web.server import API_TOKEN, app
 
     monkeypatch.setattr(
         ollama, "status",
@@ -77,6 +77,7 @@ def test_ai_endpoints(monkeypatch, tmp_path):
     monkeypatch.setattr(localai, "is_downloaded", lambda: False)
 
     client = app.test_client()
+    headers = {"X-TDSnap-Token": API_TOKEN}
 
     status = client.get("/api/ai/status").get_json()
     assert status["ollama"]["reachable"] is False
@@ -84,12 +85,13 @@ def test_ai_endpoints(monkeypatch, tmp_path):
     assert status["local"]["model"]["license"] == "Apache-2.0"
 
     # No engine ready → clear, actionable error.
-    response = client.post("/api/ai/words", json={"category": "Snacks"})
+    response = client.post("/api/ai/words", json={"category": "Snacks"},
+                           headers=headers)
     assert response.status_code == 400
     assert "No AI engine is ready" in response.get_json()["error"]
 
     # Download refused when the engine isn't installed.
-    response = client.post("/api/ai/download")
+    response = client.post("/api/ai/download", headers=headers)
     assert response.status_code == 400
 
     # With the engine "installed" and model "downloaded", words flow through.
@@ -98,7 +100,8 @@ def test_ai_endpoints(monkeypatch, tmp_path):
     monkeypatch.setattr(
         localai, "generate_words", lambda **kw: (["Chips", "Apple"], None)
     )
-    data = client.post("/api/ai/words", json={"category": "Snacks"}).get_json()
+    data = client.post("/api/ai/words", json={"category": "Snacks"},
+                       headers=headers).get_json()
     assert data == {"ok": True, "words": ["Chips", "Apple"], "engine": "local"}
 
     # A reachable Ollama takes precedence.
@@ -109,5 +112,6 @@ def test_ai_endpoints(monkeypatch, tmp_path):
     monkeypatch.setattr(
         ollama, "generate_words", lambda **kw: (["Juice"], None)
     )
-    data = client.post("/api/ai/words", json={"category": "Snacks"}).get_json()
+    data = client.post("/api/ai/words", json={"category": "Snacks"},
+                       headers=headers).get_json()
     assert data["engine"] == "ollama" and data["words"] == ["Juice"]

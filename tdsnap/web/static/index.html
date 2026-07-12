@@ -193,8 +193,12 @@
       <a id="download-btn" class="btn btn-primary" href="#" download>
         <span class="btn-label">Download edited page set</span>
       </a>
+      <button type="button" id="save-btn" class="btn btn-primary" hidden>
+        <span class="btn-label">Save edited page set…</span>
+      </button>
       <button type="button" id="another-btn" class="btn btn-secondary">Add another page</button>
     </div>
+    <p id="save-status" class="status-line" role="status" aria-live="polite"></p>
 
     <div class="safety">
       <h3>Before you import — protect your real setup</h3>
@@ -250,7 +254,14 @@
 
 <footer class="foot">
   <p>Runs entirely on this computer · nothing is uploaded to the internet</p>
+  <button type="button" id="quit-btn" class="quit-btn" hidden>Quit the app</button>
 </footer>
+
+<section id="quit-screen" class="panel quit-screen" aria-live="polite" hidden>
+  <h2>The app has stopped</h2>
+  <p>TD Snap Page Builder is no longer running on this computer.
+  You can close this tab.</p>
+</section>
 
 <script src="/static/app.js"></script>
 </body>
