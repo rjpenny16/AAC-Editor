@@ -19,7 +19,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 from .. import builder, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
-from . import ollama
+from . import localai, ollama
 
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # page sets with media can be large
 
@@ -221,24 +221,77 @@ def download(session_id):
     )
 
 
-@app.get("/api/ollama/status")
-def ollama_status():
+@app.get("/api/ai/status")
+def ai_status():
+    """Which suggestion engines are usable right now."""
     host = request.args.get("host", ollama.DEFAULT_HOST)
-    return jsonify(ollama.status(host))
-
-
-@app.post("/api/ollama/words")
-def ollama_words():
-    payload = request.get_json(force=True, silent=True) or {}
-    words, error = ollama.generate_words(
-        category=payload.get("category", ""),
-        count=payload.get("count", 10),
-        host=payload.get("host", ollama.DEFAULT_HOST),
-        model=payload.get("model", ollama.DEFAULT_MODEL),
+    return jsonify(
+        {
+            "ollama": ollama.status(host),
+            "local": {
+                "engine_available": localai.engine_available(),
+                "downloaded": localai.is_downloaded(),
+                "download": localai.download_state(),
+                "model": {
+                    "name": localai.MODEL_NAME,
+                    "license": localai.MODEL_LICENSE,
+                    "size": localai.MODEL_SIZE_HINT,
+                },
+            },
+        }
     )
+
+
+@app.post("/api/ai/download")
+def ai_download():
+    """One-time download of the built-in model (user-initiated)."""
+    if not localai.engine_available():
+        return jsonify(
+            {"ok": False,
+             "error": "This install doesn't include the built-in AI engine; "
+                      "use Ollama instead or install llama-cpp-python."}
+        ), 400
+    return jsonify({"ok": True, "download": localai.start_download()})
+
+
+@app.get("/api/ai/download")
+def ai_download_state():
+    return jsonify({"ok": True, "download": localai.download_state()})
+
+
+@app.post("/api/ai/words")
+def ai_words():
+    """Generate suggestions with whichever engine is ready.
+
+    Preference order: a reachable Ollama server (user's choice of model),
+    then the built-in downloaded model.
+    """
+    payload = request.get_json(force=True, silent=True) or {}
+    args = {
+        "category": payload.get("category", ""),
+        "count": payload.get("count", 10),
+        "kind": payload.get("kind", "words"),
+        "function": payload.get("function"),
+    }
+    host = payload.get("host", ollama.DEFAULT_HOST)
+    if ollama.status(host)["reachable"]:
+        words, error = ollama.generate_words(
+            host=host, model=payload.get("model", ollama.DEFAULT_MODEL), **args
+        )
+        engine = "ollama"
+    elif localai.engine_available() and localai.is_downloaded():
+        words, error = localai.generate_words(**args)
+        engine = "local"
+    else:
+        return jsonify(
+            {"ok": False, "words": [],
+             "error": "No AI engine is ready yet — download the built-in "
+                      "model below, or start Ollama."}
+        ), 400
     if error:
-        return jsonify({"ok": False, "error": error, "words": []}), 502
-    return jsonify({"ok": True, "words": words})
+        return jsonify({"ok": False, "error": error, "words": [],
+                        "engine": engine}), 502
+    return jsonify({"ok": True, "words": words, "engine": engine})
 
 
 def run(port: int = 8765, open_browser: bool = True) -> None:

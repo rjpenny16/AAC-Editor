@@ -53,6 +53,25 @@ def test_detects_broken_page_link(seeded_pageset):
     )
 
 
+def test_detects_button_spec_mismatch(seeded_pageset):
+    """A built button that drifts from what was requested is named."""
+    ps = seeded_pageset
+    parent_id = ps.find_page_id_by_name("Home Page")
+    report = add_category_page(
+        ps, "Topic",
+        [{"label": "Hi", "message": "Hello there!", "border_color": "#1E88E5"}],
+        parent_id,
+    )
+    assert validate.validate_new_page(ps.conn, report) == []
+    ps.conn.execute(
+        "UPDATE Button SET Message = NULL, BorderColor = NULL WHERE Id = ?",
+        (report["button_ids"][0],),
+    )
+    problems = validate.validate_new_page(ps.conn, report)
+    assert any("speaks" in p for p in problems)
+    assert any("border color" in p for p in problems)
+
+
 def test_detects_sync_mismatch(seeded_pageset):
     ps = seeded_pageset
     report = _build(ps)

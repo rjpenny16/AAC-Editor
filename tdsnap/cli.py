@@ -51,7 +51,20 @@ def _cmd_list(args) -> int:
 
 
 def _cmd_add(args) -> int:
-    items = [item.strip() for item in args.items.split(",") if item.strip()]
+    # "Label|Full spoken phrase" makes a quick-fire phrase button.
+    items = []
+    for chunk in args.items.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        label, _, message = chunk.partition("|")
+        items.append(
+            {
+                "label": label.strip(),
+                "message": message.strip() or None,
+                "border_color": args.border_color,
+            }
+        )
     with Pageset(args.pageset) as ps:
         if args.parent_id is not None:
             parent_id: Optional[int] = args.parent_id
@@ -160,7 +173,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_add.add_argument("--title", required=True, help="title of the new page")
     p_add.add_argument(
         "--items", required=True,
-        help='comma-separated button labels, e.g. "Water,Juice,Soda"',
+        help='comma-separated button labels, e.g. "Water,Juice,Soda"; use '
+             '"Label|Full phrase" for a button that speaks a whole sentence',
+    )
+    p_add.add_argument(
+        "--border-color", default=None, metavar="#RRGGBB",
+        help="colored 3px border for every button (topic-page function coding)",
     )
     group = p_add.add_mutually_exclusive_group()
     group.add_argument("--parent-id", type=int, default=None,

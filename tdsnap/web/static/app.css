@@ -267,6 +267,34 @@ input:disabled { background: var(--surface-2); color: var(--ink-soft); }
   animation: chip-in 160ms var(--ease);
 }
 
+/* Function-coded chips carry their TD Snap border color. */
+.chip[data-fn] {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1.5px solid var(--fn-color);
+}
+.chip .chip-body {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.chip .chip-body:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip .chip-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--fn-color);
+  flex: none;
+}
+.chip .chip-phrase-mark {
+  color: var(--ink-soft);
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+}
+
 @keyframes chip-in {
   from { opacity: 0; transform: scale(0.92); }
   to   { opacity: 1; transform: scale(1); }
@@ -285,6 +313,92 @@ input:disabled { background: var(--surface-2); color: var(--ink-soft); }
   line-height: 1;
 }
 .chip button:hover { background: oklch(0.88 0.04 190); }
+
+/* ---------- segmented control (page style) ---------- */
+
+.segmented {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 2px;
+}
+
+.seg-btn {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 550;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease), color 150ms var(--ease);
+}
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.selected {
+  background: var(--surface);
+  color: var(--accent-ink);
+  box-shadow: var(--shadow-1);
+}
+
+/* ---------- function palette (topic pages) ---------- */
+
+.fn-palette {
+  margin-bottom: 0.625rem;
+  padding: 0.75rem 0.875rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.fn-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.fn-row { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+
+.fn-pill {
+  --fn: transparent;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 99px;
+  padding: 0.28rem 0.75rem 0.28rem 0.6rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: border-color 150ms var(--ease), background-color 150ms var(--ease);
+}
+.fn-pill::before {
+  content: "";
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--fn);
+  border: 1px solid var(--line-strong);
+  flex: none;
+}
+.fn-pill[data-fn=""]::before {
+  background:
+    linear-gradient(135deg, transparent 44%, var(--line-strong) 46%,
+                    var(--line-strong) 54%, transparent 56%);
+}
+.fn-pill:hover { border-color: var(--ink-soft); color: var(--ink); }
+.fn-pill.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
 
 /* ---------- AI disclosure ---------- */
 
@@ -310,6 +424,39 @@ input:disabled { background: var(--surface-2); color: var(--ink-soft); }
 }
 .ai-controls { display: flex; gap: 0.5rem; margin-top: 0.625rem; }
 .ai-controls input { width: 5rem; }
+
+.ai-download {
+  margin-top: 0.625rem;
+  padding: 0.875rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.ai-download-info { margin: 0 0 0.625rem; color: var(--ink-soft); }
+
+.progress {
+  margin-top: 0.625rem;
+  height: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 400ms var(--ease);
+}
+
+.ai-advanced { margin-top: 0.625rem; }
+.ai-advanced summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  width: fit-content;
+}
 .ai-settings {
   display: flex;
   gap: 0.75rem;
@@ -388,6 +535,11 @@ input:disabled { background: var(--surface-2); color: var(--ink-soft); }
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow-1);
 }
+/* Function-coded cells: the same 3px border TD Snap will render. */
+.preview .cell.coded {
+  border: 3px solid var(--fn-color);
+  padding: 0;
+}
 .preview .cell.empty-note {
   grid-column: 1 / -1;
   aspect-ratio: auto;
@@ -436,6 +588,32 @@ input:disabled { background: var(--surface-2); color: var(--ink-soft); }
 
 .btn-ghost { background: transparent; color: var(--ink-soft); }
 .btn-ghost:hover { color: var(--ink); background: var(--surface-2); }
+
+.btn-danger { background: transparent; color: var(--danger); }
+.btn-danger:hover { background: var(--danger-soft); }
+
+/* ---------- chip editor dialog ---------- */
+
+.chip-dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  padding: 1.25rem 1.5rem;
+  width: min(26rem, calc(100vw - 2rem));
+  color: var(--ink);
+  background: var(--surface);
+}
+.chip-dialog::backdrop { background: oklch(0.2 0.01 220 / 0.35); }
+.chip-dialog h3 {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.chip-dialog .field { margin-bottom: 1rem; }
+.dialog-actions { margin-top: 1.25rem; }
+.dialog-actions .btn-danger { margin-left: auto; }
+.optional-tag { font-weight: 400; color: var(--ink-soft); font-size: 0.8125rem; }
 
 .btn.loading .btn-label { visibility: hidden; }
 .btn.loading::after {

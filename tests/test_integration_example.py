@@ -74,6 +74,45 @@ def test_reopen_and_validate(edited):
         assert validate.validate_new_page(ps.conn, edited["report"]) == []
 
 
+def test_topic_page_with_phrases_and_colors(edited, tmp_path):
+    """Build a color-coded quick-fire topic page on the real file."""
+    from tdsnap.colors import argb_from_hex
+
+    source = tmp_path / "topic.sps"
+    shutil.copyfile(edited["out"], source)
+    items = [
+        {"label": "What's for lunch?", "message": "What are we having for lunch?",
+         "border_color": "#1E88E5"},
+        {"label": "Smells great", "message": "That smells really great!",
+         "border_color": "#43A047"},
+        {"label": "Not hungry", "message": "I am not hungry right now.",
+         "border_color": "#E53935"},
+    ]
+    with Pageset(str(source)) as ps:
+        parent_id = ps.find_page_id_by_name("My Actions")
+        report = add_category_page(ps, "Lunch Talk", items, parent_id)
+        assert validate.validate_new_page(ps.conn, report) == []
+        assert validate.validate_pageset(ps.conn)["problems"] == []
+        out = ps.save_as(str(tmp_path / "topic.edited.sps"))
+
+    with Pageset(out) as ps:
+        rows = ps.conn.execute(
+            "SELECT b.Label, b.Message, b.BorderColor, b.BorderThickness "
+            "FROM Page p "
+            "JOIN ElementReference er ON er.PageId = p.Id "
+            "JOIN Button b ON b.ElementReferenceId = er.Id "
+            "WHERE p.UniqueId = ? ORDER BY b.Id",
+            (report["page_unique_id"],),
+        ).fetchall()
+        assert [(r["Label"], r["Message"]) for r in rows] == [
+            (i["label"], i["message"]) for i in items
+        ]
+        assert [r["BorderColor"] for r in rows] == [
+            argb_from_hex(i["border_color"]) for i in items
+        ]
+        assert all(r["BorderThickness"] == 3.0 for r in rows)
+
+
 def test_reconstruct_page_like_a_reader(edited):
     """Rebuild the new page with obf-node-style joins and check the content."""
     with Pageset(edited["out"]) as ps:

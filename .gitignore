@@ -49,3 +49,7 @@ tests/fixtures/*
 
 # Web app working copies
 .tdsnap-sessions/
+
+# Local AI model files (downloaded at runtime, ~1 GB)
+*.gguf
+*.gguf.part

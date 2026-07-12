@@ -1,39 +1,19 @@
-"""Optional word-list suggestions from a local Ollama server.
+"""Optional Ollama backend for word/phrase suggestions.
 
-Ported from the retired Tkinter app. Everything here is best-effort: the
-editor works fully without Ollama, so failures return empty results plus a
+If the user already runs Ollama, the app uses it automatically — it's often
+faster than the built-in engine and lets power users pick any model. The
+editor works fully without it; failures return empty results plus a
 human-readable message instead of raising.
 """
 
-import json
 from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from . import prompts
+
 DEFAULT_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3.2"
-
-_WORDS_SCHEMA = {
-    "type": "object",
-    "properties": {"items": {"type": "array", "items": {"type": "string"}}},
-    "required": ["items"],
-}
-
-_PROMPT = """Generate exactly {count} common, practical items for the category "{category}"
-for an AAC (Augmentative and Alternative Communication) app.
-
-Requirements:
-- Items should be commonly known and used
-- Keep items simple and clear (1-3 words each)
-- For places, use well-known brand names or common place types
-- For food, use popular dishes or restaurants
-- Make items practical for everyday communication
-- Use simple, everyday language
-
-Provide exactly {count} items in a JSON object with an "items" array.
-
-Example format:
-{{"items": ["item1", "item2", "item3"]}}"""
 
 
 def status(host: str = DEFAULT_HOST) -> Dict:
@@ -65,6 +45,8 @@ def generate_words(
     count: int = 10,
     host: str = DEFAULT_HOST,
     model: str = DEFAULT_MODEL,
+    kind: str = "words",
+    function: Optional[str] = None,
 ) -> Tuple[List[str], Optional[str]]:
     """Return ``(words, error)``; on any failure words is [] and error explains."""
     count = max(1, min(int(count), 60))
@@ -72,10 +54,10 @@ def generate_words(
         "model": model,
         "messages": [
             {"role": "user",
-             "content": _PROMPT.format(count=count, category=category)}
+             "content": prompts.build_prompt(category, count, kind, function)}
         ],
         "stream": False,
-        "format": _WORDS_SCHEMA,
+        "format": prompts.WORDS_SCHEMA,
         "options": {"num_predict": 800, "temperature": 0.7},
     }
     try:
@@ -92,12 +74,7 @@ def generate_words(
         return [], f"Ollama error {response.status_code}: {response.text[:200]}"
 
     content = response.json().get("message", {}).get("content", "")
-    try:
-        items = json.loads(content).get("items", [])
-    except (json.JSONDecodeError, AttributeError):
+    words = prompts.parse_items(content, count)
+    if words is None:
         return [], "Ollama returned something that wasn't valid JSON."
-    if not isinstance(items, list):
-        return [], "Ollama's response had no word list."
-
-    words = [str(item).strip() for item in items if str(item).strip()]
-    return words[:count], None
+    return words, None

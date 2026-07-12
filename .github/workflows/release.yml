@@ -1,0 +1,47 @@
+name: Release
+
+# Tag a version (e.g. `git tag v2.1.0 && git push --tags`) and this builds
+# the packaged Windows app and attaches it to a GitHub Release, so users can
+# download and double-click without installing Python.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies (with built-in AI engine)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
+      - name: Run tests (including real-model AI smoke test)
+        env:
+          TDSNAP_AI_SMOKE: "1"
+        run: |
+          pip install pytest
+          python -m pytest
+
+      - name: Build app
+        run: pyinstaller packaging/tdsnap.spec --noconfirm
+
+      - name: Zip build
+        run: Compress-Archive -Path "dist/TDSnapPageBuilder" -DestinationPath "TDSnapPageBuilder-windows.zip"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: TDSnapPageBuilder-windows.zip
