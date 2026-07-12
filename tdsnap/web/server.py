@@ -16,7 +16,7 @@ import tempfile
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
-from .. import builder, validate
+from .. import builder, live, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import localai, ollama
@@ -88,6 +88,30 @@ def _pageset_error(exc):
 @app.get("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
+
+
+@app.get("/api/tdsnap/status")
+def live_status():
+    return jsonify({"ok": True, **live.status()})
+
+
+@app.post("/api/tdsnap/page")
+def live_add_page():
+    # Custom header forces a cross-origin preflight, preventing arbitrary web
+    # pages from driving this localhost-only mutation endpoint.
+    if request.headers.get("X-TDSnap-Editor") != "1":
+        raise PagesetError("Direct TD Snap edits must start in this app.")
+    payload = request.get_json(force=True, silent=True) or {}
+    items = payload.get("items", [])
+    if not isinstance(items, list):
+        raise PagesetError("'items' must be a list of words.")
+    report = live.add_topic_page(
+        payload.get("title", ""),
+        items,
+        payload.get("parent", live.DEFAULT_PARENT),
+    )
+    report["warnings"] = [warning for warning in report["warnings"] if warning]
+    return jsonify({"ok": True, **report})
 
 
 @app.post("/api/pageset")
@@ -303,4 +327,6 @@ def run(port: int = 8765, open_browser: bool = True) -> None:
         threading.Timer(
             1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")
         ).start()
-    app.run(host="127.0.0.1", port=port, debug=False)
+    # ponytail: one request thread keeps Windows COM/UI Automation on one
+    # thread; use a dedicated worker only if this local single-user app grows.
+    app.run(host="127.0.0.1", port=port, debug=False, threaded=False)

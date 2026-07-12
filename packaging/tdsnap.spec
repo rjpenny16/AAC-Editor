@@ -23,6 +23,14 @@ try:
 except Exception:
     pass
 
+try:
+    auto_datas, auto_binaries, auto_hidden = collect_all("uiautomation")
+    datas += auto_datas
+    binaries += auto_binaries
+    hiddenimports += auto_hidden
+except Exception:
+    pass
+
 a = Analysis(
     [os.path.join(here, "launcher.py")],
     pathex=[root],

@@ -1,6 +1,7 @@
 # Runtime dependencies for the web app.
 flask>=3.0
 requests>=2.32.0
+uiautomation>=2.0.29; sys_platform == "win32"
 
 # Development / testing only:
 #   pip install pytest
