@@ -28,11 +28,18 @@ const state = {
   parentId: null,
   parentFree: null,
   edits: 0,
+  apiToken: "",
 };
 
 /* ---------- helpers ---------- */
 
 async function api(path, options) {
+  options = options || {};
+  options.headers = Object.assign(
+    {},
+    options.headers,
+    state.apiToken ? { "X-TDSnap-Token": state.apiToken } : {}
+  );
   const response = await fetch(path, options);
   let data = null;
   try {
@@ -776,5 +783,15 @@ $("reset-btn").addEventListener("click", () => {
 
 /* ---------- init ---------- */
 
+async function init() {
+  try {
+    const config = await api("/api/config");
+    state.apiToken = config.token || "";
+  } catch {
+    /* keep going; the server will reject protected POSTs if it is older */
+  }
+}
+
+init();
 renderWords();
 renderPreview();
