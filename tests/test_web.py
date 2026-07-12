@@ -46,6 +46,28 @@ def test_health_identifies_the_app(client):
     assert data["ok"] and data["app"] == server.APP_ID
 
 
+def test_foreign_hosts_are_rejected(client):
+    """DNS rebinding shows up as a non-loopback Host header — refuse it."""
+    for evil in ("evil.example", "evil.example:8765", "127.0.0.1.evil.example"):
+        response = client.get("/api/config", headers={"Host": evil})
+        assert response.status_code == 403, evil
+
+    for good in ("127.0.0.1:8765", "localhost:8765", "localhost", "[::1]:8765"):
+        response = client.get("/api/health", headers={"Host": good})
+        assert response.status_code == 200, good
+
+
+def test_rejected_upload_leaves_no_session_dir(client):
+    response = client.post(
+        "/api/pageset",
+        data={"file": (io.BytesIO(b"not a database"), "bogus.sps")},
+        headers=token_headers(),
+    )
+    assert response.status_code == 400
+    assert os.listdir(server._SESSION_ROOT) == []
+    assert server._sessions == {}
+
+
 def test_config_hands_the_token_to_same_origin_pages(client):
     data = client.get("/api/config").get_json()
     assert data["token"] == server.API_TOKEN

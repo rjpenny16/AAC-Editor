@@ -115,3 +115,22 @@ def test_ai_endpoints(monkeypatch, tmp_path):
     data = client.post("/api/ai/words", json={"category": "Snacks"},
                        headers=headers).get_json()
     assert data["engine"] == "ollama" and data["words"] == ["Juice"]
+
+    # ... but an Ollama server with no models falls back to the built-in
+    # engine instead of failing with "model not found".
+    monkeypatch.setattr(
+        ollama, "status",
+        lambda host=None: {"reachable": True, "models": [], "message": "empty"},
+    )
+    data = client.post("/api/ai/words", json={"category": "Snacks"},
+                       headers=headers).get_json()
+    assert data["engine"] == "local" and data["words"] == ["Chips", "Apple"]
+
+
+def test_download_refused_when_disk_is_full(isolated_model, monkeypatch):
+    monkeypatch.setattr(localai, "_free_disk_bytes", lambda: 100)
+    state = localai.start_download()
+    assert state["status"] == "error"
+    assert "disk space" in state["error"]
+    # Clear the sticky error so later tests see a clean slate.
+    localai._download.update(status="idle", done=0, total=0, error=None)

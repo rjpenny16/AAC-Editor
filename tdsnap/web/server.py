@@ -18,6 +18,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
@@ -113,27 +114,37 @@ def _new_session_dir() -> tuple[str, str]:
 
 
 def _register_session(session_id: str, session_dir: str, filename: str) -> dict:
-    original = os.path.join(session_dir, "original")
-    if not is_sqlite_file(original):
-        shutil.rmtree(session_dir, ignore_errors=True)
-        raise PagesetError(
-            f"{filename!r} is not a TD Snap page set (.sps/.spb export)."
-        )
+    """Validate the uploaded/opened file and activate the session.
 
-    probe = Pageset(original, working_copy=os.path.join(session_dir, "probe"))
+    Any failure removes the session directory so rejected files don't pile up
+    in the temp dir until the 24-hour cleanup.
+    """
+    original = os.path.join(session_dir, "original")
     try:
-        schema_version = probe.schema_version
-        cols, rows = probe.grid_dimension()
-        baseline = validate.validate_pageset(probe.conn)
-    finally:
-        probe.close()
-    os.replace(os.path.join(session_dir, "probe"), os.path.join(session_dir, "current"))
+        if not is_sqlite_file(original):
+            raise PagesetError(
+                f"{filename!r} is not a TD Snap page set (.sps/.spb export)."
+            )
+        probe = Pageset(original, working_copy=os.path.join(session_dir, "probe"))
+        try:
+            schema_version = probe.schema_version
+            cols, rows = probe.grid_dimension()
+            baseline = validate.validate_pageset(probe.conn)
+        finally:
+            probe.close()
+        os.replace(
+            os.path.join(session_dir, "probe"), os.path.join(session_dir, "current")
+        )
+    except Exception:
+        shutil.rmtree(session_dir, ignore_errors=True)
+        raise
 
     _sessions[session_id] = {
         "dir": session_dir,
         "filename": filename,
         "baseline_warnings": baseline["warnings"],
         "edits": 0,
+        "lock": threading.Lock(),  # one edit at a time per session
     }
     return {
         "ok": True,
@@ -175,6 +186,27 @@ def save_current_as(session_id: str, dest_path: str) -> None:
 @app.errorhandler(PagesetError)
 def _pageset_error(exc):
     return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+# Loopback names a request to this local server may legitimately carry. A
+# request with any other Host reached us through DNS rebinding (a hostile
+# domain resolving to 127.0.0.1), which would make the attacker's page
+# same-origin with this server and able to read the API token.
+_ALLOWED_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
+
+
+@app.before_request
+def _require_loopback_host():
+    try:
+        hostname = urllib.parse.urlsplit(f"//{request.host}").hostname or ""
+    except ValueError:
+        hostname = ""
+    if hostname.lower() not in _ALLOWED_HOSTNAMES:
+        return jsonify(
+            {"ok": False,
+             "error": "This local app only answers to 127.0.0.1/localhost."}
+        ), 403
+    return None
 
 
 @app.before_request
@@ -252,45 +284,9 @@ def upload_pageset():
     if upload is None or not upload.filename:
         raise PagesetError("No file was uploaded.")
 
-    session_id = secrets.token_urlsafe(16)
-    session_dir = os.path.join(_SESSION_ROOT, session_id)
-    os.makedirs(session_dir, exist_ok=True)
-    original = os.path.join(session_dir, "original")
-    upload.save(original)
-
-    if not is_sqlite_file(original):
-        os.remove(original)
-        raise PagesetError(
-            f"{upload.filename!r} is not a TD Snap page set (.sps/.spb export)."
-        )
-
-    # Validate structure by opening it the same way an edit would.
-    probe = Pageset(original, working_copy=os.path.join(session_dir, "probe"))
-    try:
-        schema_version = probe.schema_version
-        cols, rows = probe.grid_dimension()
-        baseline = validate.validate_pageset(probe.conn)
-    finally:
-        probe.close()
-    os.replace(os.path.join(session_dir, "probe"), os.path.join(session_dir, "current"))
-
-    _sessions[session_id] = {
-        "dir": session_dir,
-        "filename": upload.filename,
-        "baseline_warnings": baseline["warnings"],
-        "edits": 0,
-    }
-    return jsonify(
-        {
-            "ok": True,
-            "session_id": session_id,
-            "filename": upload.filename,
-            "schema_version": schema_version,
-            "grid": {"cols": cols, "rows": rows},
-            "pages": _list_pages(os.path.join(session_dir, "current")),
-            "baseline_problems": baseline["problems"],
-        }
-    )
+    session_id, session_dir = _new_session_dir()
+    upload.save(os.path.join(session_dir, "original"))
+    return jsonify(_register_session(session_id, session_dir, upload.filename))
 
 
 @app.get("/api/pageset/<session_id>/pages")
@@ -317,10 +313,14 @@ def add_page(session_id):
         parent_page_id = int(parent_page_id)
 
     session = _sessions.get(session_id)
+    if session is None:
+        raise PagesetError("Unknown or expired session; re-upload the file.")
     current = _current_path(session_id)
-    scratch = os.path.join(_session_dir(session_id), "scratch")
+    scratch = os.path.join(session["dir"], "scratch")
 
-    with Pageset(current, working_copy=scratch) as ps:
+    # One edit at a time per session: concurrent requests would share the
+    # same scratch working copy and corrupt each other.
+    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
         baseline = validate.validate_pageset(ps.conn)
         before = validate.table_snapshot(ps.conn)
         report = builder.add_category_page(ps, title, items, parent_page_id)
@@ -346,8 +346,7 @@ def add_page(session_id):
                  "problems": problems, "checks": checks}
             ), 422
         ps.save_as(current)
-
-    session["edits"] += 1
+        session["edits"] += 1
     return jsonify(
         {
             "ok": True,
@@ -430,7 +429,10 @@ def ai_words():
         "function": payload.get("function"),
     }
     host = payload.get("host", ollama.DEFAULT_HOST)
-    if ollama.status(host)["reachable"]:
+    ollama_state = ollama.status(host)
+    # An Ollama server with no models can't generate anything; fall through
+    # to the built-in engine instead of failing with "model not found".
+    if ollama_state["reachable"] and ollama_state["models"]:
         words, error = ollama.generate_words(
             host=host, model=payload.get("model", ollama.DEFAULT_MODEL), **args
         )

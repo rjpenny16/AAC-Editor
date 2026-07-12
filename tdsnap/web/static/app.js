@@ -28,12 +28,27 @@ const state = {
   parentId: null,
   parentFree: null,
   edits: 0,
+  native: false, // running inside the app's own window (pywebview)?
   apiToken: "",
 };
 
 /* ---------- helpers ---------- */
 
+/* Fetch the per-run token (and native flag) once. Every POST awaits this so
+   a fast first click can't race the config request and get a 403. */
+const configReady = (async () => {
+  try {
+    const response = await fetch("/api/config");
+    const config = await response.json();
+    state.apiToken = config.token || "";
+    state.native = Boolean(config.native);
+  } catch {
+    /* keep going; the server will reject protected POSTs if it is older */
+  }
+})();
+
 async function api(path, options) {
+  await configReady;
   options = options || {};
   options.headers = Object.assign(
     {},
@@ -75,11 +90,18 @@ function setBusy(button, busy) {
 const dropzone = $("dropzone");
 const fileInput = $("file-input");
 
-dropzone.addEventListener("click", () => fileInput.click());
+function browse() {
+  // In the native window, use the OS open dialog on the file in place;
+  // in a browser there's no path access, so fall back to the upload flow.
+  if (state.native && window.pywebview) openNative();
+  else fileInput.click();
+}
+
+dropzone.addEventListener("click", browse);
 dropzone.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    fileInput.click();
+    browse();
   }
 });
 ["dragover", "dragenter"].forEach((name) =>
@@ -100,6 +122,33 @@ fileInput.addEventListener("change", () => {
   if (fileInput.files[0]) uploadFile(fileInput.files[0]);
 });
 
+function applyLoadedPageset(data) {
+  state.mode = "file";
+  state.sessionId = data.session_id;
+  state.filename = data.filename;
+  state.grid = data.grid;
+  state.pages = data.pages;
+  state.words = [];
+  state.parentId = null;
+  state.parentFree = null;
+  state.edits = 0;
+
+  $("file-badge").textContent = data.filename;
+  $("file-badge").hidden = false;
+  $("build-btn-label").textContent = "Add page to working copy";
+  $("build-sub").textContent =
+    `${data.filename} · schema ${data.schema_version || "?"} · ` +
+    `${data.grid.cols}×${data.grid.rows} grid · ${data.pages.length} pages`;
+  $("upload-status").textContent = "";
+  $("parent-capacity").textContent = "";
+  parentFilter.value = "";
+  renderParents("");
+  renderWords();
+  show("build");
+  $("title-input").focus();
+  checkAi();
+}
+
 async function uploadFile(file) {
   const status = $("upload-status");
   status.classList.remove("error");
@@ -109,35 +158,30 @@ async function uploadFile(file) {
     const form = new FormData();
     form.append("file", file, file.name);
     const data = await api("/api/pageset", { method: "POST", body: form });
-
-    state.mode = "file";
-    state.sessionId = data.session_id;
-    state.filename = data.filename;
-    state.grid = data.grid;
-    state.pages = data.pages;
-    state.words = [];
-    state.parentId = null;
-    state.parentFree = null;
-    state.edits = 0;
-
-    $("file-badge").textContent = data.filename;
-    $("file-badge").hidden = false;
-    $("build-btn-label").textContent = "Add page to working copy";
-    $("build-sub").textContent =
-      `${data.filename} · schema ${data.schema_version || "?"} · ` +
-      `${data.grid.cols}×${data.grid.rows} grid · ${data.pages.length} pages`;
-    status.textContent = "";
-    renderParents("");
-    renderWords();
-    show("build");
-    $("title-input").focus();
-    checkAi();
+    applyLoadedPageset(data);
   } catch (error) {
     status.classList.add("error");
     status.textContent = error.message;
   } finally {
     dropzone.classList.remove("busy");
     fileInput.value = "";
+  }
+}
+
+async function openNative() {
+  const status = $("upload-status");
+  status.classList.remove("error");
+  dropzone.classList.add("busy");
+  try {
+    const data = await window.pywebview.api.open_pageset();
+    if (data.cancelled) return;
+    if (!data.ok) throw new Error(data.error || "Could not open the file.");
+    applyLoadedPageset(data);
+  } catch (error) {
+    status.classList.add("error");
+    status.textContent = error.message;
+  } finally {
+    dropzone.classList.remove("busy");
   }
 }
 
@@ -227,22 +271,26 @@ chipbox.addEventListener("click", (event) => {
   if (event.target === chipbox) wordInput.focus();
 });
 
+/* Clear the input BEFORE processing: when a batch fills the grid,
+   renderWords() disables the still-focused input, which fires blur
+   synchronously — with the value still set, the batch would be
+   processed a second time. */
+function takeWordInput() {
+  const value = wordInput.value;
+  wordInput.value = "";
+  if (value.trim()) addWords(value);
+}
+
 wordInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === ",") {
     event.preventDefault();
-    addWords(wordInput.value);
-    wordInput.value = "";
+    takeWordInput();
   } else if (event.key === "Backspace" && !wordInput.value && state.words.length) {
     state.words.pop();
     renderWords();
   }
 });
-wordInput.addEventListener("blur", () => {
-  if (wordInput.value.trim()) {
-    addWords(wordInput.value);
-    wordInput.value = "";
-  }
-});
+wordInput.addEventListener("blur", takeWordInput);
 wordInput.addEventListener("paste", (event) => {
   const text = (event.clipboardData || window.clipboardData).getData("text");
   if (text && text.includes(",")) {
@@ -253,16 +301,36 @@ wordInput.addEventListener("paste", (event) => {
 
 function addWords(raw) {
   const capacity = state.grid.cols * state.grid.rows;
+  let duplicates = 0;
+  let overflow = 0;
   raw
     .split(",")
     .map((word) => word.trim())
     .filter(Boolean)
     .forEach((word) => {
-      const exists = state.words.some((item) => item.label === word);
-      if (state.words.length < capacity && !exists) {
+      if (state.words.some((item) => item.label === word)) {
+        duplicates += 1;
+      } else if (state.words.length >= capacity) {
+        overflow += 1;
+      } else {
         state.words.push({ label: word, message: null, fn: state.activeFn });
       }
     });
+  // Say when something was silently dropped, or a pasted list quietly
+  // loses words and the user only finds out inside TD Snap.
+  const skipped = [];
+  if (overflow) {
+    skipped.push(
+      `${overflow} word${overflow === 1 ? "" : "s"} didn't fit — the ` +
+      `${state.grid.cols}×${state.grid.rows} grid is full`
+    );
+  }
+  if (duplicates) {
+    skipped.push(
+      `${duplicates} duplicate${duplicates === 1 ? "" : "s"} skipped`
+    );
+  }
+  $("chip-note").textContent = skipped.length ? skipped.join(" · ") + "." : "";
   renderWords();
 }
 
@@ -313,6 +381,7 @@ function renderWords() {
     remove.textContent = "×";
     remove.addEventListener("click", () => {
       state.words.splice(index, 1);
+      $("chip-note").textContent = "";
       renderWords();
     });
     chip.append(body, remove);
@@ -489,10 +558,22 @@ async function checkAi() {
     $("ai-model-size").textContent = local.model.size;
     $("ai-model-license").textContent = local.model.license;
 
-    if (data.ollama.reachable) {
+    const installed = data.ollama.models;
+    if (data.ollama.reachable && installed.length) {
       aiReady = true;
       card.hidden = true;
-      label.textContent = `Using your Ollama server (${data.ollama.models.length} model${data.ollama.models.length === 1 ? "" : "s"}).`;
+      // Point the model box at a model that's actually installed, unless the
+      // user typed one themselves — otherwise the default "llama3.2" fails
+      // on servers that only have other models.
+      const modelInput = $("ai-model");
+      const known = installed.some(
+        (name) => name === modelInput.value || name.split(":")[0] === modelInput.value
+      );
+      if (!known && !modelInput.dataset.userEdited) {
+        modelInput.value = installed[0];
+      }
+      label.textContent =
+        `Using your Ollama server (${installed.length} model${installed.length === 1 ? "" : "s"}).`;
     } else if (local.engine_available && local.downloaded) {
       aiReady = true;
       card.hidden = true;
@@ -500,19 +581,27 @@ async function checkAi() {
     } else if (local.engine_available) {
       aiReady = false;
       card.hidden = false;
-      label.textContent = "";
+      label.textContent = data.ollama.reachable
+        ? "Ollama is running but has no models installed."
+        : "";
       if (local.download.status === "downloading") trackDownload();
     } else {
       aiReady = false;
       card.hidden = true;
-      label.textContent =
-        "This install has no built-in AI engine — start Ollama to enable suggestions.";
+      label.textContent = data.ollama.reachable
+        ? "Ollama is running but has no models — try: ollama pull llama3.2"
+        : "This install has no built-in AI engine — start Ollama to enable suggestions.";
     }
     $("ai-go").disabled = !aiReady;
   } catch {
     label.textContent = "";
   }
 }
+
+$("ai-host").addEventListener("change", checkAi);
+$("ai-model").addEventListener("input", () => {
+  $("ai-model").dataset.userEdited = "1";
+});
 
 $("ai-download-btn").addEventListener("click", async () => {
   const status = $("ai-download-status");
@@ -526,7 +615,10 @@ $("ai-download-btn").addEventListener("click", async () => {
   }
 });
 
+let downloadTimer = null;
+
 function trackDownload() {
+  if (downloadTimer) return; // a poll is already running
   const button = $("ai-download-btn");
   const bar = $("ai-progress");
   const fill = $("ai-progress-fill");
@@ -534,7 +626,7 @@ function trackDownload() {
   setBusy(button, true);
   bar.hidden = false;
 
-  const timer = setInterval(async () => {
+  downloadTimer = setInterval(async () => {
     try {
       const data = await api("/api/ai/download");
       const dl = data.download;
@@ -542,6 +634,7 @@ function trackDownload() {
         if (dl.total > 0) {
           const pct = Math.round((dl.done / dl.total) * 100);
           fill.style.width = `${pct}%`;
+          bar.setAttribute("aria-valuenow", pct);
           status.textContent =
             `Downloading… ${(dl.done / 1e9).toFixed(2)} of ${(dl.total / 1e9).toFixed(2)} GB (${pct}%)`;
         } else {
@@ -549,7 +642,8 @@ function trackDownload() {
         }
         return;
       }
-      clearInterval(timer);
+      clearInterval(downloadTimer);
+      downloadTimer = null;
       setBusy(button, false);
       if (dl.status === "ready") {
         fill.style.width = "100%";
@@ -625,10 +719,7 @@ $("build-form").addEventListener("submit", async (event) => {
   const errorBox = $("build-error");
   errorBox.hidden = true;
 
-  if (wordInput.value.trim()) {
-    addWords(wordInput.value);
-    wordInput.value = "";
-  }
+  takeWordInput();
 
   const title = $("title-input").value.trim();
   const failures = [];
@@ -738,13 +829,37 @@ function renderResult(title, data) {
     checks.append(item);
   });
 
-  $("download-btn").hidden = state.mode === "live";
+  // Live mode edited TD Snap in place — nothing to save. In the native
+  // window, the OS save dialog replaces the browser download flow.
+  $("download-btn").hidden = state.mode === "live" || state.native;
+  $("save-btn").hidden = state.mode === "live" || !state.native;
+  $("save-status").textContent = "";
   $("live-result-note").hidden = state.mode !== "live";
   $("file-result-safety").hidden = state.mode === "live";
   if (state.mode === "file") {
     $("download-btn").href = `/api/pageset/${state.sessionId}/download`;
   }
 }
+
+$("save-btn").addEventListener("click", async () => {
+  // Native window: OS save dialog, written straight to disk — no Downloads
+  // folder detour.
+  const button = $("save-btn");
+  const status = $("save-status");
+  status.classList.remove("error");
+  setBusy(button, true);
+  try {
+    const data = await window.pywebview.api.save_pageset(state.sessionId);
+    if (data.cancelled) return;
+    if (!data.ok) throw new Error(data.error || "Could not save the file.");
+    status.textContent = `Saved to ${data.path}`;
+  } catch (error) {
+    status.classList.add("error");
+    status.textContent = error.message;
+  } finally {
+    setBusy(button, false);
+  }
+});
 
 $("another-btn").addEventListener("click", async () => {
   // Refresh the page list so the just-added page can be a parent too.
@@ -760,7 +875,10 @@ $("another-btn").addEventListener("click", async () => {
   state.parentId = state.mode === "live" ? 0 : null;
   state.parentFree = state.mode === "live" ? 1 : null;
   $("title-input").value = "";
-  $("parent-capacity").textContent = "";
+  $("parent-capacity").textContent = state.mode === "live"
+    ? "The agent will find the next free cell on the Topics Menu Page."
+    : "";
+  $("chip-note").textContent = "";
   parentFilter.value = "";
   renderParents("");
   renderWords();
@@ -774,24 +892,42 @@ $("reset-btn").addEventListener("click", () => {
   state.sessionId = null;
   state.words = [];
   state.parentId = null;
+  state.parentFree = null;
   $("file-badge").hidden = true;
   $("title-input").value = "";
   $("upload-status").textContent = "";
+  $("parent-capacity").textContent = "";
+  $("chip-note").textContent = "";
+  $("build-error").hidden = true;
   renderWords();
   show("load");
 });
 
+/* ---------- quit (browser mode) ---------- */
+
+$("quit-btn").addEventListener("click", async () => {
+  const opened = state.sessionId !== null;
+  const warning = opened
+    ? "Quit TD Snap Page Builder? Anything you haven't downloaded will be discarded."
+    : "Quit TD Snap Page Builder?";
+  if (!window.confirm(warning)) return;
+  try {
+    await api("/api/quit", { method: "POST" });
+  } catch {
+    /* the server may stop before the response arrives */
+  }
+  document.querySelector("main").hidden = true;
+  document.querySelector("footer").hidden = true;
+  $("quit-screen").hidden = false;
+});
+
 /* ---------- init ---------- */
 
-async function init() {
-  try {
-    const config = await api("/api/config");
-    state.apiToken = config.token || "";
-  } catch {
-    /* keep going; the server will reject protected POSTs if it is older */
-  }
-}
+configReady.then(() => {
+  // In the native window the OS window close button quits the app;
+  // in browser mode the Quit button is the only clean way to stop it.
+  $("quit-btn").hidden = state.native;
+});
 
-init();
 renderWords();
 renderPreview();
