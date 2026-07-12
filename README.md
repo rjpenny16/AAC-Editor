@@ -2,11 +2,28 @@
 
 Add vocabulary pages to a [TD Snap](https://us.tobiidynavox.com/pages/td-snap)
 page set without clicking through Edit mode button by button. Export your page
-set from TD Snap, build pages here (with optional local-AI word suggestions),
+set from TD Snap, build pages here (with optional on-device AI suggestions),
 and re-import the edited copy.
 
-Runs entirely on your computer. Your original file is never modified, and
-nothing is uploaded to the internet.
+Free and open source (MIT). Runs entirely on your computer: your original
+file is never modified, and nothing you edit is uploaded to the internet.
+Not affiliated with or endorsed by Tobii Dynavox.
+
+## Download
+
+**Windows app (no Python needed):** grab `TDSnapPageBuilder-windows.zip` from
+the [latest release](https://github.com/rjpenny16/AAC-Editor/releases/latest),
+unzip it anywhere, and double-click `TD Snap Page Builder.exe`. The app opens
+in your browser.
+
+The packaged app includes a built-in AI engine for word/phrase suggestions.
+The first time you use it, the app offers a one-time download of a free,
+open-source model (Qwen2.5 1.5B Instruct, Apache-2.0, ~1 GB); after that,
+suggestions run completely offline. The AI is optional — everything else
+works without it.
+
+Prefer Python? `pip install .` (add `.[ai]` for the built-in engine) or use
+the launchers below.
 
 ![Web UI: build a page, preview the grid, download the edited page set](docs/screenshot.png)
 
@@ -68,9 +85,14 @@ app in your browser at `http://127.0.0.1:8765`. Then:
 
 ### Optional: AI word suggestions
 
-Install [Ollama](https://ollama.com/download), run `ollama pull llama3.2`, and
-the "Suggest words with AI" section in the app comes alive. Everything stays
-on your machine.
+Two ways, both fully on your machine:
+
+- **Built-in (packaged app):** open "Suggest words with AI" and click
+  *Download AI model* — a one-time ~1 GB download of Qwen2.5 1.5B Instruct
+  (Apache-2.0). Offline forever after.
+- **Ollama:** if [Ollama](https://ollama.com/download) is running (e.g.
+  `ollama pull llama3.2`), the app detects and prefers it automatically —
+  handy if you want a bigger model.
 
 ## Command line
 
@@ -106,3 +128,14 @@ validation, CLI), `tdsnap/web/` (Flask backend + single-page frontend),
 schema-only snapshot of a real export; integration tests run against the real
 downloaded file). The real page set is proprietary Tobii content and must
 never be committed — `.gitignore` enforces this.
+
+Releases: tagging `vX.Y.Z` triggers `.github/workflows/release.yml`, which
+builds the packaged Windows app (PyInstaller + bundled llama.cpp engine) and
+attaches it to a draft GitHub Release. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE) — free for anyone to use, modify, and share. The optional AI
+model is downloaded separately from Hugging Face under its own Apache-2.0
+license. "TD Snap" is a trademark of Tobii Dynavox; this community project is
+not affiliated with or endorsed by Tobii Dynavox.

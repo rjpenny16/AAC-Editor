@@ -53,5 +53,10 @@ jobs:
       - name: Fetch real page-set fixture
         run: python scripts/fetch_fixture.py
 
-      - name: Run all tests including integration
-        run: python -m pytest -v tests/test_integration_example.py
+      - name: Install built-in AI engine
+        run: pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
+      - name: Run integration tests and real-model AI smoke test
+        env:
+          TDSNAP_AI_SMOKE: "1"
+        run: python -m pytest -v tests/test_integration_example.py tests/test_ai_smoke.py

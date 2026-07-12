@@ -111,19 +111,38 @@
         </div>
 
         <details class="ai-suggest" id="ai-suggest">
-          <summary><span id="ai-summary-text">Suggest words with AI</span> <span class="ai-tag">optional · local Ollama</span></summary>
+          <summary><span id="ai-summary-text">Suggest words with AI</span> <span class="ai-tag">optional · runs on this computer</span></summary>
           <div class="ai-body">
-            <p class="field-hint">Uses an Ollama model running on this computer; nothing
-            is sent to the internet. <span id="ollama-state"></span></p>
+            <p class="field-hint">Suggestions run entirely on this computer.
+            <span id="ai-engine-state"></span></p>
+
+            <div id="ai-download-card" class="ai-download" hidden>
+              <p class="ai-download-info">Get the free built-in model
+              (<span id="ai-model-name">…</span>, <span id="ai-model-size">…</span>,
+              <span id="ai-model-license">…</span> license). It downloads once,
+              then works completely offline.</p>
+              <button type="button" id="ai-download-btn" class="btn btn-secondary">
+                <span class="btn-label">Download AI model</span>
+              </button>
+              <div class="progress" id="ai-progress" hidden
+                   role="progressbar" aria-label="Model download progress">
+                <div class="progress-fill" id="ai-progress-fill"></div>
+              </div>
+              <p id="ai-download-status" class="status-line" role="status" aria-live="polite"></p>
+            </div>
+
             <div class="ai-controls">
               <input id="ai-count" type="number" min="1" max="40" value="10"
                      aria-label="How many words to suggest">
               <button type="button" id="ai-go" class="btn btn-secondary">Suggest words</button>
             </div>
-            <div class="ai-settings">
-              <label>Server <input id="ai-host" type="text" value="http://localhost:11434"></label>
-              <label>Model <input id="ai-model" type="text" value="llama3.2"></label>
-            </div>
+            <details class="ai-advanced">
+              <summary>Advanced: use your own Ollama server</summary>
+              <div class="ai-settings">
+                <label>Server <input id="ai-host" type="text" value="http://localhost:11434"></label>
+                <label>Model <input id="ai-model" type="text" value="llama3.2"></label>
+              </div>
+            </details>
             <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
           </div>
         </details>

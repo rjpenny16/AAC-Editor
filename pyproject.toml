@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tdsnap-page-builder"
+version = "2.1.0"
+description = "Safely add vocabulary pages to TD Snap page sets, with a local web UI and optional on-device AI suggestions."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "flask>=3.0",
+    "requests>=2.32.0",
+]
+
+[project.optional-dependencies]
+ai = ["llama-cpp-python>=0.3"]
+dev = ["pytest"]
+
+[project.scripts]
+tdsnap = "tdsnap.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rjpenny16/AAC-Editor"
+Issues = "https://github.com/rjpenny16/AAC-Editor/issues"
+
+[tool.setuptools.packages.find]
+include = ["tdsnap*"]
+
+[tool.setuptools.package-data]
+"tdsnap.web" = ["static/*"]

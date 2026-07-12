@@ -424,6 +424,39 @@ input:disabled { background: var(--surface-2); color: var(--ink-soft); }
 }
 .ai-controls { display: flex; gap: 0.5rem; margin-top: 0.625rem; }
 .ai-controls input { width: 5rem; }
+
+.ai-download {
+  margin-top: 0.625rem;
+  padding: 0.875rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.ai-download-info { margin: 0 0 0.625rem; color: var(--ink-soft); }
+
+.progress {
+  margin-top: 0.625rem;
+  height: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 400ms var(--ease);
+}
+
+.ai-advanced { margin-top: 0.625rem; }
+.ai-advanced summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  width: fit-content;
+}
 .ai-settings {
   display: flex;
   gap: 0.75rem;

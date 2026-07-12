@@ -121,7 +121,7 @@ async function uploadFile(file) {
     renderWords();
     show("build");
     $("title-input").focus();
-    checkOllama();
+    checkAi();
   } catch (error) {
     status.classList.add("error");
     status.textContent = error.message;
@@ -414,20 +414,97 @@ function renderPreview() {
   }
 }
 
-/* ---------- step 2: Ollama ---------- */
+/* ---------- step 2: AI engines ---------- */
 
-async function checkOllama() {
-  const label = $("ollama-state");
+let aiReady = false;
+
+async function checkAi() {
+  const label = $("ai-engine-state");
+  const card = $("ai-download-card");
   try {
     const data = await api(
-      `/api/ollama/status?host=${encodeURIComponent($("ai-host").value)}`
+      `/api/ai/status?host=${encodeURIComponent($("ai-host").value)}`
     );
-    label.textContent = data.reachable
-      ? `Ollama detected (${data.models.length} model${data.models.length === 1 ? "" : "s"}).`
-      : "Ollama isn't running right now.";
+    const local = data.local;
+    $("ai-model-name").textContent = local.model.name;
+    $("ai-model-size").textContent = local.model.size;
+    $("ai-model-license").textContent = local.model.license;
+
+    if (data.ollama.reachable) {
+      aiReady = true;
+      card.hidden = true;
+      label.textContent = `Using your Ollama server (${data.ollama.models.length} model${data.ollama.models.length === 1 ? "" : "s"}).`;
+    } else if (local.engine_available && local.downloaded) {
+      aiReady = true;
+      card.hidden = true;
+      label.textContent = `Built-in model ready (${local.model.name}).`;
+    } else if (local.engine_available) {
+      aiReady = false;
+      card.hidden = false;
+      label.textContent = "";
+      if (local.download.status === "downloading") trackDownload();
+    } else {
+      aiReady = false;
+      card.hidden = true;
+      label.textContent =
+        "This install has no built-in AI engine — start Ollama to enable suggestions.";
+    }
+    $("ai-go").disabled = !aiReady;
   } catch {
     label.textContent = "";
   }
+}
+
+$("ai-download-btn").addEventListener("click", async () => {
+  const status = $("ai-download-status");
+  status.classList.remove("error");
+  try {
+    await api("/api/ai/download", { method: "POST" });
+    trackDownload();
+  } catch (error) {
+    status.classList.add("error");
+    status.textContent = error.message;
+  }
+});
+
+function trackDownload() {
+  const button = $("ai-download-btn");
+  const bar = $("ai-progress");
+  const fill = $("ai-progress-fill");
+  const status = $("ai-download-status");
+  setBusy(button, true);
+  bar.hidden = false;
+
+  const timer = setInterval(async () => {
+    try {
+      const data = await api("/api/ai/download");
+      const dl = data.download;
+      if (dl.status === "downloading") {
+        if (dl.total > 0) {
+          const pct = Math.round((dl.done / dl.total) * 100);
+          fill.style.width = `${pct}%`;
+          status.textContent =
+            `Downloading… ${(dl.done / 1e9).toFixed(2)} of ${(dl.total / 1e9).toFixed(2)} GB (${pct}%)`;
+        } else {
+          status.textContent = `Downloading… ${(dl.done / 1e9).toFixed(2)} GB`;
+        }
+        return;
+      }
+      clearInterval(timer);
+      setBusy(button, false);
+      if (dl.status === "ready") {
+        fill.style.width = "100%";
+        status.textContent = "Done — suggestions are ready.";
+        checkAi();
+      } else if (dl.status === "error") {
+        status.classList.add("error");
+        status.textContent = `Download failed: ${dl.error}. Click to retry.`;
+        bar.hidden = true;
+      }
+    } catch {
+      /* transient poll failure; keep trying */
+    }
+  }, 1000);
 }
 
 $("ai-go").addEventListener("click", async () => {
@@ -449,7 +526,7 @@ $("ai-go").addEventListener("click", async () => {
   setBusy(button, true);
   status.textContent = `Asking ${$("ai-model").value} for ${$("ai-count").value} “${category}” ${what}…`;
   try {
-    const data = await api("/api/ollama/words", {
+    const data = await api("/api/ai/words", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -13,7 +13,7 @@ from .pageset import Pageset
 from .builder import add_category_page
 from .validate import validate_pageset, validate_new_page
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 __all__ = [
     "PagesetError",
