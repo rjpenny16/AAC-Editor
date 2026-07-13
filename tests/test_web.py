@@ -46,6 +46,16 @@ def test_health_identifies_the_app(client):
     assert data["ok"] and data["app"] == server.APP_ID
 
 
+def test_index_explains_both_local_ai_setup_options(client):
+    page = client.get("/").get_data(as_text=True)
+    assert "Recommended: use the built-in model" in page
+    assert "ollama pull llama3.2" in page
+    assert "Check connection" in page
+    assert "Drop your" not in page
+    assert "There are no exports" in page
+    assert "Drag buttons to the exact cells" in page
+
+
 def test_foreign_hosts_are_rejected(client):
     """DNS rebinding shows up as a non-loopback Host header — refuse it."""
     for evil in ("evil.example", "evil.example:8765", "127.0.0.1.evil.example"):

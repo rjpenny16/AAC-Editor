@@ -17,19 +17,25 @@ const FUNCTIONS = {
 };
 
 const state = {
-  mode: "file", // "file" | "live"
-  sessionId: null,
-  filename: "",
+  mode: "live",
+  operation: "existing", // "existing" | "new"
   grid: { cols: 8, rows: 5 },
+  existingButtons: [],
+  layoutFingerprint: null,
   pages: [],
-  words: [], // [{label, message|null, fn|""}]
+  words: [], // [{label, message|null, fn|"", slot, symbol}]
   pageStyle: "words", // "words" | "topic"
   activeFn: "",
+  autoTopicRows: false,
   parentId: null,
   parentFree: null,
+  parentTouched: false,
+  recommendedParent: null,
+  currentPage: "",
   edits: 0,
   native: false, // running inside the app's own window (pywebview)?
   apiToken: "",
+  targetLoading: false,
 };
 
 /* ---------- helpers ---------- */
@@ -78,6 +84,13 @@ function show(step) {
   if (active && typeof active.scrollIntoView === "function") {
     active.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+  if (step === "result") {
+    const heading = active && active.querySelector("h2");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+    }
+  }
 }
 
 function setBusy(button, busy) {
@@ -85,105 +98,7 @@ function setBusy(button, busy) {
   button.disabled = busy;
 }
 
-/* ---------- step 1: load ---------- */
-
-const dropzone = $("dropzone");
-const fileInput = $("file-input");
-
-function browse() {
-  // In the native window, use the OS open dialog on the file in place;
-  // in a browser there's no path access, so fall back to the upload flow.
-  if (state.native && window.pywebview) openNative();
-  else fileInput.click();
-}
-
-dropzone.addEventListener("click", browse);
-dropzone.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    browse();
-  }
-});
-["dragover", "dragenter"].forEach((name) =>
-  dropzone.addEventListener(name, (event) => {
-    event.preventDefault();
-    dropzone.classList.add("dragover");
-  })
-);
-["dragleave", "drop"].forEach((name) =>
-  dropzone.addEventListener(name, () => dropzone.classList.remove("dragover"))
-);
-dropzone.addEventListener("drop", (event) => {
-  event.preventDefault();
-  const file = event.dataTransfer.files && event.dataTransfer.files[0];
-  if (file) uploadFile(file);
-});
-fileInput.addEventListener("change", () => {
-  if (fileInput.files[0]) uploadFile(fileInput.files[0]);
-});
-
-function applyLoadedPageset(data) {
-  state.mode = "file";
-  state.sessionId = data.session_id;
-  state.filename = data.filename;
-  state.grid = data.grid;
-  state.pages = data.pages;
-  state.words = [];
-  state.parentId = null;
-  state.parentFree = null;
-  state.edits = 0;
-
-  $("file-badge").textContent = data.filename;
-  $("file-badge").hidden = false;
-  $("build-btn-label").textContent = "Add page to working copy";
-  $("build-sub").textContent =
-    `${data.filename} · schema ${data.schema_version || "?"} · ` +
-    `${data.grid.cols}×${data.grid.rows} grid · ${data.pages.length} pages`;
-  $("upload-status").textContent = "";
-  $("parent-capacity").textContent = "";
-  parentFilter.value = "";
-  renderParents("");
-  renderWords();
-  show("build");
-  $("title-input").focus();
-  checkAi();
-}
-
-async function uploadFile(file) {
-  const status = $("upload-status");
-  status.classList.remove("error");
-  status.textContent = `Checking “${file.name}”…`;
-  dropzone.classList.add("busy");
-  try {
-    const form = new FormData();
-    form.append("file", file, file.name);
-    const data = await api("/api/pageset", { method: "POST", body: form });
-    applyLoadedPageset(data);
-  } catch (error) {
-    status.classList.add("error");
-    status.textContent = error.message;
-  } finally {
-    dropzone.classList.remove("busy");
-    fileInput.value = "";
-  }
-}
-
-async function openNative() {
-  const status = $("upload-status");
-  status.classList.remove("error");
-  dropzone.classList.add("busy");
-  try {
-    const data = await window.pywebview.api.open_pageset();
-    if (data.cancelled) return;
-    if (!data.ok) throw new Error(data.error || "Could not open the file.");
-    applyLoadedPageset(data);
-  } catch (error) {
-    status.classList.add("error");
-    status.textContent = error.message;
-  } finally {
-    dropzone.classList.remove("busy");
-  }
-}
+/* ---------- step 1: connect to live TD Snap ---------- */
 
 $("live-connect-btn").addEventListener("click", async () => {
   const button = $("live-connect-btn");
@@ -198,27 +113,34 @@ $("live-connect-btn").addEventListener("click", async () => {
     if (!data.unlocked) throw new Error("Unlock Windows, then try again.");
 
     state.mode = "live";
-    state.sessionId = null;
-    state.filename = "Open TD Snap";
     state.grid = data.grid;
-    state.pages = [{ id: 0, title: "Topics Menu Page" }];
+    state.currentPage = data.page;
+    const detected = Array.isArray(data.pages) && data.pages.length
+      ? data.pages
+      : [data.page, "Topics Menu Page"];
+    state.pages = [...new Set(detected.filter(Boolean))].map((title) => ({
+      id: title,
+      title,
+    }));
     state.words = [];
-    state.parentId = 0;
+    state.parentId = data.page;
     state.parentFree = 1;
+    state.parentTouched = false;
+    state.recommendedParent = data.page;
     state.edits = 0;
 
     $("file-badge").textContent = "Live TD Snap";
     $("file-badge").hidden = false;
     $("build-sub").textContent =
-      `Editing the open TD Snap page set directly - ${data.grid.cols}x${data.grid.rows} grid`;
-    $("build-btn-label").textContent = "Add directly to TD Snap";
+      `Connected to “${data.page}” · ${data.grid.cols}×${data.grid.rows} grid · ` +
+      `${state.pages.length} possible locations detected`;
+    $("build-btn-label").textContent = "Update TD Snap";
     status.textContent = "";
     renderParents("");
-    $("parent-capacity").textContent =
-      "The agent will find the next free cell on the Topics Menu Page.";
-    renderWords();
+    setOperation("existing");
+    await loadTargetLayout(data.page);
     show("build");
-    $("title-input").focus();
+    $("word-input").focus();
     checkAi();
   } catch (error) {
     status.classList.add("error");
@@ -228,14 +150,91 @@ $("live-connect-btn").addEventListener("click", async () => {
   }
 });
 
+async function loadTargetLayout(pageName) {
+  if (state.operation !== "existing" || !pageName) return;
+  clearBuildError();
+  state.targetLoading = true;
+  state.parentFree = null;
+  parentSelect.disabled = true;
+  $("parent-capacity").textContent = "Loading the existing layout…";
+  try {
+    const data = await api(`/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
+    state.grid = data.grid;
+    state.existingButtons = data.buttons || [];
+    state.layoutFingerprint = data.fingerprint;
+    state.parentFree = data.free_slots.length;
+    const occupied = new Set(state.existingButtons.map((button) => button.slot));
+    state.words.forEach((item) => {
+      if (occupied.has(item.slot)) item.slot = firstAvailableSlot();
+    });
+    $("parent-capacity").classList.remove("error");
+    $("parent-capacity").textContent =
+      `${data.free_slots.length} empty cell${data.free_slots.length === 1 ? "" : "s"} on “${data.page}”.`;
+    renderWords();
+  } catch (error) {
+    state.existingButtons = [];
+    state.layoutFingerprint = null;
+    $("parent-capacity").classList.add("error");
+    $("parent-capacity").textContent = "The layout could not be loaded.";
+    renderWords();
+    throw error;
+  } finally {
+    state.targetLoading = false;
+    parentSelect.disabled = false;
+  }
+}
+
+function setOperation(operation) {
+  state.operation = operation;
+  const existing = operation === "existing";
+  $("operation-existing").classList.toggle("selected", existing);
+  $("operation-existing").setAttribute("aria-checked", existing);
+  $("operation-new").classList.toggle("selected", !existing);
+  $("operation-new").setAttribute("aria-checked", !existing);
+  $("operation-existing").tabIndex = existing ? 0 : -1;
+  $("operation-new").tabIndex = existing ? -1 : 0;
+  $("title-field").hidden = existing;
+  $("placement-advice").hidden = existing;
+  $("target-label").textContent = existing
+    ? "Which existing page should receive the buttons?"
+    : "Where should the new folder button go?";
+  $("operation-hint").textContent = existing
+    ? "Choose the category first, then add words without creating another folder."
+    : "Create a separate vocabulary page and link it from an existing page.";
+  $("preview-hint").textContent = existing
+    ? "Existing buttons are locked. Drag new buttons to exact empty cells, or focus one and use the arrow keys."
+    : "Drag buttons to the exact cells you want, or focus one and use the arrow keys.";
+  $("build-btn-label").textContent = "Update TD Snap";
+  state.existingButtons = existing ? state.existingButtons : [];
+  state.layoutFingerprint = existing ? state.layoutFingerprint : null;
+  renderWords();
+}
+
+$("operation-existing").addEventListener("click", async () => {
+  setOperation("existing");
+  try {
+    await loadTargetLayout(titleOf(state.parentId));
+  } catch (error) {
+    showBuildError("Couldn’t load the selected TD Snap page.", [error.message]);
+  }
+});
+$("operation-new").addEventListener("click", () => {
+  setOperation("new");
+  updatePlacementRecommendation();
+  $("title-input").focus();
+});
+
 /* ---------- step 2: page style + function palette ---------- */
 
 function setPageStyle(style) {
   state.pageStyle = style;
+  state.autoTopicRows = style === "topic";
   $("style-words").classList.toggle("selected", style === "words");
   $("style-words").setAttribute("aria-checked", style === "words");
   $("style-topic").classList.toggle("selected", style === "topic");
   $("style-topic").setAttribute("aria-checked", style === "topic");
+  $("style-words").tabIndex = style === "words" ? 0 : -1;
+  $("style-topic").tabIndex = style === "topic" ? 0 : -1;
   $("fn-palette").hidden = style !== "topic";
   $("style-hint").textContent =
     style === "topic"
@@ -244,20 +243,27 @@ function setPageStyle(style) {
   $("ai-go").textContent = style === "topic" ? "Suggest phrases" : "Suggest words";
   $("ai-summary-text").textContent =
     style === "topic" ? "Suggest phrases with AI" : "Suggest words with AI";
-  if (style !== "topic") setActiveFn("");
+  if (style !== "topic") setActiveFn("", false);
+  else autoFormatTopicRows();
 }
 
-function setActiveFn(fn) {
+function setActiveFn(fn, manual = true) {
   state.activeFn = fn;
+  if (manual) state.autoTopicRows = false;
   document.querySelectorAll("#fn-palette .fn-pill").forEach((pill) => {
     const selected = pill.dataset.fn === fn;
     pill.classList.toggle("selected", selected);
     pill.setAttribute("aria-checked", selected);
+    pill.tabIndex = selected ? 0 : -1;
   });
 }
 
 $("style-words").addEventListener("click", () => setPageStyle("words"));
 $("style-topic").addEventListener("click", () => setPageStyle("topic"));
+$("auto-topic-layout").addEventListener("click", () => {
+  state.autoTopicRows = true;
+  autoFormatTopicRows();
+});
 document.querySelectorAll("#fn-palette .fn-pill").forEach((pill) =>
   pill.addEventListener("click", () => setActiveFn(pill.dataset.fn))
 );
@@ -299,8 +305,41 @@ wordInput.addEventListener("paste", (event) => {
   }
 });
 
-function addWords(raw) {
+function firstAvailableSlot() {
+  const used = new Set(state.words.map((item) => item.slot));
+  state.existingButtons.forEach((button) => used.add(button.slot));
   const capacity = state.grid.cols * state.grid.rows;
+  for (let slot = 0; slot < capacity; slot += 1) {
+    if (!used.has(slot)) return slot;
+  }
+  return capacity - 1;
+}
+
+function topicRowFunctions(rows) {
+  const base = ["question", "comment", "positive", "negative", "personal"];
+  if (rows <= 1) return ["question"];
+  if (rows < base.length) return [...base.slice(0, rows - 1), "personal"];
+  const layout = [...base];
+  if (rows > 5) layout.splice(2, 0, "comment");
+  while (layout.length < rows) layout.push("personal");
+  return layout.slice(0, rows);
+}
+
+function functionForSlot(slot) {
+  const row = Math.floor((Number(slot) || 0) / state.grid.cols);
+  return topicRowFunctions(state.grid.rows)[Math.min(row, state.grid.rows - 1)];
+}
+
+function autoFormatTopicRows() {
+  state.words.forEach((item, index) => {
+    if (!Number.isInteger(item.slot)) item.slot = index;
+    item.fn = functionForSlot(item.slot);
+  });
+  renderWords();
+}
+
+function addWords(raw) {
+  const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
   let duplicates = 0;
   let overflow = 0;
   raw
@@ -308,12 +347,23 @@ function addWords(raw) {
     .map((word) => word.trim())
     .filter(Boolean)
     .forEach((word) => {
-      if (state.words.some((item) => item.label === word)) {
+      const normalized = word.toLocaleLowerCase();
+      const alreadyPlanned = state.words.some(
+        (item) => item.label.toLocaleLowerCase() === normalized
+      );
+      const alreadyPresent = state.existingButtons.some(
+        (item) => String(item.label || "").toLocaleLowerCase() === normalized
+      );
+      if (alreadyPlanned || alreadyPresent) {
         duplicates += 1;
       } else if (state.words.length >= capacity) {
         overflow += 1;
       } else {
-        state.words.push({ label: word, message: null, fn: state.activeFn });
+        const slot = firstAvailableSlot();
+        const fn = state.pageStyle === "topic" && state.autoTopicRows
+          ? functionForSlot(slot)
+          : state.activeFn;
+        state.words.push({ label: word, message: null, fn, slot, symbol: true });
       }
     });
   // Say when something was silently dropped, or a pasted list quietly
@@ -388,7 +438,7 @@ function renderWords() {
     chipbox.insertBefore(chip, wordInput);
   });
 
-  const capacity = state.grid.cols * state.grid.rows;
+  const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
   const meter = $("capacity");
   meter.textContent = `${state.words.length} of ${capacity} cells`;
   meter.classList.toggle("full", state.words.length >= capacity);
@@ -411,6 +461,7 @@ function setEditorFn(fn) {
     const selected = pill.dataset.fn === fn;
     pill.classList.toggle("selected", selected);
     pill.setAttribute("aria-checked", selected);
+    pill.tabIndex = selected ? 0 : -1;
   });
   chipDialog.dataset.fn = fn;
 }
@@ -423,10 +474,30 @@ function openChipEditor(index) {
   editingIndex = index;
   const item = state.words[index];
   $("edit-label").value = item.label;
+  $("edit-label").setCustomValidity("");
   $("edit-message").value = item.message || "";
   setEditorFn(item.fn || "");
   chipDialog.showModal();
 }
+
+$("edit-label").addEventListener("input", () => {
+  $("edit-label").setCustomValidity("");
+});
+
+$("chip-editor-form").addEventListener("submit", (event) => {
+  if (!event.submitter || event.submitter.value !== "save") return;
+  const input = $("edit-label");
+  const label = input.value.trim();
+  const duplicate = state.words.some(
+    (item, index) => index !== editingIndex &&
+      item.label.toLocaleLowerCase() === label.toLocaleLowerCase()
+  );
+  input.setCustomValidity(duplicate ? "Each button needs a unique label." : "");
+  if (!label || !input.checkValidity()) {
+    event.preventDefault();
+    input.reportValidity();
+  }
+});
 
 chipDialog.addEventListener("close", () => {
   const action = chipDialog.returnValue;
@@ -441,6 +512,8 @@ chipDialog.addEventListener("close", () => {
         label,
         message: message && message !== label ? message : null,
         fn: chipDialog.dataset.fn || "",
+        slot: state.words[editingIndex].slot,
+        symbol: state.words[editingIndex].symbol !== false,
       };
     }
   }
@@ -454,30 +527,26 @@ const parentSelect = $("parent-select");
 const parentFilter = $("parent-filter");
 
 parentFilter.addEventListener("input", () => renderParents(parentFilter.value));
+$("parent-filter-clear").addEventListener("click", () => {
+  parentFilter.value = "";
+  renderParents("");
+  parentFilter.focus();
+});
 
 parentSelect.addEventListener("change", async () => {
-  state.parentId = Number(parentSelect.value);
-  if (state.mode === "live") {
-    state.parentFree = 1;
+  state.parentId = parentSelect.value;
+  state.parentTouched = true;
+  state.parentFree = 1;
+  if (state.operation === "existing") {
+    try {
+      await loadTargetLayout(titleOf(state.parentId));
+    } catch (error) {
+      showBuildError("Couldn’t load the selected TD Snap page.", [error.message]);
+    }
+  } else {
+    $("parent-capacity").classList.remove("error");
     $("parent-capacity").textContent =
-      "The agent will find the next free cell on the Topics Menu Page.";
-    return;
-  }
-  state.parentFree = null;
-  const note = $("parent-capacity");
-  note.textContent = "…";
-  try {
-    const data = await api(
-      `/api/pageset/${state.sessionId}/page/${state.parentId}/capacity`
-    );
-    state.parentFree = data.free_cells;
-    const title = titleOf(state.parentId);
-    note.textContent =
-      data.free_cells > 0
-        ? `“${title}” has ${data.free_cells} free cell${data.free_cells === 1 ? "" : "s"}.`
-        : `“${title}” is full — the link button won't fit; pick another page.`;
-  } catch {
-    note.textContent = "";
+      `The link will use the first free cell on “${titleOf(state.parentId)}”.`;
   }
 });
 
@@ -485,6 +554,80 @@ function titleOf(pageId) {
   const page = state.pages.find((p) => p.id === pageId);
   return page ? page.title : `Page ${pageId}`;
 }
+
+const AAC_PAGE_GROUPS = [
+  { words: ["food", "snack", "drink", "meal", "eat"], pages: ["eating", "cooking", "restaurant"] },
+  { words: ["game", "play", "toy", "minecraft"], pages: ["games", "toy play", "minecraft"] },
+  { words: ["family", "mom", "dad", "sister", "brother", "friend", "people"], pages: ["my family", "about me"] },
+  { words: ["school", "class", "teacher", "lesson", "learn"], pages: ["classroom", "reading"] },
+  { words: ["feel", "body", "health", "doctor", "appointment"], pages: ["self care", "body safety", "appointment"] },
+  { words: ["music", "song", "sing", "instrument"], pages: ["music"] },
+  { words: ["sport", "ball", "team", "exercise"], pages: ["sports"] },
+  { words: ["shop", "buy", "store", "money"], pages: ["shopping"] },
+  { words: ["car", "bus", "train", "travel", "ride"], pages: ["transportation", "community"] },
+  { words: ["art", "draw", "paint", "craft", "create"], pages: ["art"] },
+  { words: ["book", "story", "read"], pages: ["reading"] },
+  { words: ["joke", "funny", "laugh"], pages: ["jokes"] },
+];
+
+function tokens(text) {
+  const found = String(text || "").toLowerCase().match(/[a-z0-9]+/g) || [];
+  const normalized = new Set(found);
+  found.forEach((word) => {
+    if (word.length > 3 && word.endsWith("s")) normalized.add(word.slice(0, -1));
+  });
+  return normalized;
+}
+
+function recommendParent(title) {
+  const wanted = tokens(title);
+  if (!wanted.size || !state.pages.length) return state.currentPage || state.pages[0].id;
+  let best = null;
+  state.pages.forEach((page) => {
+    const pageTokens = tokens(page.title);
+    let score = [...wanted].filter((token) => pageTokens.has(token)).length * 8;
+    AAC_PAGE_GROUPS.forEach((group) => {
+      const queryMatches = group.words.some((word) => wanted.has(word));
+      const pageMatch = group.pages.findIndex((name) =>
+        page.title.toLowerCase().includes(name)
+      );
+      if (queryMatches && pageMatch >= 0) score += 6 + group.pages.length - pageMatch;
+    });
+    if (page.id === state.currentPage && page.title !== "Topics Menu Page") score += 2;
+    if (/^your topic \d+$/i.test(page.title)) score -= 4;
+    if (!best || score > best.score) best = { id: page.id, title: page.title, score };
+  });
+  if (best && best.score > 0) return best.id;
+  const topics = state.pages.find((page) => page.title === "Topics Menu Page");
+  return (topics || state.pages.find((page) => page.id === state.currentPage) || state.pages[0]).id;
+}
+
+function updatePlacementRecommendation() {
+  const recommendation = recommendParent($("title-input").value);
+  state.recommendedParent = recommendation;
+  const title = titleOf(recommendation);
+  const hasName = Boolean($("title-input").value.trim());
+  $("placement-title").textContent = hasName ? `Suggested location: ${title}` : "AAC-friendly placement";
+  $("placement-copy").textContent = hasName
+    ? `This is the closest existing category the app can detect. Keeping related fringe vocabulary together makes it easier to find without moving established words.`
+    : "Name the page above and the app will suggest an existing location, keeping related vocabulary together.";
+  if (!state.parentTouched && recommendation) {
+    state.parentId = recommendation;
+    renderParents(parentFilter.value);
+    $("parent-capacity").textContent =
+      `The link will use the first free cell on “${title}”.`;
+  }
+  $("use-placement").hidden = !hasName || state.parentId === recommendation;
+}
+
+$("title-input").addEventListener("input", updatePlacementRecommendation);
+$("use-placement").addEventListener("click", () => {
+  state.parentId = state.recommendedParent;
+  state.parentTouched = false;
+  parentFilter.value = "";
+  renderParents("");
+  updatePlacementRecommendation();
+});
 
 function renderParents(filter) {
   const query = filter.trim().toLowerCase();
@@ -504,7 +647,7 @@ function renderParents(filter) {
     option.textContent = "No pages match";
     parentSelect.append(option);
   } else if (query && parentSelect.options.length === 1 &&
-             Number(parentSelect.options[0].value) !== state.parentId) {
+             parentSelect.options[0].value !== String(state.parentId)) {
     // Filter narrowed to a single page: select it without an extra click.
     parentSelect.options[0].selected = true;
     parentSelect.dispatchEvent(new Event("change"));
@@ -517,7 +660,7 @@ function renderPreview() {
   const preview = $("preview");
   preview.style.setProperty("--cols", state.grid.cols);
   preview.innerHTML = "";
-  if (!state.words.length) {
+  if (!state.words.length && !state.existingButtons.length) {
     const note = document.createElement("div");
     note.className = "cell empty-note";
     note.textContent = "Your words appear here, laid out exactly as TD Snap will show them.";
@@ -525,21 +668,93 @@ function renderPreview() {
     return;
   }
   const total = state.grid.cols * state.grid.rows;
-  for (let index = 0; index < total; index += 1) {
+  for (let slot = 0; slot < total; slot += 1) {
     const cell = document.createElement("div");
     cell.className = "cell";
-    if (index < state.words.length) {
+    cell.dataset.slot = slot;
+    if (state.pageStyle === "topic") {
+      const rowFn = functionForSlot(slot);
+      cell.classList.add("topic-row");
+      cell.style.setProperty("--row-color", FUNCTIONS[rowFn].color);
+    }
+    const existing = state.existingButtons.find((item) => item.slot === slot);
+    if (existing) {
+      cell.classList.add("existing");
+      cell.textContent = existing.label || "Existing button";
+      cell.title = "Existing TD Snap button — position preserved";
+      cell.setAttribute("aria-label", `${existing.label || "Existing button"}, existing and locked`);
+    }
+    const index = state.words.findIndex((item) => item.slot === slot);
+    if (index >= 0) {
       const item = state.words[index];
       cell.classList.add("used");
       cell.textContent = item.label;
+      cell.draggable = true;
+      cell.tabIndex = 0;
+      cell.setAttribute("role", "button");
+      cell.setAttribute(
+        "aria-label",
+        `${item.label}, row ${Math.floor(slot / state.grid.cols) + 1}, ` +
+        `column ${(slot % state.grid.cols) + 1}. Drag or use arrow keys to move.`
+      );
       if (item.fn) {
         cell.classList.add("coded");
         cell.style.setProperty("--fn-color", FUNCTIONS[item.fn].color);
       }
       if (item.message) cell.title = `Speaks: “${item.message}”`;
+      cell.addEventListener("dragstart", (event) => {
+        event.dataTransfer.setData("text/plain", String(index));
+        event.dataTransfer.effectAllowed = "move";
+        cell.classList.add("dragging");
+      });
+      cell.addEventListener("dragend", () => cell.classList.remove("dragging"));
+      cell.addEventListener("keydown", (event) => {
+        const moves = {
+          ArrowLeft: -1,
+          ArrowRight: 1,
+          ArrowUp: -state.grid.cols,
+          ArrowDown: state.grid.cols,
+        };
+        if (!(event.key in moves)) return;
+        event.preventDefault();
+        const target = Math.max(0, Math.min(total - 1, slot + moves[event.key]));
+        movePreviewItem(index, target);
+        const moved = preview.querySelector(`[data-slot="${target}"]`);
+        if (moved) moved.focus();
+      });
     }
+    cell.addEventListener("dragover", (event) => {
+      if (existing) return;
+      event.preventDefault();
+      cell.classList.add("drop-target");
+    });
+    cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
+    cell.addEventListener("drop", (event) => {
+      if (existing) return;
+      event.preventDefault();
+      cell.classList.remove("drop-target");
+      const index = Number(event.dataTransfer.getData("text/plain"));
+      if (Number.isInteger(index)) movePreviewItem(index, slot);
+    });
     preview.append(cell);
   }
+}
+
+function movePreviewItem(index, targetSlot) {
+  const item = state.words[index];
+  if (!item || item.slot === targetSlot) return;
+  if (state.existingButtons.some((button) => button.slot === targetSlot)) return;
+  const previousSlot = item.slot;
+  const occupant = state.words.find((candidate, candidateIndex) =>
+    candidateIndex !== index && candidate.slot === targetSlot
+  );
+  item.slot = targetSlot;
+  if (occupant) occupant.slot = previousSlot;
+  if (state.pageStyle === "topic" && state.autoTopicRows) {
+    item.fn = functionForSlot(item.slot);
+    if (occupant) occupant.fn = functionForSlot(occupant.slot);
+  }
+  renderWords();
 }
 
 /* ---------- step 2: AI engines ---------- */
@@ -582,23 +797,29 @@ async function checkAi() {
       aiReady = false;
       card.hidden = false;
       label.textContent = data.ollama.reachable
-        ? "Ollama is running but has no models installed."
-        : "";
+        ? "Ollama is connected, but no model is installed. Run the command in the Ollama steps below, or download the built-in model."
+        : "No AI model is ready yet. Follow the built-in setup below, or use the Ollama instructions.";
       if (local.download.status === "downloading") trackDownload();
     } else {
       aiReady = false;
       card.hidden = true;
       label.textContent = data.ollama.reachable
-        ? "Ollama is running but has no models — try: ollama pull llama3.2"
-        : "This install has no built-in AI engine — start Ollama to enable suggestions.";
+        ? "Ollama is connected, but no model is installed. Run ollama pull llama3.2, then click Check connection."
+        : "No AI model is ready. This install needs Ollama; follow the setup steps below.";
     }
     $("ai-go").disabled = !aiReady;
   } catch {
-    label.textContent = "";
+    aiReady = false;
+    $("ai-go").disabled = true;
+    label.textContent = "Could not check the local AI status. Check that the app is still connected, then try again.";
   }
 }
 
 $("ai-host").addEventListener("change", checkAi);
+$("ai-check-btn").addEventListener("click", async () => {
+  $("ai-engine-state").textContent = "Checking the Ollama connection…";
+  await checkAi();
+});
 $("ai-model").addEventListener("input", () => {
   $("ai-model").dataset.userEdited = "1";
 });
@@ -692,13 +913,15 @@ $("ai-go").addEventListener("click", async () => {
       }),
     });
     // Phrases arrive comma-prone; add them one by one instead of splitting.
-    const capacity = state.grid.cols * state.grid.rows;
+    const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
     let added = 0;
     data.words.forEach((text) => {
       const label = text.trim();
       const exists = state.words.some((item) => item.label === label);
       if (label && !exists && state.words.length < capacity) {
-        state.words.push({ label, message: null, fn: state.activeFn });
+        const slot = firstAvailableSlot();
+        const fn = topic && state.autoTopicRows ? functionForSlot(slot) : state.activeFn;
+        state.words.push({ label, message: null, fn, slot, symbol: true });
         added += 1;
       }
     });
@@ -714,19 +937,34 @@ $("ai-go").addEventListener("click", async () => {
 
 /* ---------- step 2 → 3: build ---------- */
 
-$("build-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
+function clearBuildError() {
   const errorBox = $("build-error");
   errorBox.hidden = true;
+  errorBox.innerHTML = "";
+}
+
+const buildForm = $("build-form");
+buildForm.addEventListener("input", clearBuildError);
+buildForm.addEventListener("change", clearBuildError);
+
+buildForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clearBuildError();
 
   takeWordInput();
 
   const title = $("title-input").value.trim();
   const failures = [];
-  if (!title) failures.push("Give the new page a title.");
+  if (state.operation === "new" && !title) failures.push("Give the new page a title.");
   if (!state.words.length) failures.push("Add at least one word.");
-  if (state.parentId == null) failures.push("Pick the page that gets the link button.");
-  if (state.parentFree === 0) {
+  if (state.parentId == null) failures.push("Choose a target page.");
+  if (state.operation === "existing" && state.targetLoading) {
+    failures.push("Wait for the selected page layout to finish loading.");
+  }
+  if (state.operation === "existing" && !state.layoutFingerprint) {
+    failures.push("Reload the selected page layout before editing.");
+  }
+  if (state.operation === "new" && state.parentFree === 0) {
     failures.push("The selected page is full; pick one with a free cell.");
   }
   if (failures.length) {
@@ -737,29 +975,31 @@ $("build-form").addEventListener("submit", async (event) => {
   const button = $("build-btn");
   setBusy(button, true);
   try {
-    const path = state.mode === "live"
-      ? "/api/tdsnap/page"
-      : `/api/pageset/${state.sessionId}/page`;
+    const path = state.operation === "existing" ? "/api/tdsnap/edit-plan" : "/api/tdsnap/page";
     const payload = {
+      operation: state.operation === "existing" ? "add_to_existing_page" : "create_page",
       title,
       items: state.words.map((item) => ({
         label: item.label,
         message: item.message,
         border_color: item.fn ? FUNCTIONS[item.fn].color : null,
+        slot: item.slot,
+        symbol: item.symbol !== false,
       })),
+      parent: titleOf(state.parentId),
+      page: titleOf(state.parentId),
+      fingerprint: state.layoutFingerprint,
     };
-    if (state.mode === "live") payload.parent = titleOf(state.parentId);
-    else payload.parent_page_id = state.parentId;
     const data = await api(path, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(state.mode === "live" ? { "X-TDSnap-Editor": "1" } : {}),
+        "X-TDSnap-Editor": "1",
       },
       body: JSON.stringify(payload),
     });
     state.edits = data.edits || state.edits + 1;
-    renderResult(title, data);
+    renderResult(state.operation === "existing" ? titleOf(state.parentId) : title, data);
     show("result");
   } catch (error) {
     showBuildError(error.message, error.problems || []);
@@ -793,8 +1033,12 @@ const CHECK_LABELS = {
   linkage_chains: "Every button, layout, link and sync record is complete",
   roundtrip_diff: "Everything else in your page set is untouched, byte for byte",
   td_snap_edit: "TD Snap saved the page in the open page set",
-  navigation: "The Topics button opens the new page",
+  navigation: "The chosen folder button opens the new page",
+  target_page: "The requested existing page was edited",
   content: "Every requested speaking button is present",
+  positions: "Every new button is in its reviewed empty cell",
+  symbols: "Matching symbols were added to the buttons",
+  topic_format: "Topic-page row colors were applied in TD Snap",
 };
 
 const CHECK_SVG =
@@ -803,99 +1047,91 @@ const CHECK_SVG =
   '<path d="M20 6 9 17l-5-5"/></svg>';
 
 function renderResult(title, data) {
-  $("result-heading").childNodes[0].textContent =
-    state.mode === "live" ? "TD Snap updated " : "Page added ";
+  $("result-heading").childNodes[0].textContent = "TD Snap updated ";
   $("edit-count").textContent =
-    state.edits > 1 ? `· ${state.edits} pages added this session` : "";
-  $("result-sub").textContent =
-    `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, ` +
-    `and “${titleOf(state.parentId)}” now links to it.`;
-
-  if (data.warnings && data.warnings.length) {
-    $("result-sub").textContent += ` ${data.warnings.join(" ")}`;
-  }
+    state.edits > 1 ? `· ${state.edits} edits this session` : "";
+  $("another-btn").textContent = state.operation === "existing"
+    ? "Add more buttons"
+    : "Create another page";
+  $("result-sub").textContent = state.operation === "existing"
+    ? `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to “${title}” without moving its existing vocabulary.`
+    : `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, and “${titleOf(state.parentId)}” now links to it.`;
 
   const checks = $("checks");
   checks.innerHTML = "";
   Object.entries(CHECK_LABELS).forEach(([key, label]) => {
-    if (!data.checks || data.checks[key] !== "pass") return;
+    const status = data.checks && data.checks[key];
+    if (!status) return;
     const item = document.createElement("li");
+    item.classList.toggle("warning", status !== "pass");
     const icon = document.createElement("span");
     icon.className = "check-icon";
-    icon.innerHTML = CHECK_SVG;
+    if (status === "pass") icon.innerHTML = CHECK_SVG;
+    else icon.textContent = "!";
     const text = document.createElement("span");
-    text.textContent = label;
+    text.textContent = status === "pass" ? label : `${label} — needs review`;
     item.append(icon, text);
     checks.append(item);
   });
 
-  // Live mode edited TD Snap in place — nothing to save. In the native
-  // window, the OS save dialog replaces the browser download flow.
-  $("download-btn").hidden = state.mode === "live" || state.native;
-  $("save-btn").hidden = state.mode === "live" || !state.native;
-  $("save-status").textContent = "";
-  $("live-result-note").hidden = state.mode !== "live";
-  $("file-result-safety").hidden = state.mode === "live";
-  if (state.mode === "file") {
-    $("download-btn").href = `/api/pageset/${state.sessionId}/download`;
+  const warningBox = $("result-warnings");
+  warningBox.innerHTML = "";
+  const warnings = data.warnings || [];
+  warningBox.hidden = warnings.length === 0;
+  if (warnings.length) {
+    const lead = document.createElement("strong");
+    lead.textContent = "TD Snap finished with a note:";
+    warningBox.append(lead);
+    const list = document.createElement("ul");
+    warnings.forEach((warning) => {
+      const item = document.createElement("li");
+      item.textContent = warning;
+      list.append(item);
+    });
+    warningBox.append(list);
   }
+
 }
 
-$("save-btn").addEventListener("click", async () => {
-  // Native window: OS save dialog, written straight to disk — no Downloads
-  // folder detour.
-  const button = $("save-btn");
-  const status = $("save-status");
-  status.classList.remove("error");
-  setBusy(button, true);
-  try {
-    const data = await window.pywebview.api.save_pageset(state.sessionId);
-    if (data.cancelled) return;
-    if (!data.ok) throw new Error(data.error || "Could not save the file.");
-    status.textContent = `Saved to ${data.path}`;
-  } catch (error) {
-    status.classList.add("error");
-    status.textContent = error.message;
-  } finally {
-    setBusy(button, false);
-  }
-});
-
 $("another-btn").addEventListener("click", async () => {
-  // Refresh the page list so the just-added page can be a parent too.
-  if (state.mode === "file") {
-    try {
-      const data = await api(`/api/pageset/${state.sessionId}/pages`);
-      state.pages = data.pages;
-    } catch {
-      /* keep the stale list; building will still validate server-side */
-    }
-  }
+  const previousParent = state.parentId;
   state.words = [];
-  state.parentId = state.mode === "live" ? 0 : null;
-  state.parentFree = state.mode === "live" ? 1 : null;
+  state.parentId = previousParent || state.currentPage;
+  state.parentFree = 1;
+  state.parentTouched = state.operation === "existing";
+  state.existingButtons = [];
+  state.layoutFingerprint = null;
   $("title-input").value = "";
-  $("parent-capacity").textContent = state.mode === "live"
-    ? "The agent will find the next free cell on the Topics Menu Page."
-    : "";
+  $("parent-capacity").textContent =
+    `The link will use the first free cell on “${titleOf(state.parentId)}”.`;
   $("chip-note").textContent = "";
   parentFilter.value = "";
   renderParents("");
   renderWords();
+  if (state.operation === "new") updatePlacementRecommendation();
   $("build-error").hidden = true;
+  $("result-warnings").hidden = true;
   show("build");
-  $("title-input").focus();
+  if (state.operation === "existing") {
+    try {
+      await loadTargetLayout(titleOf(state.parentId));
+      $("word-input").focus();
+    } catch (error) {
+      showBuildError("Couldn’t refresh the selected TD Snap page.", [error.message]);
+    }
+  } else {
+    $("title-input").focus();
+  }
 });
 
 $("reset-btn").addEventListener("click", () => {
-  state.mode = "file";
-  state.sessionId = null;
+  state.mode = "live";
   state.words = [];
   state.parentId = null;
   state.parentFree = null;
   $("file-badge").hidden = true;
   $("title-input").value = "";
-  $("upload-status").textContent = "";
+  $("live-status").textContent = "";
   $("parent-capacity").textContent = "";
   $("chip-note").textContent = "";
   $("build-error").hidden = true;
@@ -906,11 +1142,7 @@ $("reset-btn").addEventListener("click", () => {
 /* ---------- quit (browser mode) ---------- */
 
 $("quit-btn").addEventListener("click", async () => {
-  const opened = state.sessionId !== null;
-  const warning = opened
-    ? "Quit TD Snap Page Builder? Anything you haven't downloaded will be discarded."
-    : "Quit TD Snap Page Builder?";
-  if (!window.confirm(warning)) return;
+  if (!window.confirm("Quit TD Snap Page Builder?")) return;
   try {
     await api("/api/quit", { method: "POST" });
   } catch {
@@ -927,6 +1159,35 @@ configReady.then(() => {
   // In the native window the OS window close button quits the app;
   // in browser mode the Quit button is the only clean way to stop it.
   $("quit-btn").hidden = state.native;
+});
+
+/* Radio-style button groups use one tab stop and arrow-key navigation. */
+document.querySelectorAll('[role="radiogroup"]').forEach((group) => {
+  const selected = group.querySelector('[role="radio"][aria-checked="true"]');
+  group.querySelectorAll('[role="radio"]').forEach((radio) => {
+    radio.tabIndex = radio === selected ? 0 : -1;
+  });
+  group.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      return;
+    }
+    const radios = [...group.querySelectorAll('[role="radio"]')].filter(
+      (radio) => !radio.disabled
+    );
+    if (!radios.length) return;
+    event.preventDefault();
+    const current = Math.max(0, radios.indexOf(document.activeElement));
+    let next = current;
+    if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = radios.length - 1;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      next = (current - 1 + radios.length) % radios.length;
+    } else {
+      next = (current + 1) % radios.length;
+    }
+    radios[next].click();
+    radios[next].focus();
+  });
 });
 
 renderWords();

@@ -36,6 +36,11 @@ env/
 .DS_Store
 Thumbs.db
 
+# Browser test dependencies and artifacts
+node_modules/
+test-results/
+playwright-report/
+
 # Application specific
 td_snap_coordinates.json
 # Page set files (user data + generated working/edited copies)

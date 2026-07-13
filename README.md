@@ -64,35 +64,20 @@ to PATH"** when installing on Windows).
 **Windows:** double-click `launch.bat`
 **Mac/Linux:** `./launch.sh`
 
-The launcher opens the app in your browser at `http://127.0.0.1:8765`. Then use
-either workflow:
+The launcher opens the live editor in your browser at `http://127.0.0.1:8765`.
 
-**Direct TD Snap editing (Windows):** open TD Snap and unlock Windows, select
-**Connect to TD Snap**, build the page, and select **Add directly to TD Snap**.
-The local runner finds the next free cell on **Topics Menu Page**, creates the
-linked page, fills its speaking buttons, and verifies the link. Sync normally
-inside TD Snap when you are ready.
+**Direct TD Snap editing (Windows):** open TD Snap and unlock Windows, then
+select **Connect to TD Snap**. Choose **Add to an existing page** to put a pasted
+list of foods, places, people, or other vocabulary into a category that is
+already on the device, or choose **Create a new page** for a separate folder.
+For existing pages the app loads occupied cells, locks established vocabulary in
+place, checks duplicates and capacity, and requires exact empty-cell placement
+before editing. It also detects pages from the open Topics menu, applies optional
+topic-row colors, adds matching TD Snap symbols, and verifies the result.
+Sync normally inside TD Snap when you are ready.
 
-**Exported-file fallback:**
-
-1. **Export** your page set from TD Snap
-   (*Edit mode → Page Set → Import/Export → Export to file*).
-2. **Open** the `.sps`/`.spb` file in the app.
-3. **Build** a page: title, words (type them, paste a comma-separated list, or
-   let a local [Ollama](https://ollama.com) model suggest them), and the page
-   that should get the link button. The preview shows the grid exactly as TD
-   Snap will lay it out.
-
-   Two page styles:
-   - **Word page** — single words; each button speaks its label.
-   - **Topic page** — quick-fire phrases with communicative-function
-     color-coding: each button gets the same 3px colored border TD Snap
-     renders (blue = question, orange = comment, green = positive,
-     red = negative, purple = personal). Click any button chip to change its
-     color or give it a full spoken phrase while the label stays short
-     (label "Lunch?", speaks "What are we having for lunch?").
-4. **Download** the `.edited` copy and import it into TD Snap — **into a test
-   user first**: read [docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md).
+The web app is live-only. Advanced exported-file editing remains available
+through the command-line commands below for maintenance and recovery work.
 
 ### Optional: AI word suggestions
 
@@ -135,6 +120,19 @@ python scripts/fetch_fixture.py       # downloads a real page set (not committed
 python -m pytest                      # now includes integration tests
 python -m tdsnap.web --no-browser     # run the web app
 ```
+
+Browser workflow tests use Playwright and start the local Flask app
+automatically when it is not already running:
+
+```bash
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
+
+The suite uses mocked TD Snap accessibility responses, so it never changes a
+real page set. The one test that can edit the open TD Snap page set is skipped
+unless `TDSNAP_LIVE_E2E=1` is explicitly set.
 
 Layout: `tdsnap/` (schema introspection, template cloning, page builder,
 validation, CLI), `tdsnap/web/` (Flask backend + single-page frontend),

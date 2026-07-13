@@ -29,12 +29,14 @@ Item = Union[str, Dict[str, object]]
 
 
 def _normalize_items(items: List[Item]) -> List[Dict[str, object]]:
-    """Accept plain labels or ``{label, message, border_color}`` dicts.
+    """Accept plain labels or richer button dictionaries.
 
     ``message`` (optional) is the full sentence to speak while ``label`` stays
     short on the button — how real TD Snap quick-fire phrase buttons work.
     ``border_color`` (optional) is '#RRGGBB' or a signed ARGB int, the
-    color-coding convention used on topic pages.
+    color-coding convention used on topic pages. ``slot`` is an optional
+    zero-based grid index chosen in the visual preview. ``symbol`` controls
+    whether live editing should make a best-effort symbol search.
     """
     normalized = []
     for item in items:
@@ -53,8 +55,12 @@ def _normalize_items(items: List[Item]) -> List[Dict[str, object]]:
             border = argb_from_hex(border)
         elif not isinstance(border, int):
             border = None
+        slot = item.get("slot")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            slot = None
         normalized.append({"label": label, "message": message,
-                           "border_color": border})
+                           "border_color": border, "slot": slot,
+                           "symbol": item.get("symbol", True) is not False})
     return normalized
 
 
@@ -273,8 +279,17 @@ def add_category_page(
 
         button_ids = []
         button_specs = []
+        used_slots = set()
         for index, item in enumerate(items):
-            slot = (index % cols, index // cols)
+            requested = item.get("slot")
+            slot_index = requested if isinstance(requested, int) else index
+            if slot_index >= cols * rows or slot_index in used_slots:
+                slot_index = next(
+                    candidate for candidate in range(cols * rows)
+                    if candidate not in used_slots
+                )
+            used_slots.add(slot_index)
+            slot = (slot_index % cols, slot_index // cols)
             button_id, _ = _insert_cell(
                 conn,
                 speak_chain,

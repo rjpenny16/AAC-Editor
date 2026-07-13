@@ -211,7 +211,9 @@ def _require_loopback_host():
 
 @app.before_request
 def _require_api_token():
-    if request.method != "POST" or request.path in {"/api/focus", "/api/tdsnap/page"}:
+    if request.method != "POST" or request.path in {
+        "/api/focus", "/api/tdsnap/page", "/api/tdsnap/edit-plan"
+    }:
         return None
     if request.headers.get("X-TDSnap-Token") != API_TOKEN:
         return jsonify(
@@ -257,6 +259,27 @@ def index():
 @app.get("/api/tdsnap/status")
 def live_status():
     return jsonify({"ok": True, **live.status()})
+
+
+@app.get("/api/tdsnap/page-layout")
+def live_page_layout():
+    return jsonify({"ok": True, **live.inspect_page(request.args.get("page"))})
+
+
+@app.post("/api/tdsnap/edit-plan")
+def live_execute_plan():
+    if request.headers.get("X-TDSnap-Editor") != "1":
+        raise PagesetError("Direct TD Snap edits must start in this app.")
+    payload = request.get_json(force=True, silent=True) or {}
+    if payload.get("operation") != "add_to_existing_page":
+        raise PagesetError("This edit operation is not supported yet.")
+    items = payload.get("items", [])
+    if not isinstance(items, list):
+        raise PagesetError("'items' must be a list of words.")
+    report = live.add_to_existing_page(
+        payload.get("page", ""), items, payload.get("fingerprint")
+    )
+    return jsonify({"ok": True, **report})
 
 
 @app.post("/api/tdsnap/page")

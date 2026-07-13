@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
 <title>TD Snap Page Builder</title>
 <link rel="stylesheet" href="/static/app.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%230071e3'/%3E%3Crect x='2.5' y='2.5' width='5' height='5' rx='1.25' fill='white'/%3E%3Crect x='8.5' y='2.5' width='5' height='5' rx='1.25' fill='white' opacity='.55'/%3E%3Crect x='2.5' y='8.5' width='5' height='5' rx='1.25' fill='white' opacity='.55'/%3E%3Crect x='8.5' y='8.5' width='5' height='5' rx='1.25' fill='white' opacity='.3'/%3E%3C/svg%3E">
@@ -22,52 +22,71 @@
         <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".3"/>
       </svg>
     </span>
-    <h1>TD Snap Page Builder</h1>
-    <span id="file-badge" class="file-badge" hidden></span>
+    <div class="brand-lockup">
+      <h1>TD Snap Page Builder</h1>
+      <span>Local AAC workspace</span>
+    </div>
+    <div class="topbar-status">
+      <span class="local-status"><span aria-hidden="true"></span>Private &amp; local</span>
+      <span id="file-badge" class="file-badge" hidden></span>
+    </div>
   </div>
 </header>
 
 <main class="shell">
 
-  <!-- Step 1 · Load -->
+  <nav class="workflow-rail" aria-label="Edit progress">
+    <div class="workflow-intro">
+      <span>Workflow</span>
+      <strong>Build vocabulary with confidence.</strong>
+    </div>
+    <ol>
+      <li class="workflow-item" data-step="1">
+        <span class="workflow-marker" aria-hidden="true"><span class="step-number">1</span><span class="step-check">✓</span></span>
+        <span><small>Step 1</small><strong>Connect</strong><em>Choose the open TD Snap page set.</em></span>
+      </li>
+      <li class="workflow-item" data-step="2">
+        <span class="workflow-marker" aria-hidden="true"><span class="step-number">2</span><span class="step-check">✓</span></span>
+        <span><small>Step 2</small><strong>Build</strong><em>Add vocabulary and arrange the grid.</em></span>
+      </li>
+      <li class="workflow-item" data-step="3">
+        <span class="workflow-marker" aria-hidden="true"><span class="step-number">3</span><span class="step-check">✓</span></span>
+        <span><small>Step 3</small><strong>Review</strong><em>Verify the finished edit.</em></span>
+      </li>
+    </ol>
+    <p class="workflow-note"><span aria-hidden="true">●</span> Nothing leaves this computer.</p>
+  </nav>
+
+  <div class="content-stack">
+
+  <!-- Step 1 · Connect -->
   <section id="step-load" class="panel" aria-labelledby="load-heading">
     <div class="panel-head">
       <p class="step-eyebrow" aria-hidden="true">Step 1</p>
-      <h2 id="load-heading">Open your page set</h2>
-      <p class="panel-sub">Edit the page set that is already open in TD Snap, or use
-      an exported file and download a separate working copy.</p>
+      <h2 id="load-heading">Connect to TD Snap</h2>
+      <p class="panel-sub">Changes go directly into the page set already open in
+      TD Snap. There are no exports, duplicate files, or imports to manage.</p>
     </div>
-
-    <div id="dropzone" class="dropzone" tabindex="0" role="button"
-         aria-label="Choose or drop a TD Snap page set file">
-      <svg class="dropzone-icon" width="28" height="28" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
-      </svg>
-      <p class="dropzone-title">Drop your <strong>.sps</strong> or <strong>.spb</strong> export here</p>
-      <p class="dropzone-hint">or <span class="linklike">browse for the file</span></p>
-      <input type="file" id="file-input" accept=".sps,.spb" hidden>
-    </div>
-    <p id="upload-status" class="status-line" role="status" aria-live="polite"></p>
 
     <div class="live-connect">
       <div>
-        <strong>Edit the open TD Snap page set</strong>
-        <span>No export, import, subscription, or model download.</span>
+        <strong>Use the page set that is open now</strong>
+        <span>Leave TD Snap open and Windows unlocked while an edit runs.</span>
       </div>
-      <button type="button" id="live-connect-btn" class="btn btn-secondary">
+      <button type="button" id="live-connect-btn" class="btn btn-primary">
         Connect to TD Snap
       </button>
     </div>
     <p id="live-status" class="status-line" role="status" aria-live="polite"></p>
 
     <details class="help">
-      <summary>How do I export a page set from TD Snap?</summary>
+      <summary>Before you connect</summary>
       <ol>
-        <li>In TD Snap, open <strong>Edit&nbsp;mode → Page&nbsp;Set → Import/Export</strong>.</li>
-        <li>Choose <strong>Export to file</strong> and save the <code>.sps</code>/<code>.spb</code> file.</li>
-        <li>Open that file here. When you're done, import the edited copy into a
-            <em>test</em> TD Snap user first.</li>
+        <li>Open TD Snap and switch to the user and page set you want to edit.</li>
+        <li>Open <strong>Topics</strong>, or open the page where you expect the new
+            folder to belong. The app will suggest a location after you name it.</li>
+        <li>Click <strong>Connect to TD Snap</strong>. It is okay if TD Snap is
+            already in Edit mode.</li>
       </ol>
     </details>
   </section>
@@ -76,16 +95,30 @@
   <section id="step-build" class="panel" aria-labelledby="build-heading" hidden>
     <div class="panel-head">
       <p class="step-eyebrow" aria-hidden="true">Step 2</p>
-      <h2 id="build-heading">Build a new page</h2>
+      <h2 id="build-heading">Plan a vocabulary edit</h2>
       <p class="panel-sub" id="build-sub"></p>
     </div>
 
     <form id="build-form" novalidate>
+      <div class="editor-layout">
+      <div class="editor-main">
       <div class="field">
+        <span class="label-row"><span class="label-text">What do you want to do?</span></span>
+        <div class="segmented" role="radiogroup" aria-label="Edit type">
+          <button type="button" id="operation-existing" class="seg-btn selected"
+                  role="radio" aria-checked="true">Add to an existing page</button>
+          <button type="button" id="operation-new" class="seg-btn"
+                  role="radio" aria-checked="false">Create a new page</button>
+        </div>
+        <p class="field-hint" id="operation-hint">Choose the category first, then add words without creating another folder.</p>
+      </div>
+
+      <div class="field" id="title-field" hidden>
         <label for="title-input">Page title</label>
         <input id="title-input" type="text" autocomplete="off" spellcheck="false"
                placeholder="Snacks" required maxlength="60">
-        <p class="field-hint">Also becomes the label of the link button on the page you pick below.</p>
+        <p class="field-hint">Also becomes the folder button label. A clear title
+        helps the app recommend an existing page where it belongs.</p>
       </div>
 
       <div class="field">
@@ -106,7 +139,10 @@
         </div>
 
         <div id="fn-palette" class="fn-palette" hidden>
-          <span class="fn-label">Color-code new buttons as:</span>
+          <div class="fn-heading-row">
+            <span class="fn-label">Communicative-function colors</span>
+            <button type="button" id="auto-topic-layout" class="btn btn-ghost btn-compact">Reapply row layout</button>
+          </div>
           <div class="fn-row" role="radiogroup" aria-label="Communicative function">
             <button type="button" class="fn-pill selected" data-fn="" role="radio" aria-checked="true">None</button>
             <button type="button" class="fn-pill" data-fn="question" style="--fn:#1E88E5" role="radio" aria-checked="false">Question</button>
@@ -115,8 +151,10 @@
             <button type="button" class="fn-pill" data-fn="negative" style="--fn:#E53935" role="radio" aria-checked="false">Negative</button>
             <button type="button" class="fn-pill" data-fn="personal" style="--fn:#8E24AA" role="radio" aria-checked="false">Personal</button>
           </div>
-          <p class="field-hint">Buttons get a matching colored border in TD Snap.
-          Click any button below to change its color or give it a full spoken phrase.</p>
+          <p class="field-hint">Topic pages automatically start with blue questions,
+          then orange comments, green positive responses, red negative responses,
+          and purple personal messages. Move a button to another row to change its
+          function, or click a button chip to override it.</p>
         </div>
 
         <div id="chipbox" class="chipbox">
@@ -129,14 +167,23 @@
         <details class="ai-suggest" id="ai-suggest">
           <summary><span id="ai-summary-text">Suggest words with AI</span> <span class="ai-tag">optional · runs on this computer</span></summary>
           <div class="ai-body">
-            <p class="field-hint">Suggestions run entirely on this computer.
-            <span id="ai-engine-state"></span></p>
+            <p class="ai-intro">AI suggestions are optional and stay on this computer.
+            Set up either the built-in model or Ollama once, then come back here to
+            suggest words whenever you need them.</p>
+            <p class="ai-engine-line"><strong>Current status:</strong>
+            <span id="ai-engine-state" role="status" aria-live="polite">Checking for a local model…</span></p>
 
             <div id="ai-download-card" class="ai-download" hidden>
-              <p class="ai-download-info">Get the free built-in model
-              (<span id="ai-model-name">…</span>, <span id="ai-model-size">…</span>,
-              <span id="ai-model-license">…</span> license). It downloads once,
-              then works completely offline.</p>
+              <h4>Recommended: use the built-in model</h4>
+              <p class="ai-download-info">This is the simplest setup. The free
+              <span id="ai-model-name">…</span> model is <span id="ai-model-size">…</span>
+              and uses the <span id="ai-model-license">…</span> license.</p>
+              <ol class="ai-setup-steps">
+                <li>Click <strong>Download AI model</strong> below.</li>
+                <li>Keep this window open while the one-time download finishes.</li>
+                <li>When the status says suggestions are ready, enter a page title
+                    and click <strong>Suggest words</strong>.</li>
+              </ol>
               <button type="button" id="ai-download-btn" class="btn btn-secondary">
                 <span class="btn-label">Download AI model</span>
               </button>
@@ -154,11 +201,29 @@
               <button type="button" id="ai-go" class="btn btn-secondary">Suggest words</button>
             </div>
             <details class="ai-advanced">
-              <summary>Advanced: use your own Ollama server</summary>
-              <div class="ai-settings">
-                <label>Server <input id="ai-host" type="text" value="http://localhost:11434"></label>
-                <label>Model <input id="ai-model" type="text" value="llama3.2"></label>
+              <summary>Use Ollama instead (your own local model)</summary>
+              <div class="ai-ollama-setup">
+                <p>Choose this option if you already use Ollama or want to select
+                a different local model.</p>
+                <ol class="ai-setup-steps">
+                  <li><a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">Install Ollama</a>
+                      for Windows, macOS, or Linux, then open it.</li>
+                  <li>Open PowerShell or Terminal and run:<br>
+                    <code class="ai-command">ollama pull llama3.2</code>
+                  </li>
+                  <li>Leave Ollama running. Return here and click
+                      <strong>Check connection</strong>.</li>
+                </ol>
               </div>
+              <div class="ai-settings">
+                <label>Ollama server address
+                  <input id="ai-host" type="text" value="http://localhost:11434">
+                </label>
+                <label>Ollama model name
+                  <input id="ai-model" type="text" value="llama3.2">
+                </label>
+              </div>
+              <button type="button" id="ai-check-btn" class="btn btn-ghost ai-check-btn">Check connection</button>
             </details>
             <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
           </div>
@@ -166,28 +231,58 @@
       </div>
 
       <div class="field">
-        <label for="parent-select">Put the link button on…</label>
+        <label for="parent-select" id="target-label">Which existing page should receive the buttons?</label>
+        <div class="placement-advice" id="placement-advice" hidden>
+          <div>
+            <strong id="placement-title">AAC-friendly placement</strong>
+            <p id="placement-copy">Name the page above and the app will suggest an
+            existing location, keeping related vocabulary together.</p>
+          </div>
+          <button type="button" id="use-placement" class="btn btn-secondary btn-compact" hidden>Use suggestion</button>
+        </div>
         <div class="parent-picker">
-          <input id="parent-filter" type="search" placeholder="Filter pages"
-                 aria-label="Filter the page list">
+          <div class="parent-search-row">
+            <input id="parent-filter" type="search" placeholder="Filter detected pages"
+                   aria-label="Filter the page list">
+            <button type="button" id="parent-filter-clear" class="btn btn-ghost btn-compact">Clear filter</button>
+          </div>
           <select id="parent-select" size="6" aria-describedby="parent-note"></select>
         </div>
-        <p class="field-hint" id="parent-note">Pick the existing page that should get a
-        button opening your new page. <span id="parent-capacity"></span></p>
-      </div>
-
-      <div class="field">
-        <span class="label-row"><span class="label-text">Preview</span></span>
-        <div id="preview" class="preview" aria-label="Preview of the new page's button grid"></div>
+        <p class="field-hint" id="parent-note">The currently open page and pages detected from the
+        Topics menu are available. Selecting a page loads its occupied cells before editing.
+        <span id="parent-capacity"></span></p>
       </div>
 
       <div id="build-error" class="alert" role="alert" hidden></div>
 
       <div class="actions">
         <button type="submit" id="build-btn" class="btn btn-primary">
-          <span id="build-btn-label" class="btn-label">Add page to working copy</span>
+          <span id="build-btn-label" class="btn-label">Update TD Snap</span>
         </button>
-        <button type="button" id="reset-btn" class="btn btn-ghost">Start over with a different file</button>
+        <button type="button" id="reset-btn" class="btn btn-ghost">Reconnect to TD Snap</button>
+      </div>
+      </div>
+
+      <aside class="preview-workspace" aria-labelledby="preview-label">
+        <div class="preview-heading">
+          <div>
+            <span class="label-text" id="preview-label">Preview</span>
+            <p class="field-hint preview-hint" id="preview-hint">Drag buttons to the exact cells you want, or focus one and use the arrow keys.</p>
+          </div>
+          <span class="preview-live"><span aria-hidden="true"></span>Live</span>
+        </div>
+        <div id="preview" class="preview" aria-label="Draggable preview of the new page's button grid"></div>
+        <div class="preview-help">
+          <p>Existing buttons are locked. Focus a new button and use the arrow keys for precise placement.</p>
+          <div class="preview-legend" aria-label="Communicative function colors">
+            <span style="--legend:#1E88E5">Question</span>
+            <span style="--legend:#F57C00">Comment</span>
+            <span style="--legend:#43A047">Positive</span>
+            <span style="--legend:#E53935">Negative</span>
+            <span style="--legend:#8E24AA">Personal</span>
+          </div>
+        </div>
+      </aside>
       </div>
     </form>
   </section>
@@ -201,36 +296,19 @@
     </div>
 
     <ul id="checks" class="checks" aria-label="Validation results"></ul>
+    <div id="result-warnings" class="alert warning" role="status" hidden></div>
 
     <div class="actions">
-      <a id="download-btn" class="btn btn-primary" href="#" download>
-        <span class="btn-label">Download edited page set</span>
-      </a>
-      <button type="button" id="save-btn" class="btn btn-primary" hidden>
-        <span class="btn-label">Save edited page set…</span>
-      </button>
-      <button type="button" id="another-btn" class="btn btn-secondary">Add another page</button>
+      <button type="button" id="another-btn" class="btn btn-secondary">Make another edit</button>
     </div>
-    <p id="save-status" class="status-line" role="status" aria-live="polite"></p>
 
-    <p id="live-result-note" class="safety" hidden>
+    <p id="live-result-note" class="safety">
       The original page set in TD Snap was edited and verified. Use TD Snap's normal
       Sync button whenever you are ready to share the change.
     </p>
-
-    <div id="file-result-safety" class="safety">
-      <h3>Before you import — protect your real setup</h3>
-      <ol>
-        <li><strong>Keep your original export.</strong> The downloaded file is a separate
-            <code>.edited</code> copy.</li>
-        <li><strong>Import into a test user first.</strong> In TD Snap, create a throwaway
-            user and import there. If anything is wrong, your real setup is untouched.</li>
-        <li><strong>Exercise the page:</strong> open the parent page, tap the new link
-            button, tap a few words, restart TD Snap, open it again.</li>
-        <li>Only after that, import into your real user.</li>
-      </ol>
-    </div>
   </section>
+
+  </div>
 
 </main>
 
@@ -239,7 +317,7 @@
     <h3 id="chip-editor-title">Edit button</h3>
     <div class="field">
       <label for="edit-label">Button label</label>
-      <input id="edit-label" type="text" autocomplete="off" maxlength="60">
+      <input id="edit-label" type="text" autocomplete="off" maxlength="60" required>
       <p class="field-hint">What's shown on the button.</p>
     </div>
     <div class="field">
@@ -264,8 +342,8 @@
       <button type="submit" id="edit-save" class="btn btn-primary" value="save">
         <span class="btn-label">Save</span>
       </button>
-      <button type="submit" class="btn btn-ghost" value="cancel">Cancel</button>
-      <button type="submit" id="edit-remove" class="btn btn-danger" value="remove">Remove button</button>
+      <button type="submit" class="btn btn-ghost" value="cancel" formnovalidate>Cancel</button>
+      <button type="submit" id="edit-remove" class="btn btn-danger" value="remove" formnovalidate>Remove button</button>
     </div>
   </form>
 </dialog>

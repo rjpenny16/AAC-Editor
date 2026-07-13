@@ -193,6 +193,24 @@ def test_phrase_and_border_buttons(seeded_pageset):
     assert validate.validate_new_page(ps.conn, report) == []
 
 
+def test_button_slots_follow_visual_preview(seeded_pageset):
+    ps = seeded_pageset
+    report = add_category_page(
+        ps, "Positioned", [{"label": "later", "slot": 5},
+                           {"label": "first", "slot": 0}], None,
+    )
+    positions = {
+        row["Label"]: row["GridPosition"]
+        for row in ps.conn.execute(
+            "SELECT b.Label, ep.GridPosition FROM Button b "
+            "JOIN ElementReference er ON er.Id = b.ElementReferenceId "
+            "JOIN ElementPlacement ep ON ep.ElementReferenceId = er.Id "
+            "WHERE b.Id IN (?, ?)", report["button_ids"],
+        )
+    }
+    assert positions == {"later": "1,1", "first": "0,0"}
+
+
 def test_argb_encoding():
     from tdsnap.colors import argb_from_hex, hex_from_argb
     from tdsnap.errors import PagesetError
