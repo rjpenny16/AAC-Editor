@@ -82,69 +82,84 @@
   <div class="content-stack">
 
   <section id="step-welcome" class="panel welcome-panel" aria-labelledby="welcome-heading" hidden>
+    <div class="welcome-progress" aria-label="Workspace setup progress">
+      <ol aria-hidden="true">
+        <li class="current">1</li><li>2</li><li>3</li>
+      </ol>
+      <span id="welcome-count">1 of 3</span>
+    </div>
+
     <div class="panel-head">
-      <p class="step-eyebrow" aria-hidden="true">Welcome</p>
-      <h2 id="welcome-heading">Set up your workspace</h2>
-      <p class="panel-sub">Choose the amount of guidance you want. Your answers
-      only shape this screen and disappear when you close or reload the app.</p>
+      <h2 id="welcome-heading">How would you like to begin?</h2>
+      <p class="panel-sub" id="welcome-sub">Choose the experience that feels right. You can change this later.</p>
     </div>
 
     <form id="welcome-form">
-      <fieldset class="field welcome-question">
-        <legend id="welcome-aac-label">What would you like to start with?</legend>
-        <div class="segmented welcome-options" role="radiogroup" aria-labelledby="welcome-aac-label">
-          <button type="button" id="profile-aac-guided" class="seg-btn selected"
+      <fieldset class="welcome-question" data-welcome-step="0">
+        <legend class="sr-only">Guidance preference</legend>
+        <div class="welcome-options" role="radiogroup" aria-label="Guidance preference">
+          <button type="button" id="profile-aac-guided" class="welcome-choice selected"
                   role="radio" aria-checked="true" data-profile="aac" data-value="guided">
-            <strong>A simple word page</strong><span>Keep guidance and helpful starting points visible.</span>
+            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-guide.png" alt=""></span>
+            <strong>Guide me</strong>
+            <span class="welcome-choice-summary">Keep helpful starting points and explanations visible.</span>
+            <span class="welcome-choice-context">Best if you want the app to choose clear defaults and explain each step.</span>
           </button>
-          <button type="button" id="profile-aac-standard" class="seg-btn"
+          <button type="button" id="profile-aac-standard" class="welcome-choice"
                   role="radio" aria-checked="false" data-profile="aac" data-value="standard">
-            <strong>The usual editor</strong><span>Use the current tools and defaults.</span>
-          </button>
-          <button type="button" id="profile-aac-expert" class="seg-btn"
-                  role="radio" aria-checked="false" data-profile="aac" data-value="expert">
-            <strong>Page-set tools</strong><span>Start with topic layout and less explanatory copy.</span>
+            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-lead.png" alt=""></span>
+            <strong>Let me take the lead</strong>
+            <span class="welcome-choice-summary">Use the familiar editor with fewer prompts.</span>
+            <span class="welcome-choice-context">Best if you already know what you want to build; all editor controls stay available.</span>
           </button>
         </div>
       </fieldset>
 
-      <fieldset class="field welcome-question">
-        <legend id="welcome-ai-label">How much local AI setup do you want to see?</legend>
-        <div class="segmented welcome-options" role="radiogroup" aria-labelledby="welcome-ai-label">
-          <button type="button" id="profile-ai-none" class="seg-btn selected"
+      <fieldset class="welcome-question" data-welcome-step="1" hidden>
+        <legend class="sr-only">Local AI preference</legend>
+        <div class="welcome-options" role="radiogroup" aria-label="Local AI preference">
+          <button type="button" id="profile-ai-none" class="welcome-choice selected"
                   role="radio" aria-checked="true" data-profile="ai" data-value="none">
-            <strong>None</strong><span>Keep optional AI suggestions out of view.</span>
+            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-guide.png" alt=""></span>
+            <strong>Keep it simple</strong>
+            <span class="welcome-choice-summary">Hide optional AI suggestions for now.</span>
+            <span class="welcome-choice-context">You can turn suggestions on later; nothing downloads during setup.</span>
           </button>
-          <button type="button" id="profile-ai-assist" class="seg-btn"
+          <button type="button" id="profile-ai-assist" class="welcome-choice"
                   role="radio" aria-checked="false" data-profile="ai" data-value="assist">
-            <strong>Built-in help</strong><span>Show the one-click model setup.</span>
-          </button>
-          <button type="button" id="profile-ai-power" class="seg-btn"
-                  role="radio" aria-checked="false" data-profile="ai" data-value="power">
-            <strong>All settings</strong><span>Show both built-in and Ollama options.</span>
+            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-lead.png" alt=""></span>
+            <strong>Show local AI help</strong>
+            <span class="welcome-choice-summary">Add private word and phrase suggestions.</span>
+            <span class="welcome-choice-context">Shows one-click local model setup. Suggestions stay on this computer.</span>
           </button>
         </div>
       </fieldset>
 
-      <fieldset class="field welcome-question">
-        <legend id="welcome-layout-label">How familiar is this workspace?</legend>
-        <div class="segmented welcome-options two-up" role="radiogroup" aria-labelledby="welcome-layout-label">
-          <button type="button" id="profile-layout-new" class="seg-btn selected"
+      <fieldset class="welcome-question" data-welcome-step="2" hidden>
+        <legend class="sr-only">Workspace familiarity</legend>
+        <div class="welcome-options" role="radiogroup" aria-label="Workspace familiarity">
+          <button type="button" id="profile-layout-new" class="welcome-choice selected"
                   role="radio" aria-checked="true" data-profile="layout" data-value="new">
-            <strong>Show me around</strong><span>Keep step descriptions and a short guide.</span>
+            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-guide.png" alt=""></span>
+            <strong>Show me around</strong>
+            <span class="welcome-choice-summary">Keep step descriptions and a short guide.</span>
+            <span class="welcome-choice-context">Starts a quick three-step tour after setup.</span>
           </button>
-          <button type="button" id="profile-layout-familiar" class="seg-btn"
+          <button type="button" id="profile-layout-familiar" class="welcome-choice"
                   role="radio" aria-checked="false" data-profile="layout" data-value="familiar">
-            <strong>I know the layout</strong><span>Use a compact workflow rail.</span>
+            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-lead.png" alt=""></span>
+            <strong>I know my way</strong>
+            <span class="welcome-choice-summary">Keep the workspace compact and focused.</span>
+            <span class="welcome-choice-context">Uses a compact progress rail and skips the introductory tour.</span>
           </button>
         </div>
       </fieldset>
 
-      <div class="actions welcome-actions">
-        <button type="submit" id="welcome-start" class="btn btn-primary">Start editing</button>
-        <button type="button" id="welcome-skip" class="btn btn-ghost">Skip, I know this app</button>
+      <div class="welcome-actions">
+        <button type="button" id="welcome-back" class="btn btn-ghost" hidden>Back</button>
+        <button type="submit" id="welcome-start" class="btn btn-primary">Continue</button>
       </div>
-      <p class="welcome-privacy">Nothing is saved, uploaded, or added to the page set until you review an edit.</p>
+      <button type="button" id="welcome-skip" class="welcome-skip">Skip setup</button>
     </form>
   </section>
 
@@ -183,7 +198,7 @@
   <section id="step-build" class="panel" aria-labelledby="build-heading" hidden>
     <div class="panel-head">
       <p class="step-eyebrow" aria-hidden="true">Step 2</p>
-      <h2 id="build-heading">Plan a vocabulary edit</h2>
+      <h2 id="build-heading">Choose what to add and where it belongs</h2>
       <p class="panel-sub" id="build-sub"></p>
     </div>
 
@@ -191,7 +206,7 @@
       <div class="editor-layout">
       <div class="editor-main">
       <div class="field">
-        <span class="label-row"><span class="label-text">Add to an existing page or create a new page</span></span>
+        <span class="label-row"><span class="label-text">What do you want to do?</span></span>
         <div class="segmented" role="radiogroup" aria-label="Edit type">
           <button type="button" id="operation-existing" class="seg-btn selected"
                   role="radio" aria-checked="true">Add to an existing page</button>
@@ -210,6 +225,28 @@
       </div>
 
       <div class="field">
+        <label for="parent-select" id="target-label">Destination page</label>
+        <p class="field-hint destination-help">The page open in TD Snap is selected. Choose another page if this vocabulary belongs elsewhere.</p>
+        <div class="placement-advice" id="placement-advice" hidden>
+          <div>
+            <strong id="placement-title">AAC-friendly placement</strong>
+            <p id="placement-copy">Name the page above and the app will suggest an
+            existing location, keeping related vocabulary together.</p>
+          </div>
+          <button type="button" id="use-placement" class="btn btn-secondary btn-compact" hidden>Use suggestion</button>
+        </div>
+        <div class="parent-picker">
+          <div class="parent-search-row">
+            <input id="parent-filter" type="search" placeholder="Filter detected pages"
+                   aria-label="Filter the page list">
+            <button type="button" id="parent-filter-clear" class="btn btn-ghost btn-compact">Clear filter</button>
+          </div>
+          <select id="parent-select" aria-describedby="parent-note"></select>
+        </div>
+        <p class="field-hint" id="parent-note"><span id="parent-capacity"></span></p>
+      </div>
+
+      <div class="field">
         <span class="label-row"><span class="label-text">Choose the type of page</span></span>
         <div class="segmented" role="radiogroup" aria-label="Page style">
           <button type="button" id="style-words" class="seg-btn selected"
@@ -225,7 +262,7 @@
           <label for="word-input">Buttons</label>
           <span id="capacity" class="capacity" aria-live="polite"></span>
         </div>
-        <p class="field-hint buttons-hint">Add phrases for each communicative function.</p>
+        <p class="field-hint buttons-hint">Add one word per button.</p>
 
         <div id="fn-palette" class="fn-palette" hidden>
           <div class="fn-heading-row">
@@ -346,28 +383,6 @@
         </details>
       </div>
 
-      <div class="field">
-        <label for="parent-select" id="target-label">Destination</label>
-        <p class="field-hint destination-help">Choose where this content will be added.</p>
-        <div class="placement-advice" id="placement-advice" hidden>
-          <div>
-            <strong id="placement-title">AAC-friendly placement</strong>
-            <p id="placement-copy">Name the page above and the app will suggest an
-            existing location, keeping related vocabulary together.</p>
-          </div>
-          <button type="button" id="use-placement" class="btn btn-secondary btn-compact" hidden>Use suggestion</button>
-        </div>
-        <div class="parent-picker">
-          <div class="parent-search-row">
-            <input id="parent-filter" type="search" placeholder="Filter detected pages"
-                   aria-label="Filter the page list">
-            <button type="button" id="parent-filter-clear" class="btn btn-ghost btn-compact">Clear filter</button>
-          </div>
-          <select id="parent-select" aria-describedby="parent-note"></select>
-        </div>
-        <p class="field-hint" id="parent-note"><span id="parent-capacity"></span></p>
-      </div>
-
       <div id="build-error" class="alert" role="alert" hidden></div>
 
       <div class="editor-actions">
@@ -402,7 +417,7 @@
         </div>
         <div class="preview-help">
           <p>Existing buttons are locked. Focus a new button and use the arrow keys for precise placement.</p>
-          <div class="preview-legend" aria-label="Communicative function colors">
+          <div id="preview-legend" class="preview-legend" aria-label="Communicative function colors" hidden>
             <span style="--legend:#1E88E5">Question</span>
             <span style="--legend:#F57C00">Comment</span>
             <span style="--legend:#43A047">Positive</span>
@@ -482,7 +497,7 @@
 </dialog>
 
 <footer class="foot">
-  <p><strong>Tip:</strong> Add phrases to each row to keep communication balanced and easy to find.</p>
+  <p><strong>Tip:</strong> Decide what you want to add and where it belongs before arranging buttons.</p>
   <button type="button" id="quit-btn" class="quit-btn" hidden>Quit the app</button>
 </footer>
 

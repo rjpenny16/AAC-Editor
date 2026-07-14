@@ -360,57 +360,71 @@ def _stored_sparse_grid(group, buttons, width, height):
         return None
     try:
         with closing(sqlite3.connect(pageset_path)) as connection:
-            layout = connection.execute(
+            layouts = connection.execute(
                 """
                 SELECT pl.Id, COALESCE(p.GridDimension, pl.PageLayoutSetting)
                 FROM Page p JOIN PageLayout pl ON pl.PageId = p.Id
-                WHERE p.Title = ? ORDER BY pl.Id DESC LIMIT 1
+                WHERE p.Title = ? ORDER BY pl.Id
                 """,
                 (title,),
-            ).fetchone()
-            if not layout:
-                return None
-            cols, rows = (int(value) for value in layout[1].split(",")[:2])
-            placements = dict(connection.execute(
-                """
-                SELECT lower(b.Label), ep.GridPosition
-                FROM Button b
-                JOIN ElementReference er ON er.Id = b.ElementReferenceId
-                JOIN ElementPlacement ep ON ep.ElementReferenceId = er.Id
-                WHERE ep.PageLayoutId = ? AND ep.Visible = 1
-                """,
-                (layout[0],),
-            ))
+            ).fetchall()
+            candidates = []
+            for layout_id, setting in layouts:
+                cols, rows = (int(value) for value in setting.split(",")[:2])
+                placements = dict(connection.execute(
+                    """
+                    SELECT lower(b.Label), ep.GridPosition
+                    FROM Button b
+                    JOIN ElementReference er ON er.Id = b.ElementReferenceId
+                    JOIN ElementPlacement ep ON ep.ElementReferenceId = er.Id
+                    WHERE ep.PageLayoutId = ? AND ep.Visible = 1
+                    """,
+                    (layout_id,),
+                ))
+                observed = []
+                for button in buttons:
+                    position = placements.get((button.Name or "").casefold())
+                    if not position:
+                        continue
+                    column, row = (int(value) for value in position.split(",")[:2])
+                    rect = button.BoundingRectangle
+                    observed.append(((rect.left + rect.right) // 2,
+                                     (rect.top + rect.bottom) // 2, column, row))
+                if observed:
+                    candidates.append((cols, rows, observed))
     except (OSError, sqlite3.Error, TypeError, ValueError):
         return None
 
-    observed = []
-    for button in buttons:
-        position = placements.get((button.Name or "").casefold())
-        if not position:
-            continue
-        column, row = (int(value) for value in position.split(",")[:2])
-        rect = button.BoundingRectangle
-        observed.append(((rect.left + rect.right) // 2,
-                         (rect.top + rect.bottom) // 2, column, row))
-    if not observed:
+    if not candidates:
         return None
 
-    def measured_step(center_index, position_index):
-        candidates = []
-        for index, first in enumerate(observed):
-            for second in observed[index + 1:]:
-                difference = second[position_index] - first[position_index]
-                if difference:
-                    candidates.append(abs(
-                        (second[center_index] - first[center_index]) / difference
-                    ))
-        return statistics.median(candidates) if candidates else None
+    def fit(candidate):
+        _, _, observed = candidate
 
-    x_step = measured_step(0, 2) or width + 13
-    y_step = measured_step(1, 3) or height + (x_step - width)
-    first_x = statistics.median([x - column * x_step for x, _, column, _ in observed])
-    first_y = statistics.median([y - row * y_step for _, y, _, row in observed])
+        def measured_step(center_index, position_index):
+            values = []
+            for index, first in enumerate(observed):
+                for second in observed[index + 1:]:
+                    difference = second[position_index] - first[position_index]
+                    if difference:
+                        values.append(abs(
+                            (second[center_index] - first[center_index]) / difference
+                        ))
+            return statistics.median(values) if values else None
+
+        x_step = measured_step(0, 2) or width + 13
+        y_step = measured_step(1, 3) or height + (x_step - width)
+        first_x = statistics.median([x - column * x_step for x, _, column, _ in observed])
+        first_y = statistics.median([y - row * y_step for _, y, _, row in observed])
+        error = sum(
+            abs(x - (first_x + column * x_step))
+            + abs(y - (first_y + row * y_step))
+            for x, y, column, row in observed
+        )
+        return len(buttons) - len(observed), error, x_step, y_step, first_x, first_y
+
+    cols, rows, observed = min(candidates, key=lambda candidate: fit(candidate)[:2])
+    _, _, x_step, y_step, first_x, first_y = fit((cols, rows, observed))
     return Grid(
         tuple(round(first_x + index * x_step) for index in range(cols)),
         tuple(round(first_y + index * y_step) for index in range(rows)),

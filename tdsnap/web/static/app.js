@@ -155,6 +155,47 @@ const WORKFLOW_TOUR = [
 ];
 let workflowTourIndex = 0;
 
+const WELCOME_STEPS = [
+  ["How would you like to begin?", "Choose the experience that feels right. You can change this later."],
+  ["Would you like local AI suggestions?", "They run on this computer and stay completely private."],
+  ["How familiar is this workspace?", "We’ll match the amount of guidance to you."],
+];
+let welcomeStep = 0;
+
+function renderWelcomeStep(step, focus = true) {
+  welcomeStep = Math.max(0, Math.min(step, WELCOME_STEPS.length - 1));
+  document.querySelectorAll("[data-welcome-step]").forEach((question) => {
+    question.hidden = Number(question.dataset.welcomeStep) !== welcomeStep;
+  });
+  document.querySelectorAll(".welcome-progress li").forEach((marker, index) => {
+    marker.classList.toggle("current", index === welcomeStep);
+    marker.classList.toggle("complete", index < welcomeStep);
+  });
+  $("welcome-count").textContent = `${welcomeStep + 1} of ${WELCOME_STEPS.length}`;
+  $("welcome-heading").textContent = WELCOME_STEPS[welcomeStep][0];
+  $("welcome-sub").textContent = WELCOME_STEPS[welcomeStep][1];
+  $("welcome-back").hidden = welcomeStep === 0;
+  $("welcome-start").textContent =
+    welcomeStep === WELCOME_STEPS.length - 1 ? "Start editing" : "Continue";
+  if (focus) $("welcome-heading").focus({ preventScroll: true });
+}
+
+function syncWelcomeSelections() {
+  const aliases = { expert: "standard", power: "assist" };
+  document.querySelectorAll("#step-welcome [role='radiogroup']").forEach((group) => {
+    const radios = [...group.querySelectorAll("[role='radio']")];
+    const profile = radios[0].dataset.profile;
+    const value = aliases[state.profile[profile]] || state.profile[profile];
+    const selected = radios.find((radio) => radio.dataset.value === value) || radios[0];
+    radios.forEach((radio) => {
+      const checked = radio === selected;
+      radio.classList.toggle("selected", checked);
+      radio.setAttribute("aria-checked", checked);
+      radio.tabIndex = checked ? 0 : -1;
+    });
+  });
+}
+
 function renderWorkflowTour() {
   const tour = $("workflow-tour");
   if (!tour) return;
@@ -244,6 +285,8 @@ function openWorkspaceSetup() {
   setupReturnStep = $("step-build").hidden
     ? $("step-result").hidden ? "load" : "result"
     : "build";
+  syncWelcomeSelections();
+  renderWelcomeStep(0, false);
   show("welcome");
 }
 
@@ -263,8 +306,10 @@ function finishOnboarding(skipped) {
 
 $("welcome-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  finishOnboarding(false);
+  if (welcomeStep < WELCOME_STEPS.length - 1) renderWelcomeStep(welcomeStep + 1);
+  else finishOnboarding(false);
 });
+$("welcome-back").addEventListener("click", () => renderWelcomeStep(welcomeStep - 1));
 $("welcome-skip").addEventListener("click", () => finishOnboarding(true));
 $("menu-btn").addEventListener("click", openWorkspaceSetup);
 $("settings-btn").addEventListener("click", openWorkspaceSetup);
@@ -438,10 +483,13 @@ function setOperation(operation) {
       "Choose the page where these words already belong. You can create a separate page later.";
     $("use-placement").hidden = true;
   }
-  $("target-label").textContent = "Destination";
+  $("target-label").textContent = existing ? "Destination page" : "Link from";
+  document.querySelector(".destination-help").textContent = existing
+    ? "The page open in TD Snap is selected. Choose another page if this vocabulary belongs elsewhere."
+    : "Choose the existing page where the new page's link belongs.";
   $("operation-hint").textContent = existing
-    ? "Choose the category first, then add words without creating another folder."
-    : "Create a separate vocabulary page and link it from an existing page.";
+    ? "Start by choosing the page where this vocabulary belongs."
+    : "Name the new page, then choose where its link belongs.";
   $("preview-hint").textContent = "This shows how the content will appear in TD Snap.";
   $("build-btn-label").textContent = "Update TD Snap";
   state.existingButtons = existing ? state.existingButtons : [];
@@ -481,6 +529,10 @@ function setPageStyle(style) {
     style === "topic"
       ? "Quick-fire phrases and color-coded buttons for talking about one topic."
       : "Single words — each button speaks its label.";
+  document.querySelector(".buttons-hint").textContent = style === "topic"
+    ? "Add phrases across the communication functions below."
+    : "Add one word per button.";
+  $("preview-legend").hidden = style !== "topic";
   $("ai-go").textContent = style === "topic" ? "Suggest phrases" : "Suggest words";
   $("ai-summary-text").textContent =
     style === "topic" ? "Suggest phrases with AI" : "Suggest words with AI";

@@ -137,12 +137,17 @@ def test_live_grid_uses_saved_positions_for_a_sparse_page(tmp_path, monkeypatch)
         connection.execute("CREATE TABLE ElementPlacement (PageLayoutId INTEGER, ElementReferenceId INTEGER, GridPosition TEXT, Visible INTEGER)")
         connection.execute("INSERT INTO Page VALUES (1, 'Talk', NULL)")
         connection.execute("INSERT INTO PageLayout VALUES (2, '7,7,True,0', 1)")
+        connection.execute("INSERT INTO PageLayout VALUES (3, '2,2,True,0', 1)")
         for reference, (label, column, row) in enumerate(positions, 1):
             connection.execute("INSERT INTO ElementReference VALUES (?)", (reference,))
             connection.execute("INSERT INTO Button VALUES (?, ?)", (label, reference))
             connection.execute(
                 "INSERT INTO ElementPlacement VALUES (2, ?, ?, 1)",
                 (reference, f"{column},{row}"),
+            )
+            connection.execute(
+                "INSERT INTO ElementPlacement VALUES (3, ?, ?, 1)",
+                (reference, f"{min(column, 1)},{min(row, 1)}"),
             )
     monkeypatch.setattr(live, "_active_pageset_path", lambda: str(pageset))
 
