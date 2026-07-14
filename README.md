@@ -111,3 +111,8 @@ and the [security policy](SECURITY.md) first.
 [MIT](LICENSE). The optional AI model is downloaded separately under its own
 Apache-2.0 license. “TD Snap” is a trademark of Tobii Dynavox. This independent
 community project is not affiliated with or endorsed by Tobii Dynavox.
+
+---
+
+Built by **Ryan Penny, M.A., CCC-SLP**, owner of
+[myVoice Speech Therapy](https://www.myvoicespeechtherapy.com/).
