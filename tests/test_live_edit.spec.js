@@ -60,27 +60,33 @@ test('onboarding is keyboard-ready, ephemeral, and tailors the editor', async ({
   await expect(page.locator('#step-load')).toBeHidden();
   await expect(page.locator('.workflow-rail')).toBeHidden();
   await expect(page.locator('#welcome-heading')).toBeFocused();
+  await expect(page.locator('.welcome-question:visible')).toHaveCount(1);
+  await expect(page.locator('.welcome-question:visible [role="radio"]')).toHaveCount(2);
+  await expect(page.locator('#welcome-heading')).toHaveText('How would you like to begin?');
+
+  await page.locator('#profile-aac-guided').hover();
+  await expect(page.locator('#profile-aac-guided .welcome-choice-context')).toHaveCSS('opacity', '1');
 
   await page.locator('#profile-aac-guided').focus();
   await page.locator('#profile-aac-guided').press('ArrowRight');
   await expect(page.locator('#profile-aac-standard')).toHaveAttribute('aria-checked', 'true');
-  await page.locator('#profile-aac-standard').press('ArrowLeft');
-  await page.locator('#profile-aac-expert').click();
-  await page.locator('#profile-ai-power').click();
+  await page.locator('#welcome-start').click();
+  await expect(page.locator('#welcome-heading')).toHaveText('Would you like local AI suggestions?');
+  await expect(page.locator('.welcome-question:visible [role="radio"]')).toHaveCount(2);
+  await page.locator('#profile-ai-assist').click();
+  await page.locator('#welcome-start').click();
+  await expect(page.locator('#welcome-heading')).toHaveText('How familiar is this workspace?');
   await page.locator('#profile-layout-familiar').click();
   await page.locator('#welcome-start').click();
 
   await expect(page.locator('#step-load')).toBeVisible();
   await expect(page.locator('body')).toHaveClass(/layout-familiar/);
   await expect(page.locator('.workflow-item em').first()).toBeHidden();
-  await expect(page.locator('#operation-new')).toHaveAttribute('aria-checked', 'true');
-  await expect(page.locator('#style-topic')).toHaveAttribute('aria-checked', 'true');
-  await expect(page.locator('#fn-palette')).not.toHaveAttribute('hidden', '');
-  await expect(page.locator('#placement-advice')).toBeHidden();
-  await expect(page.locator('.preview-help')).toBeHidden();
+  await expect(page.locator('#operation-existing')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#style-words')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#ai-suggest')).not.toHaveAttribute('hidden', '');
-  await expect(page.locator('.ai-advanced')).toHaveAttribute('open', '');
-  await expect(page.locator('.ai-settings')).not.toHaveAttribute('hidden', '');
+  await expect(page.locator('.ai-advanced')).not.toHaveAttribute('open', '');
+  await expect(page.locator('.ai-settings')).toBeHidden();
   await expect(page.locator('#workflow-tour')).toBeHidden();
 
   await page.reload();
@@ -88,8 +94,12 @@ test('onboarding is keyboard-ready, ephemeral, and tailors the editor', async ({
   await page.locator('#settings-btn').click();
   await expect(page.locator('#step-welcome')).toBeVisible();
   await page.locator('#welcome-start').click();
+  await page.locator('#welcome-start').click();
+  await page.locator('#welcome-start').click();
   await expect(page.locator('#operation-existing')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#style-words')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('.buttons-hint')).toHaveText('Add one word per button.');
+  await expect(page.locator('#preview-legend')).toHaveAttribute('hidden', '');
   await expect(page.locator('#placement-advice')).not.toHaveAttribute('hidden', '');
   await expect(page.locator('#ai-suggest')).toBeHidden();
   await expect(page.locator('#workflow-tour')).toBeVisible();
