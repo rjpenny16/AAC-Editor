@@ -1,4 +1,6 @@
 @echo off
+cd /d "%~dp0"
+
 echo Starting TD Snap Page Builder...
 echo.
 
@@ -25,6 +27,9 @@ if errorlevel 1 (
         exit /b 1
     )
 )
+
+REM Replace an older copy still serving this port with the current checkout.
+python -c "import json,time,urllib.request as u; b='http://127.0.0.1:8765'; c=json.load(u.urlopen(b+'/api/config',timeout=1)); u.urlopen(u.Request(b+'/api/quit',data=b'',headers={'X-TDSnap-Token':c['token']}),timeout=2).read(); time.sleep(1)" >nul 2>&1
 
 echo.
 echo Opening the app in your browser...

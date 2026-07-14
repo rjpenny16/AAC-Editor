@@ -6,7 +6,7 @@ editor works fully without it; failures return empty results plus a
 human-readable message instead of raising.
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import requests
 
@@ -47,17 +47,20 @@ def generate_words(
     model: str = DEFAULT_MODEL,
     kind: str = "words",
     function: Optional[str] = None,
-) -> Tuple[List[str], Optional[str]]:
+    existing: Optional[Sequence[str]] = None,
+    reference: Optional[str] = None,
+) -> Tuple[List, Optional[str]]:
     """Return ``(words, error)``; on any failure words is [] and error explains."""
     count = max(1, min(int(count), 60))
     payload = {
         "model": model,
         "messages": [
-            {"role": "user",
-             "content": prompts.build_prompt(category, count, kind, function)}
+            {"role": "user", "content": prompts.build_prompt(
+                category, count, kind, function, existing, reference
+            )}
         ],
         "stream": False,
-        "format": prompts.WORDS_SCHEMA,
+        "format": prompts.response_schema(kind),
         "options": {"num_predict": 800, "temperature": 0.7},
     }
     try:
@@ -74,7 +77,7 @@ def generate_words(
         return [], f"Ollama error {response.status_code}: {response.text[:200]}"
 
     content = response.json().get("message", {}).get("content", "")
-    words = prompts.parse_items(content, count)
+    words = prompts.parse_items(content, count, kind)
     if words is None:
         return [], "Ollama returned something that wasn't valid JSON."
     return words, None

@@ -15,7 +15,7 @@ import os
 import shutil
 import threading
 import urllib.request
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from . import prompts
 
@@ -152,14 +152,16 @@ def generate_words(
     count: int = 10,
     kind: str = "words",
     function: Optional[str] = None,
-) -> Tuple[List[str], Optional[str]]:
+    existing: Optional[Sequence[str]] = None,
+    reference: Optional[str] = None,
+) -> Tuple[List, Optional[str]]:
     """Return ``(words, error)`` from the built-in model."""
     if not engine_available():
         return [], "The built-in AI engine isn't available in this install."
     if not is_downloaded():
         return [], "The AI model hasn't been downloaded yet."
     count = max(1, min(int(count), 60))
-    prompt = prompts.build_prompt(category, count, kind, function)
+    prompt = prompts.build_prompt(category, count, kind, function, existing, reference)
     try:
         llm = _load_llm()
         with _llm_lock:
@@ -167,7 +169,7 @@ def generate_words(
                 messages=[{"role": "user", "content": prompt}],
                 response_format={
                     "type": "json_object",
-                    "schema": prompts.WORDS_SCHEMA,
+                    "schema": prompts.response_schema(kind),
                 },
                 max_tokens=800,
                 temperature=0.7,
@@ -175,7 +177,7 @@ def generate_words(
         content = result["choices"][0]["message"]["content"]
     except Exception as exc:
         return [], f"The built-in model failed: {exc}"
-    words = prompts.parse_items(content or "", count)
+    words = prompts.parse_items(content or "", count, kind)
     if words is None:
         return [], "The built-in model returned something that wasn't valid JSON."
     return words, None

@@ -16,7 +16,24 @@ const FUNCTIONS = {
   personal: { name: "Personal", color: "#8E24AA" },
 };
 
+const QUESTION_PHRASE = /^(who|what|when|where|why|how|which|whose|is|are|am|was|were|do|does|did|can|could|would|will|should|may|have|has)\b/i;
+const NEGATIVE_PHRASE = /\b(no|not|never|don't|doesn't|didn't|can't|cannot|won't|hate|dislike|stop|bad|boring|scary|wrong|upset|angry|sad|too loud|too busy)\b/i;
+const OWNERSHIP_PHRASE = /\b(my|mine|our|ours)\b/i;
+const PERSONAL_PHRASE = /^i\s+(am|was|have|had|went|saw|read|live|remember|tried|visited|played|watched|ate)\b/i;
+const POSITIVE_PHRASE = /\b(love|like|enjoy|favorite|great|good|fun|awesome|amazing|excited|happy|delicious|beautiful|cool|yes|agree|please|want|best)\b/i;
+
+function inferPhraseFunction(label, suggested = "") {
+  const text = String(label || "").trim().replaceAll("’", "'");
+  if (text.endsWith("?") || QUESTION_PHRASE.test(text)) return "question";
+  if (NEGATIVE_PHRASE.test(text)) return "negative";
+  if (OWNERSHIP_PHRASE.test(text)) return "personal";
+  if (POSITIVE_PHRASE.test(text)) return "positive";
+  if (PERSONAL_PHRASE.test(text)) return "personal";
+  return suggested && suggested !== "question" ? suggested : "comment";
+}
+
 const state = {
+  profile: { aac: "guided", ai: "none", layout: "new", assessed: false, skipped: false },
   mode: "live",
   operation: "existing", // "existing" | "new"
   grid: { cols: 8, rows: 5 },
@@ -37,6 +54,9 @@ const state = {
   apiToken: "",
   targetLoading: false,
 };
+
+let liveMonitor = null;
+let liveSyncing = false;
 
 /* ---------- helpers ---------- */
 
@@ -77,14 +97,18 @@ async function api(path, options) {
 }
 
 function show(step) {
+  document.body.dataset.step = step;
+  $("step-welcome").hidden = step !== "welcome";
   $("step-load").hidden = step !== "load";
   $("step-build").hidden = step !== "build";
   $("step-result").hidden = step !== "result";
+  const rail = document.querySelector(".workflow-rail");
+  if (rail) rail.hidden = step === "welcome";
   const active = $(`step-${step}`);
   if (active && typeof active.scrollIntoView === "function") {
     active.scrollIntoView({ behavior: "smooth", block: "start" });
   }
-  if (step === "result") {
+  if (step === "welcome" || step === "result") {
     const heading = active && active.querySelector("h2");
     if (heading) {
       heading.tabIndex = -1;
@@ -96,7 +120,165 @@ function show(step) {
 function setBusy(button, busy) {
   button.classList.toggle("loading", busy);
   button.disabled = busy;
+  button.setAttribute("aria-busy", String(busy));
 }
+
+function setActivity(message = "") {
+  const activity = $("app-activity");
+  $("app-activity-text").textContent = message;
+  activity.hidden = !message;
+}
+
+function setPreviewBusy(busy, message = "Loading the page layout…") {
+  const workspace = document.querySelector(".preview-workspace");
+  const loading = $("preview-loading");
+  workspace.classList.toggle("is-loading", busy);
+  workspace.setAttribute("aria-busy", String(busy));
+  $("preview-loading-text").textContent = message;
+  loading.hidden = !busy;
+}
+
+function setHidden(id, hidden) {
+  const element = $(id);
+  if (element) element.hidden = hidden;
+}
+
+function setHiddenClass(selector, hidden) {
+  const element = document.querySelector(selector);
+  if (element) element.hidden = hidden;
+}
+
+const WORKFLOW_TOUR = [
+  ["Connect", "Choose the page set already open in TD Snap."],
+  ["Build", "Add vocabulary, choose a layout, and arrange the grid."],
+  ["Review", "Confirm the verified edit before continuing."],
+];
+let workflowTourIndex = 0;
+
+function renderWorkflowTour() {
+  const tour = $("workflow-tour");
+  if (!tour) return;
+  document.querySelectorAll(".workflow-item").forEach((item) => {
+    item.classList.toggle("tour-current", item.dataset.step === String(workflowTourIndex + 1));
+  });
+  $("workflow-tour-count").textContent = `${workflowTourIndex + 1} of ${WORKFLOW_TOUR.length}`;
+  $("workflow-tour-title").textContent = WORKFLOW_TOUR[workflowTourIndex][0];
+  $("workflow-tour-copy").textContent = WORKFLOW_TOUR[workflowTourIndex][1];
+  $("workflow-tour-next").textContent =
+    workflowTourIndex === WORKFLOW_TOUR.length - 1 ? "Done" : "Next";
+  tour.hidden = false;
+}
+
+function startWorkflowTour() {
+  workflowTourIndex = 0;
+  renderWorkflowTour();
+}
+
+function dismissWorkflowTour(focusEditor = false) {
+  const tour = $("workflow-tour");
+  if (tour) tour.hidden = true;
+  document.querySelectorAll(".workflow-item").forEach((item) => {
+    item.classList.remove("tour-current");
+  });
+  if (focusEditor && !$("step-load").hidden) $("live-connect-btn").focus();
+}
+
+function applyProfile() {
+  const profile = state.profile;
+  const guided = !profile.skipped && profile.aac === "guided";
+  const expert = !profile.skipped && profile.aac === "expert";
+
+  if (guided) {
+    setOperation("existing");
+    setPageStyle("words");
+  } else if (expert) {
+    setOperation("new");
+    setPageStyle("topic");
+  }
+  setHidden("operation-hint", expert);
+  setHidden("style-hint", expert);
+  setHiddenClass(".preview-help", expert);
+  setHidden("placement-advice", expert || (!guided && state.operation === "existing"));
+
+  const hideAi = !profile.skipped && profile.ai === "none";
+  const powerAi = profile.ai === "power";
+  setHidden("ai-suggest", hideAi);
+  setHiddenClass(".ai-body", hideAi);
+  setHiddenClass(".ai-ollama-setup", !powerAi);
+  setHiddenClass(".ai-settings", !powerAi);
+  const advanced = document.querySelector(".ai-advanced");
+  if (advanced) advanced.open = powerAi && !profile.skipped;
+  if (!hideAi && profile.ai === "assist") setHidden("ai-download-card", false);
+
+  document.body.classList.toggle(
+    "layout-familiar",
+    !profile.skipped && profile.layout === "familiar"
+  );
+  document.querySelectorAll(".workflow-item em").forEach((description) => {
+    description.hidden = !profile.skipped && profile.layout === "familiar";
+  });
+  setHiddenClass(
+    ".workflow-intro",
+    !profile.skipped && profile.layout === "familiar"
+  );
+  if (!profile.skipped && profile.layout === "new") startWorkflowTour();
+  else dismissWorkflowTour();
+}
+
+document.querySelectorAll("#step-welcome [data-profile]").forEach((option) => {
+  option.addEventListener("click", () => {
+    const group = option.closest('[role="radiogroup"]');
+    group.querySelectorAll('[role="radio"]').forEach((radio) => {
+      const selected = radio === option;
+      radio.classList.toggle("selected", selected);
+      radio.setAttribute("aria-checked", selected);
+      radio.tabIndex = selected ? 0 : -1;
+    });
+    state.profile[option.dataset.profile] = option.dataset.value;
+  });
+});
+
+let setupReturnStep = "load";
+
+function openWorkspaceSetup() {
+  setupReturnStep = $("step-build").hidden
+    ? $("step-result").hidden ? "load" : "result"
+    : "build";
+  show("welcome");
+}
+
+function finishOnboarding(skipped) {
+  if (skipped) {
+    Object.assign(state.profile, {
+      aac: "standard", ai: "power", layout: "new", skipped: true,
+    });
+  }
+  state.profile.assessed = true;
+  applyProfile();
+  show(setupReturnStep);
+  const heading = $(`step-${setupReturnStep}`).querySelector("h2");
+  heading.tabIndex = -1;
+  heading.focus({ preventScroll: true });
+}
+
+$("welcome-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  finishOnboarding(false);
+});
+$("welcome-skip").addEventListener("click", () => finishOnboarding(true));
+$("menu-btn").addEventListener("click", openWorkspaceSetup);
+$("settings-btn").addEventListener("click", openWorkspaceSetup);
+$("workflow-tour-dismiss").addEventListener("click", () => dismissWorkflowTour(true));
+$("workflow-tour-next").addEventListener("click", () => {
+  if (workflowTourIndex === WORKFLOW_TOUR.length - 1) dismissWorkflowTour(true);
+  else {
+    workflowTourIndex += 1;
+    renderWorkflowTour();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("workflow-tour").hidden) dismissWorkflowTour(true);
+});
 
 /* ---------- step 1: connect to live TD Snap ---------- */
 
@@ -105,11 +287,21 @@ $("live-connect-btn").addEventListener("click", async () => {
   const status = $("live-status");
   status.classList.remove("error");
   status.textContent = "Checking TD Snap...";
+  setActivity("Checking for TD Snap…");
   setBusy(button, true);
   try {
-    const data = await api("/api/tdsnap/status");
+    let data = await api("/api/tdsnap/status");
     if (!data.available) throw new Error("Direct editing is available on Windows only.");
-    if (!data.running) throw new Error(data.error || "Open TD Snap, then try again.");
+    if (!data.running) {
+      status.textContent = "Opening TD Snap…";
+      setActivity("Opening TD Snap…");
+      await api("/api/tdsnap/launch", { method: "POST" });
+      for (let attempt = 0; attempt < 60 && !data.running; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        data = await api("/api/tdsnap/status");
+      }
+    }
+    if (!data.running) throw new Error(data.error || "TD Snap did not finish opening. Try again.");
     if (!data.unlocked) throw new Error("Unlock Windows, then try again.");
 
     state.mode = "live";
@@ -129,36 +321,45 @@ $("live-connect-btn").addEventListener("click", async () => {
     state.recommendedParent = data.page;
     state.edits = 0;
 
-    $("file-badge").textContent = "Live TD Snap";
+    $("file-badge").textContent = "Connected to TD Snap";
     $("file-badge").hidden = false;
     $("build-sub").textContent =
       `Connected to “${data.page}” · ${data.grid.cols}×${data.grid.rows} grid · ` +
-      `${state.pages.length} possible locations detected`;
+      `${state.pages.length} pages in this page set`;
+    $("preview-live-text").textContent = `Live · ${data.page}`;
     $("build-btn-label").textContent = "Update TD Snap";
     status.textContent = "";
     renderParents("");
     setOperation("existing");
+    setActivity("Reading the current TD Snap page…");
     await loadTargetLayout(data.page);
     show("build");
+    startLiveMonitor();
     $("word-input").focus();
-    checkAi();
+    if (state.profile.ai !== "none") checkAi();
   } catch (error) {
     status.classList.add("error");
     status.textContent = error.message;
   } finally {
+    setActivity();
     setBusy(button, false);
   }
 });
 
-async function loadTargetLayout(pageName) {
-  if (state.operation !== "existing" || !pageName) return;
+async function loadTargetLayout(pageName, currentOnly = false) {
+  if (state.operation !== "existing" || (!pageName && !currentOnly)) return null;
   clearBuildError();
   state.targetLoading = true;
   state.parentFree = null;
   parentSelect.disabled = true;
   $("parent-capacity").textContent = "Loading the existing layout…";
+  setPreviewBusy(true, currentOnly
+    ? "Refreshing the live TD Snap page…"
+    : `Loading “${pageName}”…`);
   try {
-    const data = await api(`/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
+    const data = await api(currentOnly
+      ? "/api/tdsnap/page-layout"
+      : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
     state.grid = data.grid;
     state.existingButtons = data.buttons || [];
     state.layoutFingerprint = data.fingerprint;
@@ -171,6 +372,7 @@ async function loadTargetLayout(pageName) {
     $("parent-capacity").textContent =
       `${data.free_slots.length} empty cell${data.free_slots.length === 1 ? "" : "s"} on “${data.page}”.`;
     renderWords();
+    return data;
   } catch (error) {
     state.existingButtons = [];
     state.layoutFingerprint = null;
@@ -181,6 +383,41 @@ async function loadTargetLayout(pageName) {
   } finally {
     state.targetLoading = false;
     parentSelect.disabled = false;
+    setPreviewBusy(false);
+  }
+}
+
+function startLiveMonitor() {
+  clearInterval(liveMonitor);
+  liveMonitor = setInterval(syncLivePreview, 750);
+}
+
+async function syncLivePreview() {
+  // Only mirror TD Snap while editing an existing page. In new-page mode the
+  // builder owns the grid, parent, and word layout — following the live page
+  // would overwrite the design (e.g. collapse a topic page onto a smaller grid).
+  if (liveSyncing || state.mode !== "live" ||
+      state.operation !== "existing" || $("step-build").hidden) return;
+  liveSyncing = true;
+  try {
+    const status = await api("/api/tdsnap/status", {
+      headers: { "X-TDSnap-Brief": "1" },
+    });
+    if (!status.running || !status.page || status.page === state.currentPage) return;
+    const layout = await loadTargetLayout("", true);
+    state.currentPage = layout.page;
+    state.parentId = layout.page;
+    state.parentTouched = false;
+    state.grid = layout.grid;
+    $("build-sub").textContent =
+      `Following “${layout.page}” · ${layout.grid.cols}×${layout.grid.rows} grid · ` +
+      `${state.pages.length} pages in this page set`;
+    $("preview-live-text").textContent = `Live · ${layout.page}`;
+    renderParents(parentFilter.value);
+  } catch {
+    // TD Snap briefly has no page grid while navigating; the next poll retries.
+  } finally {
+    liveSyncing = false;
   }
 }
 
@@ -194,16 +431,18 @@ function setOperation(operation) {
   $("operation-existing").tabIndex = existing ? 0 : -1;
   $("operation-new").tabIndex = existing ? -1 : 0;
   $("title-field").hidden = existing;
-  $("placement-advice").hidden = existing;
-  $("target-label").textContent = existing
-    ? "Which existing page should receive the buttons?"
-    : "Where should the new folder button go?";
+  $("placement-advice").hidden = existing && state.profile.aac !== "guided";
+  if (existing && state.profile.aac === "guided") {
+    $("placement-title").textContent = "Start with a familiar page";
+    $("placement-copy").textContent =
+      "Choose the page where these words already belong. You can create a separate page later.";
+    $("use-placement").hidden = true;
+  }
+  $("target-label").textContent = "Destination";
   $("operation-hint").textContent = existing
     ? "Choose the category first, then add words without creating another folder."
     : "Create a separate vocabulary page and link it from an existing page.";
-  $("preview-hint").textContent = existing
-    ? "Existing buttons are locked. Drag new buttons to exact empty cells, or focus one and use the arrow keys."
-    : "Drag buttons to the exact cells you want, or focus one and use the arrow keys.";
+  $("preview-hint").textContent = "This shows how the content will appear in TD Snap.";
   $("build-btn-label").textContent = "Update TD Snap";
   state.existingButtons = existing ? state.existingButtons : [];
   state.layoutFingerprint = existing ? state.layoutFingerprint : null;
@@ -229,6 +468,8 @@ $("operation-new").addEventListener("click", () => {
 function setPageStyle(style) {
   state.pageStyle = style;
   state.autoTopicRows = style === "topic";
+  $("chipbox").classList.toggle("topic-mode", style === "topic");
+  delete $("word-input").dataset.forced;
   $("style-words").classList.toggle("selected", style === "words");
   $("style-words").setAttribute("aria-checked", style === "words");
   $("style-topic").classList.toggle("selected", style === "topic");
@@ -256,10 +497,16 @@ function setActiveFn(fn, manual = true) {
     pill.setAttribute("aria-checked", selected);
     pill.tabIndex = selected ? 0 : -1;
   });
+  updateTopicInputRow();
 }
 
 $("style-words").addEventListener("click", () => setPageStyle("words"));
-$("style-topic").addEventListener("click", () => setPageStyle("topic"));
+$("style-topic").addEventListener("click", () => {
+  setOperation("new");
+  setPageStyle("topic");
+  updatePlacementRecommendation();
+  $("title-input").focus();
+});
 $("auto-topic-layout").addEventListener("click", () => {
   state.autoTopicRows = true;
   autoFormatTopicRows();
@@ -273,6 +520,33 @@ document.querySelectorAll("#fn-palette .fn-pill").forEach((pill) =>
 const chipbox = $("chipbox");
 const wordInput = $("word-input");
 
+const TOPIC_FUNCTIONS = ["question", "comment", "positive", "negative", "personal"];
+
+function updateTopicInputRow() {
+  if (!chipbox || !wordInput) return;
+  if (!chipbox.classList.contains("topic-mode")) {
+    if (wordInput.parentElement !== chipbox) chipbox.append(wordInput);
+    return;
+  }
+  const fn = TOPIC_FUNCTIONS.includes(state.activeFn) ? state.activeFn : "question";
+  wordInput.dataset.fn = fn;
+  const row = chipbox.querySelector(`[data-row-phrases="${fn}"]`);
+  if (row) row.append(wordInput);
+  document.querySelectorAll(".topic-row-add").forEach((button) => {
+    button.classList.toggle("active", button.dataset.addFn === fn);
+  });
+}
+
+document.querySelectorAll(".topic-row-add").forEach((button) => {
+  button.addEventListener("click", () => {
+    wordInput.dataset.forced = button.dataset.addFn;
+    setActiveFn(button.dataset.addFn);
+    wordInput.focus();
+  });
+});
+wordInput.addEventListener("focus", () => chipbox.classList.add("input-active"));
+wordInput.addEventListener("blur", () => chipbox.classList.remove("input-active"));
+
 chipbox.addEventListener("click", (event) => {
   if (event.target === chipbox) wordInput.focus();
 });
@@ -284,7 +558,10 @@ chipbox.addEventListener("click", (event) => {
 function takeWordInput() {
   const value = wordInput.value;
   wordInput.value = "";
-  if (value.trim()) addWords(value);
+  if (value.trim()) {
+    addWords(value, wordInput.dataset.forced || null);
+    if (state.pageStyle === "topic") wordInput.blur();
+  }
 }
 
 wordInput.addEventListener("keydown", (event) => {
@@ -305,14 +582,17 @@ wordInput.addEventListener("paste", (event) => {
   }
 });
 
-function firstAvailableSlot() {
-  const used = new Set(state.words.map((item) => item.slot));
+function firstAvailableSlot(preferredFn = "") {
+  const used = new Set(state.words.map((item) => item.slot).filter(Number.isInteger));
   state.existingButtons.forEach((button) => used.add(button.slot));
   const capacity = state.grid.cols * state.grid.rows;
+  const available = [];
   for (let slot = 0; slot < capacity; slot += 1) {
-    if (!used.has(slot)) return slot;
+    if (!used.has(slot)) available.push(slot);
   }
-  return capacity - 1;
+  return available.find((slot) => !preferredFn || functionForSlot(slot) === preferredFn)
+    ?? available[0]
+    ?? capacity - 1;
 }
 
 function topicRowFunctions(rows) {
@@ -331,14 +611,17 @@ function functionForSlot(slot) {
 }
 
 function autoFormatTopicRows() {
-  state.words.forEach((item, index) => {
-    if (!Number.isInteger(item.slot)) item.slot = index;
-    item.fn = functionForSlot(item.slot);
+  state.words.forEach((item) => {
+    item.fn = inferPhraseFunction(item.message || item.label, item.fn);
+    item.slot = null;
+  });
+  state.words.forEach((item) => {
+    item.slot = firstAvailableSlot(item.fn);
   });
   renderWords();
 }
 
-function addWords(raw) {
+function addWords(raw, forcedFn = null) {
   const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
   let duplicates = 0;
   let overflow = 0;
@@ -359,10 +642,12 @@ function addWords(raw) {
       } else if (state.words.length >= capacity) {
         overflow += 1;
       } else {
-        const slot = firstAvailableSlot();
-        const fn = state.pageStyle === "topic" && state.autoTopicRows
-          ? functionForSlot(slot)
-          : state.activeFn;
+        const fn = state.pageStyle === "topic"
+          ? forcedFn || (state.autoTopicRows
+            ? inferPhraseFunction(word)
+            : state.activeFn)
+          : "";
+        const slot = firstAvailableSlot(fn);
         state.words.push({ label: word, message: null, fn, slot, symbol: true });
       }
     });
@@ -435,7 +720,12 @@ function renderWords() {
       renderWords();
     });
     chip.append(body, remove);
-    chipbox.insertBefore(chip, wordInput);
+    if (state.pageStyle === "topic" && item.fn) {
+      const row = chipbox.querySelector(`[data-row-phrases="${item.fn}"]`);
+      (row || chipbox).append(chip);
+    } else {
+      chipbox.insertBefore(chip, wordInput);
+    }
   });
 
   const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
@@ -443,11 +733,12 @@ function renderWords() {
   meter.textContent = `${state.words.length} of ${capacity} cells`;
   meter.classList.toggle("full", state.words.length >= capacity);
   wordInput.disabled = state.words.length >= capacity;
-  wordInput.placeholder = state.words.length
-    ? ""
-    : state.pageStyle === "topic"
-      ? "Type a phrase, press Enter — click it after to set color or spoken text"
+  wordInput.placeholder = state.pageStyle === "topic"
+    ? "+"
+    : state.words.length
+      ? ""
       : "Type a word, press Enter — or paste a comma-separated list";
+  updateTopicInputRow();
   renderPreview();
 }
 
@@ -515,6 +806,10 @@ chipDialog.addEventListener("close", () => {
         slot: state.words[editingIndex].slot,
         symbol: state.words[editingIndex].symbol !== false,
       };
+      if (state.pageStyle === "topic" && state.words[editingIndex].fn) {
+        state.words[editingIndex].slot = null;
+        state.words[editingIndex].slot = firstAvailableSlot(state.words[editingIndex].fn);
+      }
     }
   }
   editingIndex = null;
@@ -598,14 +893,13 @@ function recommendParent(title) {
     if (!best || score > best.score) best = { id: page.id, title: page.title, score };
   });
   if (best && best.score > 0) return best.id;
-  const topics = state.pages.find((page) => page.title === "Topics Menu Page");
-  return (topics || state.pages.find((page) => page.id === state.currentPage) || state.pages[0]).id;
+  return (state.pages.find((page) => page.id === state.currentPage) || state.pages[0]).id;
 }
 
 function updatePlacementRecommendation() {
   const recommendation = recommendParent($("title-input").value);
   state.recommendedParent = recommendation;
-  const title = titleOf(recommendation);
+  let title = titleOf(recommendation);
   const hasName = Boolean($("title-input").value.trim());
   $("placement-title").textContent = hasName ? `Suggested location: ${title}` : "AAC-friendly placement";
   $("placement-copy").textContent = hasName
@@ -614,13 +908,17 @@ function updatePlacementRecommendation() {
   if (!state.parentTouched && recommendation) {
     state.parentId = recommendation;
     renderParents(parentFilter.value);
+    title = titleOf(state.parentId);
     $("parent-capacity").textContent =
       `The link will use the first free cell on “${title}”.`;
   }
   $("use-placement").hidden = !hasName || state.parentId === recommendation;
 }
 
-$("title-input").addEventListener("input", updatePlacementRecommendation);
+$("title-input").addEventListener("input", () => {
+  updatePlacementRecommendation();
+  renderPreview();
+});
 $("use-placement").addEventListener("click", () => {
   state.parentId = state.recommendedParent;
   state.parentTouched = false;
@@ -656,19 +954,58 @@ function renderParents(filter) {
 
 /* ---------- step 2: preview ---------- */
 
+const PREVIEW_ICONS = {
+  question: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/><path d="M9.7 9.4a2.45 2.45 0 0 1 4.6 1.2c0 1.8-2.3 2-2.3 3.45" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17.1" r="1" fill="currentColor"/></svg>',
+  comment: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 5.5h15v10.3h-9.2L5 19.2V5.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 9h8M8 12h5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  positive: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.8 10.2 11.5 4c.45-1 1.9-.7 1.9.4v4.1h4.15c1.35 0 2.3 1.3 1.9 2.6l-1.7 5.7a2 2 0 0 1-1.9 1.45H8.8V10.2ZM5 10.2h3.8v8.05H5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+  negative: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m8.8 13.8 2.7 6.2c.45 1 1.9.7 1.9-.4v-4.1h4.15c1.35 0 2.3-1.3 1.9-2.6l-1.7-5.7a2 2 0 0 0-1.9-1.45H8.8v8.05ZM5 5.75h3.8v8.05H5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+  personal: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.25" r="3.25" stroke="currentColor" stroke-width="1.8"/><path d="M5.8 19c.55-3.25 2.65-5 6.2-5s5.65 1.75 6.2 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  default: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.7"/><rect x="13.5" y="5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.7"/><rect x="5" y="13.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.7"/><rect x="13.5" y="13.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1.7"/></svg>',
+};
+
+function addPreviewCellContent(cell, label, fn = "", showSymbol = true) {
+  if (showSymbol) {
+    const symbol = document.createElement("span");
+    symbol.className = "cell-symbol";
+    symbol.innerHTML = PREVIEW_ICONS[fn] || PREVIEW_ICONS.default;
+    cell.append(symbol);
+  } else {
+    cell.classList.add("no-symbol");
+  }
+  const text = document.createElement("span");
+  text.className = "cell-label";
+  text.textContent = label;
+  cell.append(text);
+}
+
 function renderPreview() {
   const preview = $("preview");
+  const previewTitle = state.operation === "existing"
+    ? titleOf(state.parentId)
+    : $("title-input").value.trim();
+  $("preview-page-title").textContent = previewTitle || "AAC page preview";
   preview.style.setProperty("--cols", state.grid.cols);
+  preview.style.setProperty("--rows", state.grid.rows);
+  preview.classList.toggle("topic-preview", state.pageStyle === "topic");
   preview.innerHTML = "";
-  if (!state.words.length && !state.existingButtons.length) {
+  if (state.pageStyle !== "topic" && !state.words.length && !state.existingButtons.length) {
     const note = document.createElement("div");
     note.className = "cell empty-note";
-    note.textContent = "Your words appear here, laid out exactly as TD Snap will show them.";
+    note.textContent = "Your words appear here in an original AAC-style layout. TD Snap may render symbols and spacing differently.";
     preview.append(note);
     return;
   }
   const total = state.grid.cols * state.grid.rows;
   for (let slot = 0; slot < total; slot += 1) {
+    if (state.pageStyle === "topic" && slot % state.grid.cols === 0) {
+      const fn = functionForSlot(slot);
+      const marker = document.createElement("div");
+      marker.className = "preview-row-marker";
+      marker.style.setProperty("--fn-color", FUNCTIONS[fn].color);
+      marker.innerHTML = PREVIEW_ICONS[fn];
+      marker.setAttribute("aria-label", `${FUNCTIONS[fn].name} row`);
+      preview.append(marker);
+    }
     const cell = document.createElement("div");
     cell.className = "cell";
     cell.dataset.slot = slot;
@@ -680,7 +1017,7 @@ function renderPreview() {
     const existing = state.existingButtons.find((item) => item.slot === slot);
     if (existing) {
       cell.classList.add("existing");
-      cell.textContent = existing.label || "Existing button";
+      addPreviewCellContent(cell, existing.label || "Existing button", "", state.pageStyle !== "topic");
       cell.title = "Existing TD Snap button — position preserved";
       cell.setAttribute("aria-label", `${existing.label || "Existing button"}, existing and locked`);
     }
@@ -688,7 +1025,12 @@ function renderPreview() {
     if (index >= 0) {
       const item = state.words[index];
       cell.classList.add("used");
-      cell.textContent = item.label;
+      addPreviewCellContent(
+        cell,
+        item.label,
+        item.fn,
+        state.pageStyle !== "topic" && item.symbol !== false
+      );
       cell.draggable = true;
       cell.tabIndex = 0;
       cell.setAttribute("role", "button");
@@ -722,6 +1064,10 @@ function renderPreview() {
         const moved = preview.querySelector(`[data-slot="${target}"]`);
         if (moved) moved.focus();
       });
+    }
+    if (state.pageStyle === "topic" && !existing && index < 0) {
+      cell.classList.add("empty-topic");
+      cell.setAttribute("aria-label", `Empty cell ${slot + 1}`);
     }
     cell.addEventListener("dragover", (event) => {
       if (existing) return;
@@ -815,24 +1161,40 @@ async function checkAi() {
   }
 }
 
-$("ai-host").addEventListener("change", checkAi);
-$("ai-check-btn").addEventListener("click", async () => {
+async function checkAiWithFeedback() {
+  const button = $("ai-check-btn");
   $("ai-engine-state").textContent = "Checking the Ollama connection…";
-  await checkAi();
-});
+  setActivity("Checking your AI connection…");
+  setBusy(button, true);
+  try {
+    await checkAi();
+  } finally {
+    setBusy(button, false);
+    setActivity();
+  }
+}
+
+$("ai-host").addEventListener("change", checkAiWithFeedback);
+$("ai-check-btn").addEventListener("click", checkAiWithFeedback);
 $("ai-model").addEventListener("input", () => {
   $("ai-model").dataset.userEdited = "1";
 });
 
 $("ai-download-btn").addEventListener("click", async () => {
+  const button = $("ai-download-btn");
   const status = $("ai-download-status");
   status.classList.remove("error");
+  setBusy(button, true);
+  setActivity("Starting the model download…");
   try {
     await api("/api/ai/download", { method: "POST" });
     trackDownload();
   } catch (error) {
+    setBusy(button, false);
     status.classList.add("error");
     status.textContent = error.message;
+  } finally {
+    setActivity();
   }
 });
 
@@ -884,11 +1246,15 @@ function trackDownload() {
 $("ai-go").addEventListener("click", async () => {
   const button = $("ai-go");
   const status = $("ai-status");
-  const category = $("title-input").value.trim();
+  const category = state.operation === "existing"
+    ? titleOf(state.parentId)
+    : $("title-input").value.trim();
   status.classList.remove("error");
   if (!category) {
     status.classList.add("error");
-    status.textContent = "Give the page a title first — it's used as the category.";
+    status.textContent = state.operation === "existing"
+      ? "Choose an existing page first."
+      : "Give the page a title first — it's used as the category.";
     return;
   }
   const topic = state.pageStyle === "topic";
@@ -898,6 +1264,7 @@ $("ai-go").addEventListener("click", async () => {
       : "phrases"
     : "words";
   setBusy(button, true);
+  setActivity(`Generating ${what} for “${category}”…`);
   status.textContent = `Asking ${$("ai-model").value} for ${$("ai-count").value} “${category}” ${what}…`;
   try {
     const data = await api("/api/ai/words", {
@@ -910,17 +1277,29 @@ $("ai-go").addEventListener("click", async () => {
         model: $("ai-model").value,
         kind: topic ? "phrases" : "words",
         function: topic && state.activeFn ? state.activeFn : null,
+        existing: [...new Set(state.existingButtons
+          .map((item) => item.label.trim())
+          .filter((label) => label && label.toLocaleLowerCase() !== "existing button"))],
       }),
     });
     // Phrases arrive comma-prone; add them one by one instead of splitting.
     const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
     let added = 0;
-    data.words.forEach((text) => {
-      const label = text.trim();
-      const exists = state.words.some((item) => item.label === label);
+    data.words.forEach((suggestion) => {
+      const label = (typeof suggestion === "string"
+        ? suggestion
+        : String(suggestion.label || "")).trim();
+      const suggestedFn = typeof suggestion === "object" && suggestion &&
+        FUNCTIONS[suggestion.function] ? suggestion.function : "";
+      const exists = [...state.existingButtons, ...state.words].some(
+        (item) => item.label.toLocaleLowerCase() === label.toLocaleLowerCase()
+      );
       if (label && !exists && state.words.length < capacity) {
-        const slot = firstAvailableSlot();
-        const fn = topic && state.autoTopicRows ? functionForSlot(slot) : state.activeFn;
+        let fn = topic
+          ? state.activeFn || inferPhraseFunction(label, suggestedFn)
+          : "";
+        const slot = firstAvailableSlot(topic && state.autoTopicRows ? fn : "");
+        if (topic && !fn && state.autoTopicRows) fn = functionForSlot(slot);
         state.words.push({ label, message: null, fn, slot, symbol: true });
         added += 1;
       }
@@ -931,6 +1310,7 @@ $("ai-go").addEventListener("click", async () => {
     status.classList.add("error");
     status.textContent = error.message;
   } finally {
+    setActivity();
     setBusy(button, false);
   }
 });
@@ -974,6 +1354,10 @@ buildForm.addEventListener("submit", async (event) => {
 
   const button = $("build-btn");
   setBusy(button, true);
+  buildForm.setAttribute("aria-busy", "true");
+  setActivity(state.operation === "existing"
+    ? "Updating TD Snap and verifying the edit…"
+    : "Creating the page in TD Snap and verifying it…");
   try {
     const path = state.operation === "existing" ? "/api/tdsnap/edit-plan" : "/api/tdsnap/page";
     const payload = {
@@ -1004,6 +1388,8 @@ buildForm.addEventListener("submit", async (event) => {
   } catch (error) {
     showBuildError(error.message, error.problems || []);
   } finally {
+    setActivity();
+    buildForm.setAttribute("aria-busy", "false");
     setBusy(button, false);
   }
 });
@@ -1094,6 +1480,7 @@ function renderResult(title, data) {
 }
 
 $("another-btn").addEventListener("click", async () => {
+  const button = $("another-btn");
   const previousParent = state.parentId;
   state.words = [];
   state.parentId = previousParent || state.currentPage;
@@ -1113,18 +1500,24 @@ $("another-btn").addEventListener("click", async () => {
   $("result-warnings").hidden = true;
   show("build");
   if (state.operation === "existing") {
+    setBusy(button, true);
+    setActivity("Refreshing the TD Snap page before the next edit…");
     try {
       await loadTargetLayout(titleOf(state.parentId));
       $("word-input").focus();
     } catch (error) {
       showBuildError("Couldn’t refresh the selected TD Snap page.", [error.message]);
+    } finally {
+      setActivity();
+      setBusy(button, false);
     }
   } else {
     $("title-input").focus();
   }
 });
 
-$("reset-btn").addEventListener("click", () => {
+function resetConnection() {
+  clearInterval(liveMonitor);
   state.mode = "live";
   state.words = [];
   state.parentId = null;
@@ -1137,17 +1530,24 @@ $("reset-btn").addEventListener("click", () => {
   $("build-error").hidden = true;
   renderWords();
   show("load");
-});
+}
+
+$("reset-btn").addEventListener("click", resetConnection);
+$("file-badge").addEventListener("click", resetConnection);
 
 /* ---------- quit (browser mode) ---------- */
 
 $("quit-btn").addEventListener("click", async () => {
   if (!window.confirm("Quit TD Snap Page Builder?")) return;
+  setBusy($("quit-btn"), true);
+  setActivity("Closing the local editor…");
   try {
     await api("/api/quit", { method: "POST" });
   } catch {
     /* the server may stop before the response arrives */
   }
+  setActivity();
+  setBusy($("quit-btn"), false);
   document.querySelector("main").hidden = true;
   document.querySelector("footer").hidden = true;
   $("quit-screen").hidden = false;
@@ -1192,3 +1592,4 @@ document.querySelectorAll('[role="radiogroup"]').forEach((group) => {
 
 renderWords();
 renderPreview();
+show("load");
