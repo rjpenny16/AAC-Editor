@@ -1,0 +1,3 @@
+[  275436ms] [ERROR] Failed to load resource: the server responded with a status of 500 (INTERNAL SERVER ERROR) @ http://127.0.0.1:8765/api/tdsnap/status:0
+[  301514ms] [ERROR] Failed to load resource: the server responded with a status of 400 (BAD REQUEST) @ http://127.0.0.1:8765/api/tdsnap/page:0
+[ 1131763ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://127.0.0.1:8765/api/tdsnap/status:0

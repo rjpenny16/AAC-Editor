@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd -- "$(dirname -- "$0")" || exit 1
+
 echo "Starting TD Snap Page Builder..."
 echo ""
 
@@ -20,6 +22,9 @@ if ! python3 -c "import flask, requests" 2>/dev/null; then
         exit 1
     fi
 fi
+
+# Replace an older copy still serving this port with the current checkout.
+python3 -c "import json,time,urllib.request as u; b='http://127.0.0.1:8765'; c=json.load(u.urlopen(b+'/api/config',timeout=1)); u.urlopen(u.Request(b+'/api/quit',data=b'',headers={'X-TDSnap-Token':c['token']}),timeout=2).read(); time.sleep(1)" >/dev/null 2>&1
 
 echo ""
 echo "Opening the app in your browser..."

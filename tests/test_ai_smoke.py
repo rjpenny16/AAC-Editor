@@ -60,3 +60,4 @@ def test_generate_phrases_with_real_model(smoke_localai):
     )
     assert error is None
     assert 1 <= len(phrases) <= 4
+    assert all(item["function"] == "question" for item in phrases)

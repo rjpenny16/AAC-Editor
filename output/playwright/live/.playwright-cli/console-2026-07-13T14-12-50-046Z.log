@@ -1,0 +1,2 @@
+[  361110ms] [ERROR] Failed to load resource: the server responded with a status of 400 (BAD REQUEST) @ http://127.0.0.1:8765/api/tdsnap/page:0
+[ 1103831ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8765/api/tdsnap/status:0

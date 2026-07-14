@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
+<title>TD Snap Page Builder</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%230071e3'/%3E%3Crect x='2.5' y='2.5' width='5' height='5' rx='1.25' fill='white'/%3E%3Crect x='8.5' y='2.5' width='5' height='5' rx='1.25' fill='white' opacity='.55'/%3E%3Crect x='2.5' y='8.5' width='5' height='5' rx='1.25' fill='white' opacity='.55'/%3E%3Crect x='8.5' y='8.5' width='5' height='5' rx='1.25' fill='white' opacity='.3'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="wordmark" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor"/>
+        <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".55"/>
+        <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".55"/>
+        <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".3"/>
+      </svg>
+    </span>
+    <div class="brand-lockup">
+      <h1>TD Snap Page Builder</h1>
+      <span>Local AAC workspace</span>
+    </div>
+    <div class="topbar-status">
+      <span class="local-status"><span aria-hidden="true"></span>Private &amp; local</span>
+      <span id="file-badge" class="file-badge" hidden></span>
+    </div>
+  </div>
+</header>
+
+<div id="app-activity" class="app-activity" role="status" aria-live="polite" hidden>
+  <span class="activity-spinner" aria-hidden="true"></span>
+  <span id="app-activity-text">Working…</span>
+</div>
+
+<main class="shell">
+
+  <nav class="workflow-rail" aria-label="Edit progress" hidden>
+    <div class="workflow-intro">
+      <span>Workflow</span>
+      <strong>Build vocabulary with confidence.</strong>
+    </div>
+    <ol>
+      <li class="workflow-item" data-step="1">
+        <span class="workflow-marker" aria-hidden="true"><span class="step-number">1</span><span class="step-check">✓</span></span>
+        <span><small>Step 1</small><strong>Connect</strong><em>Choose the open TD Snap page set.</em></span>
+      </li>
+      <li class="workflow-item" data-step="2">
+        <span class="workflow-marker" aria-hidden="true"><span class="step-number">2</span><span class="step-check">✓</span></span>
+        <span><small>Step 2</small><strong>Build</strong><em>Add vocabulary and arrange the grid.</em></span>
+      </li>
+      <li class="workflow-item" data-step="3">
+        <span class="workflow-marker" aria-hidden="true"><span class="step-number">3</span><span class="step-check">✓</span></span>
+        <span><small>Step 3</small><strong>Review</strong><em>Verify the finished edit.</em></span>
+      </li>
+    </ol>
+    <div id="workflow-tour" class="workflow-tour" role="region"
+         aria-label="Workflow guide" hidden>
+      <span id="workflow-tour-count" class="workflow-tour-count"></span>
+      <strong id="workflow-tour-title"></strong>
+      <p id="workflow-tour-copy"></p>
+      <div class="workflow-tour-actions">
+        <button type="button" id="workflow-tour-dismiss" class="btn btn-ghost btn-compact">Dismiss</button>
+        <button type="button" id="workflow-tour-next" class="btn btn-secondary btn-compact">Next</button>
+      </div>
+    </div>
+    <p class="workflow-note"><span aria-hidden="true">●</span> Nothing leaves this computer.</p>
+  </nav>
+
+  <div class="content-stack">
+
+  <section id="step-welcome" class="panel welcome-panel" aria-labelledby="welcome-heading">
+    <div class="panel-head">
+      <p class="step-eyebrow" aria-hidden="true">Welcome</p>
+      <h2 id="welcome-heading">Set up your workspace</h2>
+      <p class="panel-sub">Choose the amount of guidance you want. Your answers
+      only shape this screen and disappear when you close or reload the app.</p>
+    </div>
+
+    <form id="welcome-form">
+      <fieldset class="field welcome-question">
+        <legend id="welcome-aac-label">What would you like to start with?</legend>
+        <div class="segmented welcome-options" role="radiogroup" aria-labelledby="welcome-aac-label">
+          <button type="button" id="profile-aac-guided" class="seg-btn selected"
+                  role="radio" aria-checked="true" data-profile="aac" data-value="guided">
+            <strong>A simple word page</strong><span>Keep guidance and helpful starting points visible.</span>
+          </button>
+          <button type="button" id="profile-aac-standard" class="seg-btn"
+                  role="radio" aria-checked="false" data-profile="aac" data-value="standard">
+            <strong>The usual editor</strong><span>Use the current tools and defaults.</span>
+          </button>
+          <button type="button" id="profile-aac-expert" class="seg-btn"
+                  role="radio" aria-checked="false" data-profile="aac" data-value="expert">
+            <strong>Page-set tools</strong><span>Start with topic layout and less explanatory copy.</span>
+          </button>
+        </div>
+      </fieldset>
+
+      <fieldset class="field welcome-question">
+        <legend id="welcome-ai-label">How much local AI setup do you want to see?</legend>
+        <div class="segmented welcome-options" role="radiogroup" aria-labelledby="welcome-ai-label">
+          <button type="button" id="profile-ai-none" class="seg-btn selected"
+                  role="radio" aria-checked="true" data-profile="ai" data-value="none">
+            <strong>None</strong><span>Keep optional AI suggestions out of view.</span>
+          </button>
+          <button type="button" id="profile-ai-assist" class="seg-btn"
+                  role="radio" aria-checked="false" data-profile="ai" data-value="assist">
+            <strong>Built-in help</strong><span>Show the one-click model setup.</span>
+          </button>
+          <button type="button" id="profile-ai-power" class="seg-btn"
+                  role="radio" aria-checked="false" data-profile="ai" data-value="power">
+            <strong>All settings</strong><span>Show both built-in and Ollama options.</span>
+          </button>
+        </div>
+      </fieldset>
+
+      <fieldset class="field welcome-question">
+        <legend id="welcome-layout-label">How familiar is this workspace?</legend>
+        <div class="segmented welcome-options two-up" role="radiogroup" aria-labelledby="welcome-layout-label">
+          <button type="button" id="profile-layout-new" class="seg-btn selected"
+                  role="radio" aria-checked="true" data-profile="layout" data-value="new">
+            <strong>Show me around</strong><span>Keep step descriptions and a short guide.</span>
+          </button>
+          <button type="button" id="profile-layout-familiar" class="seg-btn"
+                  role="radio" aria-checked="false" data-profile="layout" data-value="familiar">
+            <strong>I know the layout</strong><span>Use a compact workflow rail.</span>
+          </button>
+        </div>
+      </fieldset>
+
+      <div class="actions welcome-actions">
+        <button type="submit" id="welcome-start" class="btn btn-primary">Start editing</button>
+        <button type="button" id="welcome-skip" class="btn btn-ghost">Skip, I know this app</button>
+      </div>
+      <p class="welcome-privacy">Nothing is saved, uploaded, or added to the page set until you review an edit.</p>
+    </form>
+  </section>
+
+  <!-- Step 1 · Connect -->
+  <section id="step-load" class="panel" aria-labelledby="load-heading" hidden>
+    <div class="panel-head">
+      <p class="step-eyebrow" aria-hidden="true">Step 1</p>
+      <h2 id="load-heading">Connect to TD Snap</h2>
+      <p class="panel-sub">Changes go directly into the page set already open in
+      TD Snap. There are no exports, duplicate files, or imports to manage.</p>
+    </div>
+
+    <div class="live-connect">
+      <div>
+        <strong>Connect to your TD Snap page set</strong>
+        <span>If TD Snap is closed, this opens it. Keep Windows unlocked while an edit runs.</span>
+      </div>
+      <button type="button" id="live-connect-btn" class="btn btn-primary">
+        Connect to TD Snap
+      </button>
+    </div>
+    <p id="live-status" class="status-line" role="status" aria-live="polite"></p>
+
+    <details class="help">
+      <summary>Before you connect</summary>
+      <ol>
+        <li>If TD Snap is already open, switch to the user and page set you want to edit.</li>
+        <li>Open any page you want to preview or edit.</li>
+        <li>Click <strong>Connect to TD Snap</strong>. The app opens TD Snap when needed,
+            and it is okay if TD Snap is already in Edit mode.</li>
+      </ol>
+    </details>
+  </section>
+
+  <!-- Step 2 · Build -->
+  <section id="step-build" class="panel" aria-labelledby="build-heading" hidden>
+    <div class="panel-head">
+      <p class="step-eyebrow" aria-hidden="true">Step 2</p>
+      <h2 id="build-heading">Plan a vocabulary edit</h2>
+      <p class="panel-sub" id="build-sub"></p>
+    </div>
+
+    <form id="build-form" novalidate>
+      <div class="editor-layout">
+      <div class="editor-main">
+      <div class="field">
+        <span class="label-row"><span class="label-text">What do you want to do?</span></span>
+        <div class="segmented" role="radiogroup" aria-label="Edit type">
+          <button type="button" id="operation-existing" class="seg-btn selected"
+                  role="radio" aria-checked="true">Add to an existing page</button>
+          <button type="button" id="operation-new" class="seg-btn"
+                  role="radio" aria-checked="false">Create a new page</button>
+        </div>
+        <p class="field-hint" id="operation-hint">Choose the category first, then add words without creating another folder.</p>
+      </div>
+
+      <div class="field" id="title-field" hidden>
+        <label for="title-input">Page title</label>
+        <input id="title-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Snacks" required maxlength="60">
+        <p class="field-hint">Also becomes the folder button label. A clear title
+        helps the app recommend an existing page where it belongs.</p>
+      </div>
+
+      <div class="field">
+        <span class="label-row"><span class="label-text">Page style</span></span>
+        <div class="segmented" role="radiogroup" aria-label="Page style">
+          <button type="button" id="style-words" class="seg-btn selected"
+                  role="radio" aria-checked="true">Word page</button>
+          <button type="button" id="style-topic" class="seg-btn"
+                  role="radio" aria-checked="false">Topic page</button>
+        </div>
+        <p class="field-hint" id="style-hint">Single words — each button speaks its label.</p>
+      </div>
+
+      <div class="field">
+        <div class="label-row">
+          <label for="word-input">Buttons</label>
+          <span id="capacity" class="capacity" aria-live="polite"></span>
+        </div>
+
+        <div id="fn-palette" class="fn-palette" hidden>
+          <div class="fn-heading-row">
+            <span class="fn-label">Communicative-function colors</span>
+            <button type="button" id="auto-topic-layout" class="btn btn-ghost btn-compact">Reapply row layout</button>
+          </div>
+          <div class="fn-row" role="radiogroup" aria-label="Communicative function">
+            <button type="button" class="fn-pill selected" data-fn="" role="radio" aria-checked="true">None</button>
+            <button type="button" class="fn-pill" data-fn="question" style="--fn:#1E88E5" role="radio" aria-checked="false">Question</button>
+            <button type="button" class="fn-pill" data-fn="comment" style="--fn:#F57C00" role="radio" aria-checked="false">Comment</button>
+            <button type="button" class="fn-pill" data-fn="positive" style="--fn:#43A047" role="radio" aria-checked="false">Positive</button>
+            <button type="button" class="fn-pill" data-fn="negative" style="--fn:#E53935" role="radio" aria-checked="false">Negative</button>
+            <button type="button" class="fn-pill" data-fn="personal" style="--fn:#8E24AA" role="radio" aria-checked="false">Personal</button>
+          </div>
+          <p class="field-hint">Topic pages automatically start with blue questions,
+          then orange comments, green positive responses, red negative responses,
+          and purple personal messages. Move a button to another row to change its
+          function, or click a button chip to override it.</p>
+        </div>
+
+        <div id="chipbox" class="chipbox">
+          <input id="word-input" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="Type a word, press Enter — or paste a comma-separated list"
+                 aria-label="Add a word, press Enter to confirm">
+        </div>
+        <p id="chip-note" class="status-line" role="status" aria-live="polite"></p>
+
+        <details class="ai-suggest" id="ai-suggest">
+          <summary><span id="ai-summary-text">Suggest words with AI</span> <span class="ai-tag">optional · runs on this computer</span></summary>
+          <div class="ai-body">
+            <p class="ai-intro">AI suggestions are optional. The model runs on this
+            computer; to keep suggestions accurate for specific topics (shows, games,
+            characters), the app also looks up public reference facts online using the
+            page title. That lookup can be turned off (set TDSNAP_WEB_GROUNDING=0), and
+            suggestions still work offline without it.</p>
+            <p class="ai-engine-line"><strong>Current status:</strong>
+            <span id="ai-engine-state" role="status" aria-live="polite">Checking for a local model…</span></p>
+
+            <div id="ai-download-card" class="ai-download" hidden>
+              <h4>Recommended: use the built-in model</h4>
+              <p class="ai-download-info">This is the simplest setup. The free
+              <span id="ai-model-name">…</span> model is <span id="ai-model-size">…</span>
+              and uses the <span id="ai-model-license">…</span> license.</p>
+              <ol class="ai-setup-steps">
+                <li>Click <strong>Download AI model</strong> below.</li>
+                <li>Keep this window open while the one-time download finishes.</li>
+                <li>When the status says suggestions are ready, select an existing
+                    page or enter a new page title, then click <strong>Suggest words</strong>.</li>
+              </ol>
+              <button type="button" id="ai-download-btn" class="btn btn-secondary">
+                <span class="btn-label">Download AI model</span>
+              </button>
+              <div class="progress" id="ai-progress" hidden
+                   role="progressbar" aria-label="Model download progress"
+                   aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-fill" id="ai-progress-fill"></div>
+              </div>
+              <p id="ai-download-status" class="status-line" role="status" aria-live="polite"></p>
+            </div>
+
+            <div class="ai-controls">
+              <input id="ai-count" type="number" min="1" max="40" value="10"
+                     aria-label="How many words to suggest">
+              <button type="button" id="ai-go" class="btn btn-secondary">Suggest words</button>
+            </div>
+            <details class="ai-advanced">
+              <summary>Use Ollama instead (your own local model)</summary>
+              <div class="ai-ollama-setup">
+                <p>Choose this option if you already use Ollama or want to select
+                a different local model.</p>
+                <ol class="ai-setup-steps">
+                  <li><a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">Install Ollama</a>
+                      for Windows, macOS, or Linux, then open it.</li>
+                  <li>Open PowerShell or Terminal and run:<br>
+                    <code class="ai-command">ollama pull llama3.2</code>
+                  </li>
+                  <li>Leave Ollama running. Return here and click
+                      <strong>Check connection</strong>.</li>
+                </ol>
+              </div>
+              <div class="ai-settings">
+                <label>Ollama server address
+                  <input id="ai-host" type="text" value="http://localhost:11434">
+                </label>
+                <label>Ollama model name
+                  <input id="ai-model" type="text" value="llama3.2">
+                </label>
+              </div>
+              <button type="button" id="ai-check-btn" class="btn btn-ghost ai-check-btn">Check connection</button>
+            </details>
+            <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
+          </div>
+        </details>
+      </div>
+
+      <div class="field">
+        <label for="parent-select" id="target-label">Which existing page should receive the buttons?</label>
+        <div class="placement-advice" id="placement-advice" hidden>
+          <div>
+            <strong id="placement-title">AAC-friendly placement</strong>
+            <p id="placement-copy">Name the page above and the app will suggest an
+            existing location, keeping related vocabulary together.</p>
+          </div>
+          <button type="button" id="use-placement" class="btn btn-secondary btn-compact" hidden>Use suggestion</button>
+        </div>
+        <div class="parent-picker">
+          <div class="parent-search-row">
+            <input id="parent-filter" type="search" placeholder="Filter detected pages"
+                   aria-label="Filter the page list">
+            <button type="button" id="parent-filter-clear" class="btn btn-ghost btn-compact">Clear filter</button>
+          </div>
+          <select id="parent-select" size="6" aria-describedby="parent-note"></select>
+        </div>
+        <p class="field-hint" id="parent-note">Every page in the open page set is listed. Open a page
+        in TD Snap and the preview follows it automatically. Selecting a page loads its occupied cells before editing.
+        <span id="parent-capacity"></span></p>
+      </div>
+
+      <div id="build-error" class="alert" role="alert" hidden></div>
+
+      <div class="actions">
+        <button type="submit" id="build-btn" class="btn btn-primary">
+          <span id="build-btn-label" class="btn-label">Update TD Snap</span>
+        </button>
+        <button type="button" id="reset-btn" class="btn btn-ghost">Reconnect to TD Snap</button>
+      </div>
+      </div>
+
+      <aside class="preview-workspace" aria-labelledby="preview-label">
+        <div class="preview-heading">
+          <div>
+            <span class="label-text" id="preview-label">Preview</span>
+            <p class="field-hint preview-hint" id="preview-hint">Drag buttons to the exact cells you want, or focus one and use the arrow keys.</p>
+          </div>
+          <span class="preview-live"><span aria-hidden="true"></span><b id="preview-live-text">Live</b></span>
+        </div>
+        <div class="preview-frame">
+          <div class="preview-chrome" aria-hidden="true">
+            <span class="preview-appmark">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M5 5.5h14v10H10l-5 3.5V5.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                <path d="M8.5 9h7M8.5 12h4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <strong id="preview-page-title">AAC page preview</strong>
+            <span>Layout preview</span>
+          </div>
+          <div id="preview" class="preview" aria-label="Draggable preview of the new page's button grid"></div>
+          <div id="preview-loading" class="preview-loading" role="status" aria-live="polite" hidden>
+            <span class="activity-spinner" aria-hidden="true"></span>
+            <span id="preview-loading-text">Loading the page layout…</span>
+          </div>
+        </div>
+        <div class="preview-help">
+          <p>Existing buttons are locked. Focus a new button and use the arrow keys for precise placement.</p>
+          <div class="preview-legend" aria-label="Communicative function colors">
+            <span style="--legend:#1E88E5">Question</span>
+            <span style="--legend:#F57C00">Comment</span>
+            <span style="--legend:#43A047">Positive</span>
+            <span style="--legend:#E53935">Negative</span>
+            <span style="--legend:#8E24AA">Personal</span>
+          </div>
+        </div>
+      </aside>
+      </div>
+    </form>
+  </section>
+
+  <!-- Step 3 · Result -->
+  <section id="step-result" class="panel" aria-labelledby="result-heading" hidden>
+    <div class="panel-head">
+      <p class="step-eyebrow" aria-hidden="true">Step 3</p>
+      <h2 id="result-heading">Page added <span id="edit-count" class="edit-count"></span></h2>
+      <p class="panel-sub" id="result-sub"></p>
+    </div>
+
+    <ul id="checks" class="checks" aria-label="Validation results"></ul>
+    <div id="result-warnings" class="alert warning" role="status" hidden></div>
+
+    <div class="actions">
+      <button type="button" id="another-btn" class="btn btn-secondary">Make another edit</button>
+    </div>
+
+    <p id="live-result-note" class="safety">
+      The original page set in TD Snap was edited and verified. Use TD Snap's normal
+      Sync button whenever you are ready to share the change.
+    </p>
+  </section>
+
+  </div>
+
+</main>
+
+<dialog id="chip-editor" class="chip-dialog" aria-labelledby="chip-editor-title">
+  <form method="dialog" id="chip-editor-form">
+    <h3 id="chip-editor-title">Edit button</h3>
+    <div class="field">
+      <label for="edit-label">Button label</label>
+      <input id="edit-label" type="text" autocomplete="off" maxlength="60" required>
+      <p class="field-hint">What's shown on the button.</p>
+    </div>
+    <div class="field">
+      <label for="edit-message">Spoken phrase <span class="optional-tag">optional</span></label>
+      <input id="edit-message" type="text" autocomplete="off" maxlength="200"
+             placeholder="Leave empty to speak the label">
+      <p class="field-hint">Say a full sentence while the button stays short —
+      e.g. label “Lunch?”, phrase “What are we having for lunch?”.</p>
+    </div>
+    <div class="field">
+      <span class="label-row"><span class="label-text">Color code</span></span>
+      <div class="fn-row" id="edit-fn-row" role="radiogroup" aria-label="Communicative function">
+        <button type="button" class="fn-pill" data-fn="" role="radio">None</button>
+        <button type="button" class="fn-pill" data-fn="question" style="--fn:#1E88E5" role="radio">Question</button>
+        <button type="button" class="fn-pill" data-fn="comment" style="--fn:#F57C00" role="radio">Comment</button>
+        <button type="button" class="fn-pill" data-fn="positive" style="--fn:#43A047" role="radio">Positive</button>
+        <button type="button" class="fn-pill" data-fn="negative" style="--fn:#E53935" role="radio">Negative</button>
+        <button type="button" class="fn-pill" data-fn="personal" style="--fn:#8E24AA" role="radio">Personal</button>
+      </div>
+    </div>
+    <div class="actions dialog-actions">
+      <button type="submit" id="edit-save" class="btn btn-primary" value="save">
+        <span class="btn-label">Save</span>
+      </button>
+      <button type="submit" class="btn btn-ghost" value="cancel" formnovalidate>Cancel</button>
+      <button type="submit" id="edit-remove" class="btn btn-danger" value="remove" formnovalidate>Remove button</button>
+    </div>
+  </form>
+</dialog>
+
+<footer class="foot">
+  <p>Runs entirely on this computer · nothing is uploaded to the internet</p>
+  <button type="button" id="quit-btn" class="quit-btn" hidden>Quit the app</button>
+</footer>
+
+<section id="quit-screen" class="panel quit-screen" aria-live="polite" hidden>
+  <h2>The app has stopped</h2>
+  <p>TD Snap Page Builder is no longer running on this computer.
+  You can close this tab.</p>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

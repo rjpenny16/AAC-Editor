@@ -1,0 +1,48 @@
+- generic [active] [ref=f1e1]:
+  - banner [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - generic [ref=f1e10]:
+        - heading "TD Snap Page Builder" [level=1] [ref=f1e11]
+        - generic [ref=f1e12]: Local AAC workspace
+      - generic [ref=f1e13]: Private & local
+  - main [ref=f1e16]:
+    - navigation "Edit progress" [ref=f1e17]:
+      - generic [ref=f1e18]:
+        - generic [ref=f1e19]: Workflow
+        - strong [ref=f1e20]: Build vocabulary with confidence.
+      - list [ref=f1e21]:
+        - listitem [ref=f1e22]:
+          - generic [ref=f1e23]: "1"
+          - generic [ref=f1e25]:
+            - generic [ref=f1e26]: Step 1
+            - strong [ref=f1e27]: Connect
+            - emphasis [ref=f1e28]: Choose the open TD Snap page set.
+        - listitem [ref=f1e29]:
+          - generic [ref=f1e30]: "2"
+          - generic [ref=f1e32]:
+            - generic [ref=f1e33]: Step 2
+            - strong [ref=f1e34]: Build
+            - emphasis [ref=f1e35]: Add vocabulary and arrange the grid.
+        - listitem [ref=f1e36]:
+          - generic [ref=f1e37]: "3"
+          - generic [ref=f1e39]:
+            - generic [ref=f1e40]: Step 3
+            - strong [ref=f1e41]: Review
+            - emphasis [ref=f1e42]: Verify the finished edit.
+      - paragraph [ref=f1e43]: ● Nothing leaves this computer.
+    - region [ref=f1e45]:
+      - generic [ref=f1e46]:
+        - paragraph [ref=f1e47]: Step 1
+        - heading "Connect to TD Snap" [level=2] [ref=f1e48]
+        - paragraph [ref=f1e49]: Changes go directly into the page set already open in TD Snap. There are no exports, duplicate files, or imports to manage.
+      - generic [ref=f1e50]:
+        - generic [ref=f1e51]:
+          - strong [ref=f1e52]: Use the page set that is open now
+          - generic [ref=f1e53]: Leave TD Snap open and Windows unlocked while an edit runs.
+        - button "Connect to TD Snap" [ref=f1e54] [cursor=pointer]
+      - status [ref=f1e55]
+      - group [ref=f1e56]:
+        - generic "Before you connect" [ref=f1e57] [cursor=pointer]
+  - contentinfo [ref=f1e58]:
+    - paragraph [ref=f1e59]: Runs entirely on this computer · nothing is uploaded to the internet
+    - button "Quit the app" [ref=f1e60] [cursor=pointer]

@@ -1,0 +1,963 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e10]:
+        - heading "TD Snap Page Builder" [level=1] [ref=e11]
+        - generic [ref=e12]: Local AAC workspace
+      - generic [ref=e13]:
+        - generic [ref=e14]: Private & local
+        - generic [ref=e94]: Live TD Snap
+  - main [ref=e16]:
+    - navigation "Edit progress" [ref=e64]:
+      - list [ref=e65]:
+        - listitem [ref=e66]:
+          - generic [ref=e67]: ✓
+          - strong [ref=e70]: Connect
+        - listitem [ref=e71]:
+          - generic [ref=e72]: "2"
+          - strong [ref=e75]: Build
+        - listitem [ref=e76]:
+          - generic [ref=e77]: "3"
+          - strong [ref=e80]: Review
+    - region [ref=e96]:
+      - generic [ref=e97]:
+        - paragraph [ref=e98]: Step 2
+        - heading "Plan a vocabulary edit" [level=2] [ref=e99]
+        - paragraph [ref=e100]: Connected to “parks and recreation (tv show)” · 7×7 grid · 602 pages in this page set
+      - generic [ref=e102]:
+        - generic [ref=e103]:
+          - generic [ref=e104]:
+            - generic [ref=e105]: What do you want to do?
+            - radiogroup "Edit type" [ref=e107]:
+              - radio "Add to an existing page" [checked] [ref=e108] [cursor=pointer]
+              - radio "Create a new page" [ref=e109] [cursor=pointer]
+          - generic [ref=e110]:
+            - generic [ref=e111]: Page style
+            - radiogroup "Page style" [ref=e113]:
+              - radio "Word page" [ref=e114] [cursor=pointer]
+              - radio "Topic page" [checked] [ref=e115] [cursor=pointer]
+          - generic [ref=e116]:
+            - generic [ref=e117]:
+              - generic [ref=e118]: Buttons
+              - generic [ref=e119]: 45 of 45 cells
+            - generic [ref=e120]:
+              - generic [ref=e121]:
+                - generic [ref=e122]: Communicative-function colors
+                - button "Reapply row layout" [ref=e123] [cursor=pointer]
+              - radiogroup "Communicative function" [ref=e124]:
+                - radio "None" [checked] [ref=e125] [cursor=pointer]
+                - radio "Question" [ref=e126] [cursor=pointer]
+                - radio "Comment" [ref=e127] [cursor=pointer]
+                - radio "Positive" [ref=e128] [cursor=pointer]
+                - radio "Negative" [ref=e129] [cursor=pointer]
+                - radio "Personal" [ref=e130] [cursor=pointer]
+              - paragraph [ref=e131]: Topic pages automatically start with blue questions, then orange comments, green positive responses, red negative responses, and purple personal messages. Move a button to another row to change its function, or click a button chip to override it.
+            - generic [ref=e132]:
+              - generic [ref=e1450]:
+                - button "Edit Fish & Chips, Comment" [ref=e1451] [cursor=pointer]:
+                  - generic [ref=e1453]: Fish & Chips
+                - button "Remove Fish & Chips" [ref=e1454] [cursor=pointer]: ×
+              - generic [ref=e1455]:
+                - button "Edit O'Brien, Comment" [ref=e1456] [cursor=pointer]:
+                  - generic [ref=e1458]: O'Brien
+                - button "Remove O'Brien" [ref=e1459] [cursor=pointer]: ×
+              - generic [ref=e1460]:
+                - button "Edit <script>alert(1)</script>, Comment" [ref=e1461] [cursor=pointer]:
+                  - generic [ref=e1463]: <script>alert(1)</script>
+                - button "Remove <script>alert(1)</script>" [ref=e1464] [cursor=pointer]: ×
+              - generic [ref=e1465]:
+                - button "Edit Stress 01, Comment" [ref=e1466] [cursor=pointer]:
+                  - generic [ref=e1468]: Stress 01
+                - button "Remove Stress 01" [ref=e1469] [cursor=pointer]: ×
+              - generic [ref=e1470]:
+                - button "Edit Stress 02, Comment" [ref=e1471] [cursor=pointer]:
+                  - generic [ref=e1473]: Stress 02
+                - button "Remove Stress 02" [ref=e1474] [cursor=pointer]: ×
+              - generic [ref=e1475]:
+                - button "Edit Stress 03, Comment" [ref=e1476] [cursor=pointer]:
+                  - generic [ref=e1478]: Stress 03
+                - button "Remove Stress 03" [ref=e1479] [cursor=pointer]: ×
+              - generic [ref=e1480]:
+                - button "Edit Stress 04, Comment" [ref=e1481] [cursor=pointer]:
+                  - generic [ref=e1483]: Stress 04
+                - button "Remove Stress 04" [ref=e1484] [cursor=pointer]: ×
+              - generic [ref=e1485]:
+                - button "Edit Stress 05, Comment" [ref=e1486] [cursor=pointer]:
+                  - generic [ref=e1488]: Stress 05
+                - button "Remove Stress 05" [ref=e1489] [cursor=pointer]: ×
+              - generic [ref=e1490]:
+                - button "Edit Stress 06, Comment" [ref=e1491] [cursor=pointer]:
+                  - generic [ref=e1493]: Stress 06
+                - button "Remove Stress 06" [ref=e1494] [cursor=pointer]: ×
+              - generic [ref=e1495]:
+                - button "Edit Stress 07, Comment" [ref=e1496] [cursor=pointer]:
+                  - generic [ref=e1498]: Stress 07
+                - button "Remove Stress 07" [ref=e1499] [cursor=pointer]: ×
+              - generic [ref=e1500]:
+                - button "Edit Stress 08, Comment" [ref=e1501] [cursor=pointer]:
+                  - generic [ref=e1503]: Stress 08
+                - button "Remove Stress 08" [ref=e1504] [cursor=pointer]: ×
+              - generic [ref=e1505]:
+                - button "Edit Stress 09, Comment" [ref=e1506] [cursor=pointer]:
+                  - generic [ref=e1508]: Stress 09
+                - button "Remove Stress 09" [ref=e1509] [cursor=pointer]: ×
+              - generic [ref=e1510]:
+                - button "Edit Stress 10, Comment" [ref=e1511] [cursor=pointer]:
+                  - generic [ref=e1513]: Stress 10
+                - button "Remove Stress 10" [ref=e1514] [cursor=pointer]: ×
+              - generic [ref=e1515]:
+                - button "Edit Stress 11, Comment" [ref=e1516] [cursor=pointer]:
+                  - generic [ref=e1518]: Stress 11
+                - button "Remove Stress 11" [ref=e1519] [cursor=pointer]: ×
+              - generic [ref=e1520]:
+                - button "Edit Stress 12, Comment" [ref=e1521] [cursor=pointer]:
+                  - generic [ref=e1523]: Stress 12
+                - button "Remove Stress 12" [ref=e1524] [cursor=pointer]: ×
+              - generic [ref=e1525]:
+                - button "Edit Stress 13, Comment" [ref=e1526] [cursor=pointer]:
+                  - generic [ref=e1528]: Stress 13
+                - button "Remove Stress 13" [ref=e1529] [cursor=pointer]: ×
+              - generic [ref=e1530]:
+                - button "Edit Stress 14, Comment" [ref=e1531] [cursor=pointer]:
+                  - generic [ref=e1533]: Stress 14
+                - button "Remove Stress 14" [ref=e1534] [cursor=pointer]: ×
+              - generic [ref=e1535]:
+                - button "Edit Stress 15, Comment" [ref=e1536] [cursor=pointer]:
+                  - generic [ref=e1538]: Stress 15
+                - button "Remove Stress 15" [ref=e1539] [cursor=pointer]: ×
+              - generic [ref=e1540]:
+                - button "Edit Stress 16, Comment" [ref=e1541] [cursor=pointer]:
+                  - generic [ref=e1543]: Stress 16
+                - button "Remove Stress 16" [ref=e1544] [cursor=pointer]: ×
+              - generic [ref=e1545]:
+                - button "Edit Stress 17, Comment" [ref=e1546] [cursor=pointer]:
+                  - generic [ref=e1548]: Stress 17
+                - button "Remove Stress 17" [ref=e1549] [cursor=pointer]: ×
+              - generic [ref=e1550]:
+                - button "Edit Stress 18, Comment" [ref=e1551] [cursor=pointer]:
+                  - generic [ref=e1553]: Stress 18
+                - button "Remove Stress 18" [ref=e1554] [cursor=pointer]: ×
+              - generic [ref=e1555]:
+                - button "Edit Stress 19, Comment" [ref=e1556] [cursor=pointer]:
+                  - generic [ref=e1558]: Stress 19
+                - button "Remove Stress 19" [ref=e1559] [cursor=pointer]: ×
+              - generic [ref=e1560]:
+                - button "Edit Stress 20, Comment" [ref=e1561] [cursor=pointer]:
+                  - generic [ref=e1563]: Stress 20
+                - button "Remove Stress 20" [ref=e1564] [cursor=pointer]: ×
+              - generic [ref=e1565]:
+                - button "Edit Stress 21, Comment" [ref=e1566] [cursor=pointer]:
+                  - generic [ref=e1568]: Stress 21
+                - button "Remove Stress 21" [ref=e1569] [cursor=pointer]: ×
+              - generic [ref=e1570]:
+                - button "Edit Stress 22, Comment" [ref=e1571] [cursor=pointer]:
+                  - generic [ref=e1573]: Stress 22
+                - button "Remove Stress 22" [ref=e1574] [cursor=pointer]: ×
+              - generic [ref=e1575]:
+                - button "Edit Stress 23, Comment" [ref=e1576] [cursor=pointer]:
+                  - generic [ref=e1578]: Stress 23
+                - button "Remove Stress 23" [ref=e1579] [cursor=pointer]: ×
+              - generic [ref=e1580]:
+                - button "Edit Stress 24, Comment" [ref=e1581] [cursor=pointer]:
+                  - generic [ref=e1583]: Stress 24
+                - button "Remove Stress 24" [ref=e1584] [cursor=pointer]: ×
+              - generic [ref=e1585]:
+                - button "Edit Stress 25, Comment" [ref=e1586] [cursor=pointer]:
+                  - generic [ref=e1588]: Stress 25
+                - button "Remove Stress 25" [ref=e1589] [cursor=pointer]: ×
+              - generic [ref=e1590]:
+                - button "Edit Stress 26, Comment" [ref=e1591] [cursor=pointer]:
+                  - generic [ref=e1593]: Stress 26
+                - button "Remove Stress 26" [ref=e1594] [cursor=pointer]: ×
+              - generic [ref=e1595]:
+                - button "Edit Stress 27, Comment" [ref=e1596] [cursor=pointer]:
+                  - generic [ref=e1598]: Stress 27
+                - button "Remove Stress 27" [ref=e1599] [cursor=pointer]: ×
+              - generic [ref=e1600]:
+                - button "Edit Stress 28, Comment" [ref=e1601] [cursor=pointer]:
+                  - generic [ref=e1603]: Stress 28
+                - button "Remove Stress 28" [ref=e1604] [cursor=pointer]: ×
+              - generic [ref=e1605]:
+                - button "Edit Stress 29, Comment" [ref=e1606] [cursor=pointer]:
+                  - generic [ref=e1608]: Stress 29
+                - button "Remove Stress 29" [ref=e1609] [cursor=pointer]: ×
+              - generic [ref=e1610]:
+                - button "Edit Stress 30, Comment" [ref=e1611] [cursor=pointer]:
+                  - generic [ref=e1613]: Stress 30
+                - button "Remove Stress 30" [ref=e1614] [cursor=pointer]: ×
+              - generic [ref=e1615]:
+                - button "Edit Stress 31, Comment" [ref=e1616] [cursor=pointer]:
+                  - generic [ref=e1618]: Stress 31
+                - button "Remove Stress 31" [ref=e1619] [cursor=pointer]: ×
+              - generic [ref=e1620]:
+                - button "Edit Stress 32, Comment" [ref=e1621] [cursor=pointer]:
+                  - generic [ref=e1623]: Stress 32
+                - button "Remove Stress 32" [ref=e1624] [cursor=pointer]: ×
+              - generic [ref=e1625]:
+                - button "Edit Stress 33, Comment" [ref=e1626] [cursor=pointer]:
+                  - generic [ref=e1628]: Stress 33
+                - button "Remove Stress 33" [ref=e1629] [cursor=pointer]: ×
+              - generic [ref=e1630]:
+                - button "Edit Stress 34, Comment" [ref=e1631] [cursor=pointer]:
+                  - generic [ref=e1633]: Stress 34
+                - button "Remove Stress 34" [ref=e1634] [cursor=pointer]: ×
+              - generic [ref=e1635]:
+                - button "Edit Stress 35, Comment" [ref=e1636] [cursor=pointer]:
+                  - generic [ref=e1638]: Stress 35
+                - button "Remove Stress 35" [ref=e1639] [cursor=pointer]: ×
+              - generic [ref=e1640]:
+                - button "Edit Stress 36, Comment" [ref=e1641] [cursor=pointer]:
+                  - generic [ref=e1643]: Stress 36
+                - button "Remove Stress 36" [ref=e1644] [cursor=pointer]: ×
+              - generic [ref=e1645]:
+                - button "Edit Stress 37, Comment" [ref=e1646] [cursor=pointer]:
+                  - generic [ref=e1648]: Stress 37
+                - button "Remove Stress 37" [ref=e1649] [cursor=pointer]: ×
+              - generic [ref=e1650]:
+                - button "Edit Stress 38, Comment" [ref=e1651] [cursor=pointer]:
+                  - generic [ref=e1653]: Stress 38
+                - button "Remove Stress 38" [ref=e1654] [cursor=pointer]: ×
+              - generic [ref=e1655]:
+                - button "Edit Stress 39, Comment" [ref=e1656] [cursor=pointer]:
+                  - generic [ref=e1658]: Stress 39
+                - button "Remove Stress 39" [ref=e1659] [cursor=pointer]: ×
+              - generic [ref=e1660]:
+                - button "Edit Stress 40, Comment" [ref=e1661] [cursor=pointer]:
+                  - generic [ref=e1663]: Stress 40
+                - button "Remove Stress 40" [ref=e1664] [cursor=pointer]: ×
+              - generic [ref=e1665]:
+                - button "Edit Stress 41, Comment" [ref=e1666] [cursor=pointer]:
+                  - generic [ref=e1668]: Stress 41
+                - button "Remove Stress 41" [ref=e1669] [cursor=pointer]: ×
+              - generic [ref=e1670]:
+                - button "Edit Stress 42, Comment" [ref=e1671] [cursor=pointer]:
+                  - generic [ref=e1673]: Stress 42
+                - button "Remove Stress 42" [ref=e1674] [cursor=pointer]: ×
+              - textbox "Add a word, press Enter to confirm" [disabled] [ref=e133]:
+                - /placeholder: ""
+            - status [ref=e134]: 13 words didn't fit — the 7×7 grid is full · 2 duplicates skipped.
+            - group [ref=e135]:
+              - generic "Suggest phrases with AI optional · runs on this computer" [ref=e136] [cursor=pointer]:
+                - generic [ref=e137]: Suggest phrases with AI
+                - generic [ref=e138]: optional · runs on this computer
+          - generic [ref=e139]:
+            - generic [ref=e140]: Which existing page should receive the buttons?
+            - generic [ref=e141]:
+              - generic [ref=e142]:
+                - searchbox "Filter the page list" [ref=e143]
+                - button "Clear filter" [ref=e144] [cursor=pointer]
+              - listbox "Which existing page should receive the buttons?" [ref=e145]:
+                - option "parks and recreation (tv show)" [selected] [ref=e848]
+                - option "Acapela Vocal Smileys Demo Page" [ref=e849]
+                - option "AccessIT" [ref=e850]
+                - option "AccessIT - Facebook" [ref=e851]
+                - option "AccessIT - Facebook (Comments)" [ref=e852]
+                - option "AccessIT - Facebook (Navigation)" [ref=e853]
+                - option "AccessIT - Facebook (Post Status)" [ref=e854]
+                - option "AccessIT - Gmail" [ref=e855]
+                - option "AccessIT - Gmail (Address Book)" [ref=e856]
+                - option "AccessIT - Gmail (Navigation)" [ref=e857]
+                - option "AccessIT - Gmail (Write Email)" [ref=e858]
+                - option "AccessIT - Internet Abbreviations" [ref=e859]
+                - option "AccessIT - Keyboard ABC" [ref=e860]
+                - option "AccessIT - Keyboard ABC (Caps)" [ref=e861]
+                - option "AccessIT - Keyboard Grid .,!?" [ref=e862]
+                - option "AccessIT - Keyboard Grid 123" [ref=e863]
+                - option "AccessIT - Keyboard Grid a - g" [ref=e864]
+                - option "AccessIT - Keyboard Grid a - g (Caps)" [ref=e865]
+                - option "AccessIT - Keyboard Grid h - n" [ref=e866]
+                - option "AccessIT - Keyboard Grid h - n (Caps)" [ref=e867]
+                - option "AccessIT - Keyboard Grid Matching" [ref=e868]
+                - option "AccessIT - Keyboard Grid Matching (Caps)" [ref=e869]
+                - option "AccessIT - Keyboard Grid Matching (Function Keys)" [ref=e870]
+                - option "AccessIT - Keyboard Grid n - z" [ref=e871]
+                - option "AccessIT - Keyboard Grid n - z (Caps)" [ref=e872]
+                - option "AccessIT - Keyboard Grid o - u" [ref=e873]
+                - option "AccessIT - Keyboard Grid o - u (Caps)" [ref=e874]
+                - option "AccessIT - Keyboard Grid v - z" [ref=e875]
+                - option "AccessIT - Keyboard Grid v - z (Caps)" [ref=e876]
+                - option "AccessIT - Keyboard QWERTY" [ref=e877]
+                - option "AccessIT - Keyboard QWERTY (Caps)" [ref=e878]
+                - option "AccessIT - Mouse" [ref=e879]
+                - option "AccessIT - Mouse (Continuous)" [ref=e880]
+                - option "AccessIT - Mouse (Large Jump)" [ref=e881]
+                - option "AccessIT - Mouse (Medium Jump)" [ref=e882]
+                - option "AccessIT - Mouse (Stop)" [ref=e883]
+                - option "AccessIT - Web Browser" [ref=e884]
+                - option "AccessIT - Web Browser (Favorites)" [ref=e885]
+                - option "AccessIT - Web Browser (More)" [ref=e886]
+                - option "AccessIT - WhatsApp" [ref=e887]
+                - option "AccessIT - Windows" [ref=e888]
+                - option "AccessIT - Word" [ref=e889]
+                - option "AccessIT - Word (Cursor)" [ref=e890]
+                - option "AccessIT - Word (Edit)" [ref=e891]
+                - option "AccessIT - Word (File)" [ref=e892]
+                - option "AccessIT - Word (Font)" [ref=e893]
+                - option "Alexa" [ref=e894]
+                - option "Alexa - Calling" [ref=e895]
+                - option "Alexa - Drop in & Broadcast" [ref=e896]
+                - option "Alexa - Fun Stuff" [ref=e897]
+                - option "Alexa - Home Controls" [ref=e898]
+                - option "Alexa - Message" [ref=e899]
+                - option "Alexa - Music" [ref=e900]
+                - option "Alexa - News & Information" [ref=e901]
+                - option "Bluey Characters" [ref=e902]
+                - 'option "Book 10: Cover" [ref=e903]'
+                - 'option "Book 10: Page 1" [ref=e904]'
+                - 'option "Book 10: Page 10" [ref=e905]'
+                - 'option "Book 10: Page 2" [ref=e906]'
+                - 'option "Book 10: Page 3" [ref=e907]'
+                - 'option "Book 10: Page 4" [ref=e908]'
+                - 'option "Book 10: Page 5" [ref=e909]'
+                - 'option "Book 10: Page 6" [ref=e910]'
+                - 'option "Book 10: Page 7" [ref=e911]'
+                - 'option "Book 10: Page 8" [ref=e912]'
+                - 'option "Book 10: Page 9" [ref=e913]'
+                - 'option "Book 1: Cover" [ref=e914]'
+                - 'option "Book 1: Page 1" [ref=e915]'
+                - 'option "Book 1: Page 10" [ref=e916]'
+                - 'option "Book 1: Page 2" [ref=e917]'
+                - 'option "Book 1: Page 3" [ref=e918]'
+                - 'option "Book 1: Page 4" [ref=e919]'
+                - 'option "Book 1: Page 5" [ref=e920]'
+                - 'option "Book 1: Page 6" [ref=e921]'
+                - 'option "Book 1: Page 7" [ref=e922]'
+                - 'option "Book 1: Page 8" [ref=e923]'
+                - 'option "Book 1: Page 9" [ref=e924]'
+                - 'option "Book 2: Cover" [ref=e925]'
+                - 'option "Book 2: Page 1" [ref=e926]'
+                - 'option "Book 2: Page 10" [ref=e927]'
+                - 'option "Book 2: Page 2" [ref=e928]'
+                - 'option "Book 2: Page 3" [ref=e929]'
+                - 'option "Book 2: Page 4" [ref=e930]'
+                - 'option "Book 2: Page 5" [ref=e931]'
+                - 'option "Book 2: Page 6" [ref=e932]'
+                - 'option "Book 2: Page 7" [ref=e933]'
+                - 'option "Book 2: Page 8" [ref=e934]'
+                - 'option "Book 2: Page 9" [ref=e935]'
+                - 'option "Book 3: Cover" [ref=e936]'
+                - 'option "Book 3: Page 1" [ref=e937]'
+                - 'option "Book 3: Page 10" [ref=e938]'
+                - 'option "Book 3: Page 2" [ref=e939]'
+                - 'option "Book 3: Page 3" [ref=e940]'
+                - 'option "Book 3: Page 4" [ref=e941]'
+                - 'option "Book 3: Page 5" [ref=e942]'
+                - 'option "Book 3: Page 6" [ref=e943]'
+                - 'option "Book 3: Page 7" [ref=e944]'
+                - 'option "Book 3: Page 8" [ref=e945]'
+                - 'option "Book 3: Page 9" [ref=e946]'
+                - 'option "Book 4: Cover" [ref=e947]'
+                - 'option "Book 4: Page 1" [ref=e948]'
+                - 'option "Book 4: Page 10" [ref=e949]'
+                - 'option "Book 4: Page 2" [ref=e950]'
+                - 'option "Book 4: Page 3" [ref=e951]'
+                - 'option "Book 4: Page 4" [ref=e952]'
+                - 'option "Book 4: Page 5" [ref=e953]'
+                - 'option "Book 4: Page 6" [ref=e954]'
+                - 'option "Book 4: Page 7" [ref=e955]'
+                - 'option "Book 4: Page 8" [ref=e956]'
+                - 'option "Book 4: Page 9" [ref=e957]'
+                - 'option "Book 5: Cover" [ref=e958]'
+                - 'option "Book 5: Page 1" [ref=e959]'
+                - 'option "Book 5: Page 10" [ref=e960]'
+                - 'option "Book 5: Page 2" [ref=e961]'
+                - 'option "Book 5: Page 3" [ref=e962]'
+                - 'option "Book 5: Page 4" [ref=e963]'
+                - 'option "Book 5: Page 5" [ref=e964]'
+                - 'option "Book 5: Page 6" [ref=e965]'
+                - 'option "Book 5: Page 7" [ref=e966]'
+                - 'option "Book 5: Page 8" [ref=e967]'
+                - 'option "Book 5: Page 9" [ref=e968]'
+                - 'option "Book 6: Cover" [ref=e969]'
+                - 'option "Book 6: Page 1" [ref=e970]'
+                - 'option "Book 6: Page 10" [ref=e971]'
+                - 'option "Book 6: Page 2" [ref=e972]'
+                - 'option "Book 6: Page 3" [ref=e973]'
+                - 'option "Book 6: Page 4" [ref=e974]'
+                - 'option "Book 6: Page 5" [ref=e975]'
+                - 'option "Book 6: Page 6" [ref=e976]'
+                - 'option "Book 6: Page 7" [ref=e977]'
+                - 'option "Book 6: Page 8" [ref=e978]'
+                - 'option "Book 6: Page 9" [ref=e979]'
+                - 'option "Book 7: Cover" [ref=e980]'
+                - 'option "Book 7: Page 1" [ref=e981]'
+                - 'option "Book 7: Page 10" [ref=e982]'
+                - 'option "Book 7: Page 2" [ref=e983]'
+                - 'option "Book 7: Page 3" [ref=e984]'
+                - 'option "Book 7: Page 4" [ref=e985]'
+                - 'option "Book 7: Page 5" [ref=e986]'
+                - 'option "Book 7: Page 6" [ref=e987]'
+                - 'option "Book 7: Page 7" [ref=e988]'
+                - 'option "Book 7: Page 8" [ref=e989]'
+                - 'option "Book 7: Page 9" [ref=e990]'
+                - 'option "Book 8: Cover" [ref=e991]'
+                - 'option "Book 8: Page 1" [ref=e992]'
+                - 'option "Book 8: Page 10" [ref=e993]'
+                - 'option "Book 8: Page 2" [ref=e994]'
+                - 'option "Book 8: Page 3" [ref=e995]'
+                - 'option "Book 8: Page 4" [ref=e996]'
+                - 'option "Book 8: Page 5" [ref=e997]'
+                - 'option "Book 8: Page 6" [ref=e998]'
+                - 'option "Book 8: Page 7" [ref=e999]'
+                - 'option "Book 8: Page 8" [ref=e1000]'
+                - 'option "Book 8: Page 9" [ref=e1001]'
+                - 'option "Book 9: Cover" [ref=e1002]'
+                - 'option "Book 9: Page 1" [ref=e1003]'
+                - 'option "Book 9: Page 10" [ref=e1004]'
+                - 'option "Book 9: Page 2" [ref=e1005]'
+                - 'option "Book 9: Page 3" [ref=e1006]'
+                - 'option "Book 9: Page 4" [ref=e1007]'
+                - 'option "Book 9: Page 5" [ref=e1008]'
+                - 'option "Book 9: Page 6" [ref=e1009]'
+                - 'option "Book 9: Page 7" [ref=e1010]'
+                - 'option "Book 9: Page 8" [ref=e1011]'
+                - 'option "Book 9: Page 9" [ref=e1012]'
+                - option "Books & Photos" [ref=e1013]
+                - option "Claude Topic Test" [ref=e1014]
+                - option "Core Punctuation" [ref=e1015]
+                - option "Core Words" [ref=e1016]
+                - option "Dashboard (iOS Eye Gaze)" [ref=e1017]
+                - option "Dashboard (iOS)" [ref=e1018]
+                - option "Dashboard (Windows Eye Gaze)" [ref=e1019]
+                - option "Dashboard (Windows)" [ref=e1020]
+                - option "Dashboard - Eye Gaze Settings (iOS)" [ref=e1021]
+                - option "Dashboard - Eye Gaze Settings (Windows)" [ref=e1022]
+                - option "Dashboard - Launch Application (iOS)" [ref=e1023]
+                - option "Dashboard - Launch Application (Windows)" [ref=e1024]
+                - option "Dashboard - Partner Window" [ref=e1025]
+                - option "Days of the Week" [ref=e1026]
+                - option "Dining Out Talk" [ref=e1027]
+                - option "Emergent Letters" [ref=e1028]
+                - option "Emergent Numbers" [ref=e1029]
+                - option "General Supports" [ref=e1030]
+                - option "Google Assistant" [ref=e1031]
+                - option "Google Assistant - Broadcast" [ref=e1032]
+                - option "Google Assistant - Calling" [ref=e1033]
+                - option "Google Assistant - Fun Stuff" [ref=e1034]
+                - option "Google Assistant - Home Controls" [ref=e1035]
+                - option "Google Assistant - Information" [ref=e1036]
+                - option "Google Assistant - Music" [ref=e1037]
+                - option "Google Assistant - My Commands" [ref=e1038]
+                - option "Google Assistant - Set Volume" [ref=e1039]
+                - option "Google Assistant - Time & Weather" [ref=e1040]
+                - option "Google Icon Key" [ref=e1041]
+                - option "Harry Potter Characters" [ref=e1042]
+                - option "Keyboard - 123" [ref=e1043]
+                - option "Keyboard - 123 (8x10)" [ref=e1044]
+                - option "Keyboard - Editing (Grid Matching)" [ref=e1045]
+                - option "Keyboard - Editing 8x10" [ref=e1046]
+                - option "Keyboard - Extend Selection (Grid Matching)" [ref=e1047]
+                - option "Keyboard - Main ABC" [ref=e1048]
+                - option "Keyboard - Main AEIOU" [ref=e1049]
+                - option "Keyboard - Main Frequency" [ref=e1050]
+                - option "Keyboard - Main Grid Matching" [ref=e1051]
+                - option "Keyboard - Main QWERTY" [ref=e1052]
+                - option "Keyboard Grid .,!?" [ref=e1053]
+                - option "Keyboard Grid 123" [ref=e1054]
+                - option "Keyboard Grid 789" [ref=e1055]
+                - option "Keyboard Grid a - g" [ref=e1056]
+                - option "Keyboard Grid h - n" [ref=e1057]
+                - option "Keyboard Grid n - z" [ref=e1058]
+                - option "Keyboard Grid o - u" [ref=e1059]
+                - option "Keyboard Grid v- z" [ref=e1060]
+                - 'option "Main List: Actions" [ref=e1061]'
+                - 'option "Main List: Animals" [ref=e1062]'
+                - 'option "Main List: Body & Health" [ref=e1063]'
+                - 'option "Main List: Clothing" [ref=e1064]'
+                - 'option "Main List: Colors" [ref=e1065]'
+                - 'option "Main List: Communication" [ref=e1066]'
+                - 'option "Main List: Date & Time" [ref=e1067]'
+                - 'option "Main List: Descriptions" [ref=e1068]'
+                - 'option "Main List: Entertainment" [ref=e1069]'
+                - 'option "Main List: Feelings" [ref=e1070]'
+                - 'option "Main List: Food & Drink" [ref=e1071]'
+                - 'option "Main List: Hobbies & Leisure" [ref=e1072]'
+                - 'option "Main List: Holidays" [ref=e1073]'
+                - 'option "Main List: Home" [ref=e1074]'
+                - 'option "Main List: Little Words" [ref=e1075]'
+                - 'option "Main List: Money" [ref=e1076]'
+                - 'option "Main List: Nature" [ref=e1077]'
+                - 'option "Main List: Numbers" [ref=e1078]'
+                - 'option "Main List: Pandemic" [ref=e1079]'
+                - 'option "Main List: People" [ref=e1080]'
+                - 'option "Main List: Personal" [ref=e1081]'
+                - 'option "Main List: Places" [ref=e1082]'
+                - 'option "Main List: Questions" [ref=e1083]'
+                - 'option "Main List: School" [ref=e1084]'
+                - 'option "Main List: Sexuality" [ref=e1085]'
+                - 'option "Main List: Sports" [ref=e1086]'
+                - 'option "Main List: Technology" [ref=e1087]'
+                - 'option "Main List: Toys & Games" [ref=e1088]'
+                - 'option "Main List: Transportation" [ref=e1089]'
+                - 'option "Main List: Weather" [ref=e1090]'
+                - 'option "Main List: Work" [ref=e1091]'
+                - option "My Restaurants" [ref=e1092]
+                - option "one direction" [ref=e1093]
+                - option "parks and rec characters" [ref=e1094]
+                - option "QuickFires" [ref=e1095]
+                - option "QuickFires - Feelings" [ref=e1096]
+                - option "QuickFires - Greetings & Social" [ref=e1097]
+                - option "QuickFires - My Phrases" [ref=e1098]
+                - option "QuickFires - Personal Needs" [ref=e1099]
+                - option "QuickFires - Questions" [ref=e1100]
+                - option "QuickFires - Repairs" [ref=e1101]
+                - 'option "Related List: AAC Types" [ref=e1102]'
+                - 'option "Related List: Accessories" [ref=e1103]'
+                - 'option "Related List: Amounts" [ref=e1104]'
+                - 'option "Related List: Animal Items" [ref=e1105]'
+                - 'option "Related List: Appliances" [ref=e1106]'
+                - 'option "Related List: Art" [ref=e1107]'
+                - 'option "Related List: Baseball" [ref=e1108]'
+                - 'option "Related List: Basketball" [ref=e1109]'
+                - 'option "Related List: Birthday" [ref=e1110]'
+                - 'option "Related List: Blocks & Legos" [ref=e1111]'
+                - 'option "Related List: Books" [ref=e1112]'
+                - 'option "Related List: Bowling" [ref=e1113]'
+                - 'option "Related List: Breakfast Foods" [ref=e1114]'
+                - 'option "Related List: Bubbles" [ref=e1115]'
+                - 'option "Related List: Cards" [ref=e1116]'
+                - 'option "Related List: Classes" [ref=e1117]'
+                - 'option "Related List: Clothing Attributes" [ref=e1118]'
+                - 'option "Related List: Communication Tools" [ref=e1119]'
+                - 'option "Related List: Community Places" [ref=e1120]'
+                - 'option "Related List: Computer Actions" [ref=e1121]'
+                - 'option "Related List: Computer Words" [ref=e1122]'
+                - 'option "Related List: Countries & Continents" [ref=e1123]'
+                - 'option "Related List: Dinosaurs" [ref=e1124]'
+                - 'option "Related List: Dolls" [ref=e1125]'
+                - 'option "Related List: Dressing Actions" [ref=e1126]'
+                - 'option "Related List: Drinks" [ref=e1127]'
+                - 'option "Related List: Eating Out" [ref=e1128]'
+                - 'option "Related List: External Body Parts" [ref=e1129]'
+                - 'option "Related List: Family" [ref=e1130]'
+                - 'option "Related List: Family Names" [ref=e1131]'
+                - 'option "Related List: Farm Animals" [ref=e1132]'
+                - 'option "Related List: Favorite Foods" [ref=e1133]'
+                - 'option "Related List: Favorite Movies & TV" [ref=e1134]'
+                - 'option "Related List: Favorite Places" [ref=e1135]'
+                - 'option "Related List: Favorite Stores" [ref=e1136]'
+                - 'option "Related List: Flowers" [ref=e1137]'
+                - 'option "Related List: Food Attributes" [ref=e1138]'
+                - 'option "Related List: Football" [ref=e1139]'
+                - 'option "Related List: Friends" [ref=e1140]'
+                - 'option "Related List: Fruit" [ref=e1141]'
+                - 'option "Related List: Furniture" [ref=e1142]'
+                - 'option "Related List: Garden Tools" [ref=e1143]'
+                - 'option "Related List: Geography" [ref=e1144]'
+                - 'option "Related List: Halloween" [ref=e1145]'
+                - 'option "Related List: Health Problems" [ref=e1146]'
+                - 'option "Related List: Holiday Greetings" [ref=e1147]'
+                - 'option "Related List: Holiday Words" [ref=e1148]'
+                - 'option "Related List: Home Actions" [ref=e1149]'
+                - 'option "Related List: Home Items" [ref=e1150]'
+                - 'option "Related List: Hygiene Actions" [ref=e1151]'
+                - 'option "Related List: Insects" [ref=e1152]'
+                - 'option "Related List: Internal Body Parts" [ref=e1153]'
+                - 'option "Related List: Kitchen Items" [ref=e1154]'
+                - 'option "Related List: Land Vehicles" [ref=e1155]'
+                - 'option "Related List: Lunch & Dinner" [ref=e1156]'
+                - 'option "Related List: Medical Items" [ref=e1157]'
+                - 'option "Related List: Medical People" [ref=e1158]'
+                - 'option "Related List: Medical Places" [ref=e1159]'
+                - 'option "Related List: Money Items" [ref=e1160]'
+                - 'option "Related List: Months" [ref=e1161]'
+                - 'option "Related List: Movies" [ref=e1162]'
+                - 'option "Related List: Music Words" [ref=e1163]'
+                - 'option "Related List: My Leisure" [ref=e1164]'
+                - 'option "Related List: My School" [ref=e1165]'
+                - 'option "Related List: Nature Words" [ref=e1166]'
+                - 'option "Related List: Negative Descriptors" [ref=e1167]'
+                - 'option "Related List: Occupations" [ref=e1168]'
+                - 'option "Related List: Outdoor" [ref=e1169]'
+                - 'option "Related List: Outside Play" [ref=e1170]'
+                - 'option "Related List: People Actions" [ref=e1171]'
+                - 'option "Related List: Positions" [ref=e1172]'
+                - 'option "Related List: Positive Descriptors" [ref=e1173]'
+                - 'option "Related List: Preschool" [ref=e1174]'
+                - 'option "Related List: Pronouns" [ref=e1175]'
+                - 'option "Related List: Reading Words" [ref=e1176]'
+                - 'option "Related List: Restaurants" [ref=e1177]'
+                - 'option "Related List: School People" [ref=e1178]'
+                - 'option "Related List: School Places" [ref=e1179]'
+                - 'option "Related List: School Words" [ref=e1180]'
+                - 'option "Related List: Season Words" [ref=e1181]'
+                - 'option "Related List: Sexuality Feelings" [ref=e1182]'
+                - 'option "Related List: Shapes" [ref=e1183]'
+                - 'option "Related List: Size" [ref=e1184]'
+                - 'option "Related List: Snacks & Sweets" [ref=e1185]'
+                - 'option "Related List: Soccer" [ref=e1186]'
+                - 'option "Related List: some-,any-,every-,no-" [ref=e1187]'
+                - 'option "Related List: Sports Actions" [ref=e1188]'
+                - 'option "Related List: Stores" [ref=e1189]'
+                - 'option "Related List: Swimming" [ref=e1190]'
+                - 'option "Related List: Television" [ref=e1191]'
+                - 'option "Related List: Textures" [ref=e1192]'
+                - 'option "Related List: Time Words" [ref=e1193]'
+                - 'option "Related List: Trees" [ref=e1194]'
+                - 'option "Related List: Vacation" [ref=e1195]'
+                - 'option "Related List: Vegetables" [ref=e1196]'
+                - 'option "Related List: Water Animals" [ref=e1197]'
+                - 'option "Related List: Water Vehicles" [ref=e1198]'
+                - 'option "Related List: Weather Words" [ref=e1199]'
+                - 'option "Related List: Wild Animals" [ref=e1200]'
+                - 'option "Related List: Work Actions" [ref=e1201]'
+                - 'option "Related List: Work Items" [ref=e1202]'
+                - 'option "Related List: Years" [ref=e1203]'
+                - option "Remote - DVD CD 1" [ref=e1204]
+                - option "Remote - DVD CD 1 Menu" [ref=e1205]
+                - option "Remote - DVD CD 1 Numbers 1" [ref=e1206]
+                - option "Remote - DVD CD 1 Numbers 2" [ref=e1207]
+                - option "Remote - DVD CD 2" [ref=e1208]
+                - option "Remote - DVD CD 2 Menu" [ref=e1209]
+                - option "Remote - DVD CD 2 Numbers 1" [ref=e1210]
+                - option "Remote - DVD CD 2 Numbers 2" [ref=e1211]
+                - option "Remote - DVD CD 3" [ref=e1212]
+                - option "Remote - DVD CD 3 Menu" [ref=e1213]
+                - option "Remote - DVD CD 3 Numbers 1" [ref=e1214]
+                - option "Remote - DVD CD 3 Numbers 2" [ref=e1215]
+                - option "Remote - DVR Cable 1" [ref=e1216]
+                - option "Remote - DVR Cable 1 DVR" [ref=e1217]
+                - option "Remote - DVR Cable 1 Guide" [ref=e1218]
+                - option "Remote - DVR Cable 1 Numbers 1" [ref=e1219]
+                - option "Remote - DVR Cable 1 Numbers 2" [ref=e1220]
+                - option "Remote - DVR Cable 2" [ref=e1221]
+                - option "Remote - DVR Cable 2 DVR" [ref=e1222]
+                - option "Remote - DVR Cable 2 Guide" [ref=e1223]
+                - option "Remote - DVR Cable 2 Numbers 1" [ref=e1224]
+                - option "Remote - DVR Cable 2 Numbers 2" [ref=e1225]
+                - option "Remote - DVR Cable 3" [ref=e1226]
+                - option "Remote - DVR Cable 3 DVR" [ref=e1227]
+                - option "Remote - DVR Cable 3 Guide" [ref=e1228]
+                - option "Remote - DVR Cable 3 Numbers 1" [ref=e1229]
+                - option "Remote - DVR Cable 3 Numbers 2" [ref=e1230]
+                - option "Remote - TV 1" [ref=e1231]
+                - option "Remote - TV 1 Favorites" [ref=e1232]
+                - option "Remote - TV 1 Guide" [ref=e1233]
+                - option "Remote - TV 1 Numbers 1" [ref=e1234]
+                - option "Remote - TV 1 Numbers 2" [ref=e1235]
+                - option "Remote - TV 2" [ref=e1236]
+                - option "Remote - TV 2 Favorites" [ref=e1237]
+                - option "Remote - TV 2 Guide" [ref=e1238]
+                - option "Remote - TV 2 Numbers 1" [ref=e1239]
+                - option "Remote - TV 2 Numbers 2" [ref=e1240]
+                - option "Remote - TV 3" [ref=e1241]
+                - option "Remote - TV 3 Favorites" [ref=e1242]
+                - option "Remote - TV 3 Guide" [ref=e1243]
+                - option "Remote - TV 3 Numbers 1" [ref=e1244]
+                - option "Remote - TV 3 Numbers 2" [ref=e1245]
+                - option "Remotes - Main" [ref=e1246]
+                - option "roblox characters" [ref=e1247]
+                - 'option "Sample Book 1: Cover" [ref=e1248]'
+                - 'option "Sample Book 1: Page 1" [ref=e1249]'
+                - 'option "Sample Book 1: Page 2" [ref=e1250]'
+                - 'option "Sample Book 1: Page 3" [ref=e1251]'
+                - 'option "Sample Book 1: Page 4" [ref=e1252]'
+                - 'option "Sample Book 1: Page 5" [ref=e1253]'
+                - 'option "Sample Book 1: Page 6" [ref=e1254]'
+                - 'option "Sample Book 1: Page 7" [ref=e1255]'
+                - 'option "Sample Book 1: Page 8" [ref=e1256]'
+                - 'option "Sample Book 1: Page 9" [ref=e1257]'
+                - 'option "Sample Book 2: Cover" [ref=e1258]'
+                - 'option "Sample Book 2: Page 1" [ref=e1259]'
+                - 'option "Sample Book 2: Page 2" [ref=e1260]'
+                - 'option "Sample Book 2: Page 3" [ref=e1261]'
+                - 'option "Sample Book 2: Page 4" [ref=e1262]'
+                - 'option "Sample Book 2: Page 5" [ref=e1263]'
+                - option "Siri" [ref=e1264]
+                - option "Siri - Calling" [ref=e1265]
+                - option "Siri - Fun Stuff" [ref=e1266]
+                - option "Siri - Home Controls" [ref=e1267]
+                - option "Siri - Information" [ref=e1268]
+                - option "Siri - Messaging" [ref=e1269]
+                - option "Siri - Music" [ref=e1270]
+                - option "Siri - Setup" [ref=e1271]
+                - option "Smart Assistants Menu" [ref=e1272]
+                - option "Supported Navigation" [ref=e1273]
+                - 'option "Supports: About Me" [ref=e1274]'
+                - 'option "Supports: Accessibility Help" [ref=e1275]'
+                - 'option "Supports: Appointment" [ref=e1276]'
+                - 'option "Supports: Arguing" [ref=e1277]'
+                - 'option "Supports: Art" [ref=e1278]'
+                - 'option "Supports: Bingo" [ref=e1279]'
+                - 'option "Supports: Body Safety" [ref=e1280]'
+                - 'option "Supports: Bowling" [ref=e1281]'
+                - 'option "Supports: Bubbles" [ref=e1282]'
+                - 'option "Supports: Cafeteria" [ref=e1283]'
+                - 'option "Supports: Calendar Talk" [ref=e1284]'
+                - 'option "Supports: Camping" [ref=e1285]'
+                - 'option "Supports: Celebrations" [ref=e1286]'
+                - 'option "Supports: Centers" [ref=e1287]'
+                - 'option "Supports: Classroom" [ref=e1288]'
+                - 'option "Supports: Community" [ref=e1289]'
+                - 'option "Supports: Cooking" [ref=e1290]'
+                - 'option "Supports: Custom 1" [ref=e1291]'
+                - 'option "Supports: Custom 2" [ref=e1292]'
+                - 'option "Supports: Custom 3" [ref=e1293]'
+                - 'option "Supports: Custom 4" [ref=e1294]'
+                - 'option "Supports: Custom 5" [ref=e1295]'
+                - 'option "Supports: Custom 6" [ref=e1296]'
+                - 'option "Supports: Dating" [ref=e1297]'
+                - 'option "Supports: Dentist" [ref=e1298]'
+                - 'option "Supports: Desk Work" [ref=e1299]'
+                - 'option "Supports: Doctor" [ref=e1300]'
+                - 'option "Supports: Eating" [ref=e1301]'
+                - 'option "Supports: Emergency" [ref=e1302]'
+                - 'option "Supports: Fast Food" [ref=e1303]'
+                - 'option "Supports: Games" [ref=e1304]'
+                - 'option "Supports: Job Coach" [ref=e1305]'
+                - 'option "Supports: Jokes" [ref=e1306]'
+                - 'option "Supports: Mr. Potato Head" [ref=e1307]'
+                - 'option "Supports: Music" [ref=e1308]'
+                - 'option "Supports: My Communication" [ref=e1309]'
+                - 'option "Supports: My Emotions" [ref=e1310]'
+                - 'option "Supports: My Family" [ref=e1311]'
+                - 'option "Supports: My Health" [ref=e1312]'
+                - 'option "Supports: Park" [ref=e1313]'
+                - 'option "Supports: Playdough" [ref=e1314]'
+                - 'option "Supports: Reading" [ref=e1315]'
+                - 'option "Supports: Religion" [ref=e1316]'
+                - 'option "Supports: Restaurant" [ref=e1317]'
+                - 'option "Supports: Salon" [ref=e1318]'
+                - 'option "Supports: Self Care" [ref=e1319]'
+                - 'option "Supports: Sensory Experience" [ref=e1320]'
+                - 'option "Supports: Sexuality" [ref=e1321]'
+                - 'option "Supports: Shopping" [ref=e1322]'
+                - 'option "Supports: Sports" [ref=e1323]'
+                - 'option "Supports: Toy Play" [ref=e1324]'
+                - 'option "Supports: Train" [ref=e1325]'
+                - 'option "Supports: Transportation" [ref=e1326]'
+                - 'option "Supports: Travel" [ref=e1327]'
+                - 'option "Supports: TV & Movies" [ref=e1328]'
+                - 'option "Supports: Workshop" [ref=e1329]'
+                - 'option "Supports: Zoo" [ref=e1330]'
+                - 'option "Topic Words: About Me" [ref=e1331]'
+                - 'option "Topic Words: Accessibility Help" [ref=e1332]'
+                - 'option "Topic Words: Appointment" [ref=e1333]'
+                - 'option "Topic Words: Arguing" [ref=e1334]'
+                - 'option "Topic Words: Art" [ref=e1335]'
+                - 'option "Topic Words: Bingo" [ref=e1336]'
+                - 'option "Topic Words: Body Safety" [ref=e1337]'
+                - 'option "Topic Words: Bowling" [ref=e1338]'
+                - 'option "Topic Words: Bubbles" [ref=e1339]'
+                - 'option "Topic Words: Cafeteria" [ref=e1340]'
+                - 'option "Topic Words: Calendar Talk" [ref=e1341]'
+                - 'option "Topic Words: Camping" [ref=e1342]'
+                - 'option "Topic Words: Celebrations" [ref=e1343]'
+                - 'option "Topic Words: Centers" [ref=e1344]'
+                - 'option "Topic Words: Classroom" [ref=e1345]'
+                - 'option "Topic Words: Community" [ref=e1346]'
+                - 'option "Topic Words: Cooking" [ref=e1347]'
+                - 'option "Topic Words: Custom 1" [ref=e1348]'
+                - 'option "Topic Words: Custom 2" [ref=e1349]'
+                - 'option "Topic Words: Custom 3" [ref=e1350]'
+                - 'option "Topic Words: Custom 4" [ref=e1351]'
+                - 'option "Topic Words: Custom 5" [ref=e1352]'
+                - 'option "Topic Words: Custom 6" [ref=e1353]'
+                - 'option "Topic Words: Dating" [ref=e1354]'
+                - 'option "Topic Words: Dentist" [ref=e1355]'
+                - 'option "Topic Words: Desk Work" [ref=e1356]'
+                - 'option "Topic Words: Doctor" [ref=e1357]'
+                - 'option "Topic Words: Eating" [ref=e1358]'
+                - 'option "Topic Words: Emergency" [ref=e1359]'
+                - 'option "Topic Words: Fast Food" [ref=e1360]'
+                - 'option "Topic Words: Games" [ref=e1361]'
+                - 'option "Topic Words: Job Coach" [ref=e1362]'
+                - 'option "Topic Words: Jokes" [ref=e1363]'
+                - 'option "Topic Words: Mr. Potato Head" [ref=e1364]'
+                - 'option "Topic Words: Music" [ref=e1365]'
+                - 'option "Topic Words: My Communication" [ref=e1366]'
+                - 'option "Topic Words: My Emotions" [ref=e1367]'
+                - 'option "Topic Words: My Family" [ref=e1368]'
+                - 'option "Topic Words: My Health" [ref=e1369]'
+                - 'option "Topic Words: Park" [ref=e1370]'
+                - 'option "Topic Words: Playdough" [ref=e1371]'
+                - 'option "Topic Words: Reading" [ref=e1372]'
+                - 'option "Topic Words: Religion" [ref=e1373]'
+                - 'option "Topic Words: Restaurant" [ref=e1374]'
+                - 'option "Topic Words: Salon" [ref=e1375]'
+                - 'option "Topic Words: Self Care" [ref=e1376]'
+                - 'option "Topic Words: Sensory Experience" [ref=e1377]'
+                - 'option "Topic Words: Sexuality" [ref=e1378]'
+                - 'option "Topic Words: Shopping" [ref=e1379]'
+                - 'option "Topic Words: Sports" [ref=e1380]'
+                - 'option "Topic Words: Toy Play" [ref=e1381]'
+                - 'option "Topic Words: Train" [ref=e1382]'
+                - 'option "Topic Words: Transportation" [ref=e1383]'
+                - 'option "Topic Words: Travel" [ref=e1384]'
+                - 'option "Topic Words: TV & Movies" [ref=e1385]'
+                - 'option "Topic Words: Workshop" [ref=e1386]'
+                - 'option "Topic Words: Zoo" [ref=e1387]'
+                - 'option "Topic: About Me" [ref=e1388]'
+                - 'option "Topic: Accessibility Help" [ref=e1389]'
+                - 'option "Topic: Appointment" [ref=e1390]'
+                - 'option "Topic: Arguing" [ref=e1391]'
+                - 'option "Topic: Art" [ref=e1392]'
+                - 'option "Topic: Bingo" [ref=e1393]'
+                - 'option "Topic: Body Safety" [ref=e1394]'
+                - 'option "Topic: Bowling" [ref=e1395]'
+                - 'option "Topic: Bubbles" [ref=e1396]'
+                - 'option "Topic: Cafeteria" [ref=e1397]'
+                - 'option "Topic: Calendar Talk" [ref=e1398]'
+                - 'option "Topic: Camping" [ref=e1399]'
+                - 'option "Topic: Celebrations" [ref=e1400]'
+                - 'option "Topic: Centers" [ref=e1401]'
+                - 'option "Topic: Classroom" [ref=e1402]'
+                - 'option "Topic: Community" [ref=e1403]'
+                - 'option "Topic: Cooking" [ref=e1404]'
+                - 'option "Topic: Custom 1" [ref=e1405]'
+                - 'option "Topic: Custom 2" [ref=e1406]'
+                - 'option "Topic: Custom 3" [ref=e1407]'
+                - 'option "Topic: Custom 4" [ref=e1408]'
+                - 'option "Topic: Custom 5" [ref=e1409]'
+                - 'option "Topic: Custom 6" [ref=e1410]'
+                - 'option "Topic: Dating" [ref=e1411]'
+                - 'option "Topic: Dentist" [ref=e1412]'
+                - 'option "Topic: Desk Work" [ref=e1413]'
+                - 'option "Topic: Doctor" [ref=e1414]'
+                - 'option "Topic: Eating" [ref=e1415]'
+                - 'option "Topic: Emergency" [ref=e1416]'
+                - 'option "Topic: Fast Food" [ref=e1417]'
+                - 'option "Topic: Games" [ref=e1418]'
+                - 'option "Topic: Job Coach" [ref=e1419]'
+                - 'option "Topic: Jokes" [ref=e1420]'
+                - 'option "Topic: Mr. Potato Head" [ref=e1421]'
+                - 'option "Topic: Music" [ref=e1422]'
+                - 'option "Topic: My Communication" [ref=e1423]'
+                - 'option "Topic: My Emotions" [ref=e1424]'
+                - 'option "Topic: My Family" [ref=e1425]'
+                - 'option "Topic: My Health" [ref=e1426]'
+                - 'option "Topic: Park" [ref=e1427]'
+                - 'option "Topic: Playdough" [ref=e1428]'
+                - 'option "Topic: Reading" [ref=e1429]'
+                - 'option "Topic: Religion" [ref=e1430]'
+                - 'option "Topic: Restaurant" [ref=e1431]'
+                - 'option "Topic: Salon" [ref=e1432]'
+                - 'option "Topic: Self Care" [ref=e1433]'
+                - 'option "Topic: Sensory Experience" [ref=e1434]'
+                - 'option "Topic: Sexuality" [ref=e1435]'
+                - 'option "Topic: Shopping" [ref=e1436]'
+                - 'option "Topic: Sports" [ref=e1437]'
+                - 'option "Topic: Toy Play" [ref=e1438]'
+                - 'option "Topic: Train" [ref=e1439]'
+                - 'option "Topic: Transportation" [ref=e1440]'
+                - 'option "Topic: Travel" [ref=e1441]'
+                - 'option "Topic: TV & Movies" [ref=e1442]'
+                - 'option "Topic: Workshop" [ref=e1443]'
+                - 'option "Topic: Zoo" [ref=e1444]'
+                - option "Topics Menu Page" [ref=e1445]
+                - option "Word Forms" [ref=e1446]
+                - option "Word Forms - Be" [ref=e1447]
+                - option "Word Lists Menu" [ref=e1448]
+                - option "World Flags" [ref=e1449]
+            - paragraph [ref=e748]: Every page in the open page set is listed. Open a page in TD Snap and the preview follows it automatically. Selecting a page loads its occupied cells before editing. 45 empty cells on “parks and recreation (tv show)”.
+          - generic [ref=e749]:
+            - button "Update TD Snap" [ref=e750] [cursor=pointer]
+            - button "Reconnect to TD Snap" [ref=e752] [cursor=pointer]
+        - complementary "Preview" [ref=e753]:
+          - generic [ref=e754]:
+            - generic [ref=e755]:
+              - generic [ref=e756]: Preview
+              - paragraph [ref=e757]: Existing buttons are locked. Drag new buttons to exact empty cells, or focus one and use the arrow keys.
+            - generic [ref=e758]: Live · parks and recreation (tv show)
+          - generic [ref=e761]:
+            - generic [ref=e762]:
+              - strong [ref=e767]: parks and recreation (tv show)
+              - generic [ref=e768]: Layout preview
+            - generic "Draggable preview of the new page's button grid" [ref=e769]:
+              - generic "Is Leslie Knope the main character?, existing and locked" [ref=e1675]: Is Leslie Knope the main character?
+              - generic "Ron Swanson is my spirit animal, existing and locked" [ref=e1683]: Ron Swanson is my spirit animal
+              - generic "Pawnee has a lot of weird characters, existing and locked" [ref=e1691]: Pawnee has a lot of weird characters
+              - generic "I love Tom Haverford's fashion sense, existing and locked" [ref=e1699]: I love Tom Haverford's fashion sense
+              - button "Stress 12, row 1, column 5. Drag or use arrow keys to move." [ref=e1707]:
+                - generic [ref=e1712]: Stress 12
+              - button "Stress 13, row 1, column 6. Drag or use arrow keys to move." [ref=e1713]:
+                - generic [ref=e1718]: Stress 13
+              - button "Stress 14, row 1, column 7. Drag or use arrow keys to move." [ref=e1719]:
+                - generic [ref=e1724]: Stress 14
+              - button "Fish & Chips, row 2, column 1. Drag or use arrow keys to move." [ref=e1725]:
+                - generic [ref=e1730]: Fish & Chips
+              - button "O'Brien, row 2, column 2. Drag or use arrow keys to move." [ref=e1731]:
+                - generic [ref=e1736]: O'Brien
+              - button "<script>alert(1)</script>, row 2, column 3. Drag or use arrow keys to move." [ref=e1737]:
+                - generic [ref=e1742]: <script>alert(1)</script>
+              - button "Stress 01, row 2, column 4. Drag or use arrow keys to move." [ref=e1743]:
+                - generic [ref=e1748]: Stress 01
+              - button "Stress 02, row 2, column 5. Drag or use arrow keys to move." [ref=e1749]:
+                - generic [ref=e1754]: Stress 02
+              - button "Stress 03, row 2, column 6. Drag or use arrow keys to move." [ref=e1755]:
+                - generic [ref=e1760]: Stress 03
+              - button "Stress 04, row 2, column 7. Drag or use arrow keys to move." [ref=e1761]:
+                - generic [ref=e1766]: Stress 04
+              - button "Stress 05, row 3, column 1. Drag or use arrow keys to move." [ref=e1767]:
+                - generic [ref=e1772]: Stress 05
+              - button "Stress 06, row 3, column 2. Drag or use arrow keys to move." [ref=e1773]:
+                - generic [ref=e1778]: Stress 06
+              - button "Stress 07, row 3, column 3. Drag or use arrow keys to move." [ref=e1779]:
+                - generic [ref=e1784]: Stress 07
+              - button "Stress 08, row 3, column 4. Drag or use arrow keys to move." [ref=e1785]:
+                - generic [ref=e1790]: Stress 08
+              - button "Stress 09, row 3, column 5. Drag or use arrow keys to move." [ref=e1791]:
+                - generic [ref=e1796]: Stress 09
+              - button "Stress 10, row 3, column 6. Drag or use arrow keys to move." [ref=e1797]:
+                - generic [ref=e1802]: Stress 10
+              - button "Stress 11, row 3, column 7. Drag or use arrow keys to move." [ref=e1803]:
+                - generic [ref=e1808]: Stress 11
+              - button "Stress 15, row 4, column 1. Drag or use arrow keys to move." [ref=e1809]:
+                - generic [ref=e1814]: Stress 15
+              - button "Stress 16, row 4, column 2. Drag or use arrow keys to move." [ref=e1815]:
+                - generic [ref=e1820]: Stress 16
+              - button "Stress 17, row 4, column 3. Drag or use arrow keys to move." [ref=e1821]:
+                - generic [ref=e1826]: Stress 17
+              - button "Stress 18, row 4, column 4. Drag or use arrow keys to move." [ref=e1827]:
+                - generic [ref=e1832]: Stress 18
+              - button "Stress 19, row 4, column 5. Drag or use arrow keys to move." [ref=e1833]:
+                - generic [ref=e1838]: Stress 19
+              - button "Stress 20, row 4, column 6. Drag or use arrow keys to move." [ref=e1839]:
+                - generic [ref=e1844]: Stress 20
+              - button "Stress 21, row 4, column 7. Drag or use arrow keys to move." [ref=e1845]:
+                - generic [ref=e1850]: Stress 21
+              - button "Stress 22, row 5, column 1. Drag or use arrow keys to move." [ref=e1851]:
+                - generic [ref=e1856]: Stress 22
+              - button "Stress 23, row 5, column 2. Drag or use arrow keys to move." [ref=e1857]:
+                - generic [ref=e1862]: Stress 23
+              - button "Stress 24, row 5, column 3. Drag or use arrow keys to move." [ref=e1863]:
+                - generic [ref=e1868]: Stress 24
+              - button "Stress 25, row 5, column 4. Drag or use arrow keys to move." [ref=e1869]:
+                - generic [ref=e1874]: Stress 25
+              - button "Stress 26, row 5, column 5. Drag or use arrow keys to move." [ref=e1875]:
+                - generic [ref=e1880]: Stress 26
+              - button "Stress 27, row 5, column 6. Drag or use arrow keys to move." [ref=e1881]:
+                - generic [ref=e1886]: Stress 27
+              - button "Stress 28, row 5, column 7. Drag or use arrow keys to move." [ref=e1887]:
+                - generic [ref=e1892]: Stress 28
+              - button "Stress 29, row 6, column 1. Drag or use arrow keys to move." [ref=e1893]:
+                - generic [ref=e1898]: Stress 29
+              - button "Stress 30, row 6, column 2. Drag or use arrow keys to move." [ref=e1899]:
+                - generic [ref=e1904]: Stress 30
+              - button "Stress 31, row 6, column 3. Drag or use arrow keys to move." [ref=e1905]:
+                - generic [ref=e1910]: Stress 31
+              - button "Stress 32, row 6, column 4. Drag or use arrow keys to move." [ref=e1911]:
+                - generic [ref=e1916]: Stress 32
+              - button "Stress 33, row 6, column 5. Drag or use arrow keys to move." [ref=e1917]:
+                - generic [ref=e1922]: Stress 33
+              - button "Stress 34, row 6, column 6. Drag or use arrow keys to move." [ref=e1923]:
+                - generic [ref=e1928]: Stress 34
+              - button "Stress 35, row 6, column 7. Drag or use arrow keys to move." [ref=e1929]:
+                - generic [ref=e1934]: Stress 35
+              - button "Stress 36, row 7, column 1. Drag or use arrow keys to move." [ref=e1935]:
+                - generic [ref=e1940]: Stress 36
+              - button "Stress 37, row 7, column 2. Drag or use arrow keys to move." [ref=e1941]:
+                - generic [ref=e1946]: Stress 37
+              - button "Stress 38, row 7, column 3. Drag or use arrow keys to move." [ref=e1947]:
+                - generic [ref=e1952]: Stress 38
+              - button "Stress 39, row 7, column 4. Drag or use arrow keys to move." [ref=e1953]:
+                - generic [ref=e1958]: Stress 39
+              - button "Stress 40, row 7, column 5. Drag or use arrow keys to move." [ref=e1959]:
+                - generic [ref=e1964]: Stress 40
+              - button "Stress 41, row 7, column 6. Drag or use arrow keys to move." [ref=e1965]:
+                - generic [ref=e1970]: Stress 41
+              - button "Stress 42, row 7, column 7. Drag or use arrow keys to move." [ref=e1971]:
+                - generic [ref=e1976]: Stress 42
+  - contentinfo [ref=e61]:
+    - paragraph [ref=e62]: Runs entirely on this computer · nothing is uploaded to the internet
+    - button "Quit the app" [ref=e63] [cursor=pointer]

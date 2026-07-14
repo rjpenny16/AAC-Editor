@@ -1,0 +1,139 @@
+- generic [ref=f6e1]:
+  - banner [ref=f6e2]:
+    - generic [ref=f6e3]:
+      - generic [ref=f6e10]:
+        - heading "TD Snap Page Builder" [level=1] [ref=f6e11]
+        - generic [ref=f6e12]: Local AAC workspace
+      - generic [ref=f6e13]:
+        - generic [ref=f6e14]: Private & local
+        - generic [ref=f6e61]: Live TD Snap
+  - main [ref=f6e16]:
+    - navigation "Edit progress" [ref=f6e17]:
+      - generic [ref=f6e18]:
+        - generic [ref=f6e19]: Workflow
+        - strong [ref=f6e20]: Build vocabulary with confidence.
+      - list [ref=f6e21]:
+        - listitem [ref=f6e22]:
+          - generic [ref=f6e23]: ✓
+          - generic [ref=f6e25]:
+            - generic [ref=f6e26]: Step 1
+            - strong [ref=f6e27]: Connect
+            - emphasis [ref=f6e28]: Choose the open TD Snap page set.
+        - listitem [ref=f6e29]:
+          - generic [ref=f6e30]: "2"
+          - generic [ref=f6e32]:
+            - generic [ref=f6e33]: Step 2
+            - strong [ref=f6e34]: Build
+            - emphasis [ref=f6e35]: Add vocabulary and arrange the grid.
+        - listitem [ref=f6e36]:
+          - generic [ref=f6e37]: "3"
+          - generic [ref=f6e39]:
+            - generic [ref=f6e40]: Step 3
+            - strong [ref=f6e41]: Review
+            - emphasis [ref=f6e42]: Verify the finished edit.
+      - paragraph [ref=f6e43]: ● Nothing leaves this computer.
+    - region [ref=f6e63]:
+      - generic [ref=f6e64]:
+        - paragraph [ref=f6e65]: Step 2
+        - heading "Plan a vocabulary edit" [level=2] [ref=f6e66]
+        - paragraph [ref=f6e67]: Connected to “Topics Menu Page” · 7×7 grid · 593 pages in this page set
+      - generic [ref=f6e69]:
+        - generic [ref=f6e70]:
+          - generic [ref=f6e71]:
+            - generic [ref=f6e72]: What do you want to do?
+            - radiogroup "Edit type" [ref=f6e74]:
+              - radio "Add to an existing page" [ref=f6e75] [cursor=pointer]
+              - radio "Create a new page" [checked] [ref=f6e76] [cursor=pointer]
+            - paragraph [ref=f6e77]: Create a separate vocabulary page and link it from an existing page.
+          - generic [ref=f6e765]:
+            - generic [ref=f6e766]: Page title
+            - textbox "Page title" [ref=f6e767]:
+              - /placeholder: Snacks
+              - text: Dining Out Talk
+            - paragraph [ref=f6e768]: Also becomes the folder button label. A clear title helps the app recommend an existing page where it belongs.
+          - generic [ref=f6e78]:
+            - generic [ref=f6e79]: Page style
+            - radiogroup "Page style" [ref=f6e81]:
+              - radio "Word page" [ref=f6e82] [cursor=pointer]
+              - radio "Topic page" [checked] [ref=f6e83] [cursor=pointer]
+            - paragraph [ref=f6e84]: Quick-fire phrases and color-coded buttons for talking about one topic.
+          - generic [ref=f6e85]:
+            - generic [ref=f6e86]:
+              - generic [ref=f6e87]: Buttons
+              - generic [ref=f6e88]: 5 of 49 cells
+            - generic [ref=f6e1368]:
+              - generic [ref=f6e1369]:
+                - generic [ref=f6e1370]: Communicative-function colors
+                - button "Reapply row layout" [ref=f6e1371] [cursor=pointer]
+              - radiogroup "Communicative function" [ref=f6e1372]:
+                - radio "None" [checked] [ref=f6e1373] [cursor=pointer]
+                - radio "Question" [ref=f6e1374] [cursor=pointer]
+                - radio "Comment" [ref=f6e1375] [cursor=pointer]
+                - radio "Positive" [ref=f6e1376] [cursor=pointer]
+                - radio "Negative" [ref=f6e1377] [cursor=pointer]
+                - radio "Personal" [ref=f6e1378] [cursor=pointer]
+              - paragraph [ref=f6e1379]: Topic pages automatically start with blue questions, then orange comments, green positive responses, red negative responses, and purple personal messages. Move a button to another row to change its function, or click a button chip to override it.
+            - generic [ref=f6e89]:
+              - generic [ref=f6e1976]:
+                - button "Edit What do you recommend?, Question" [ref=f6e1977] [cursor=pointer]:
+                  - generic [ref=f6e1979]: What do you recommend?
+                - button "Remove What do you recommend?" [ref=f6e1980] [cursor=pointer]: ×
+              - generic [ref=f6e1981]:
+                - button "Edit This place is busy, Question" [ref=f6e1982] [cursor=pointer]:
+                  - generic [ref=f6e1984]: This place is busy
+                - button "Remove This place is busy" [ref=f6e1985] [cursor=pointer]: ×
+              - generic [ref=f6e1986]:
+                - button "Edit I really like this, Question" [ref=f6e1987] [cursor=pointer]:
+                  - generic [ref=f6e1989]: I really like this
+                - button "Remove I really like this" [ref=f6e1990] [cursor=pointer]: ×
+              - generic [ref=f6e1991]:
+                - button "Edit I do not like that, Question" [ref=f6e1992] [cursor=pointer]:
+                  - generic [ref=f6e1994]: I do not like that
+                - button "Remove I do not like that" [ref=f6e1995] [cursor=pointer]: ×
+              - generic [ref=f6e1996]:
+                - button "Edit My favorite is Chipotle, Question" [ref=f6e1997] [cursor=pointer]:
+                  - generic [ref=f6e1999]: My favorite is Chipotle
+                - button "Remove My favorite is Chipotle" [ref=f6e2000] [cursor=pointer]: ×
+              - textbox "Add a word, press Enter to confirm" [active] [ref=f6e90]:
+                - /placeholder: ""
+            - status [ref=f6e91]
+            - group [ref=f6e92]:
+              - generic "Suggest phrases with AI optional · runs on this computer" [ref=f6e1380] [cursor=pointer]
+          - generic [ref=f6e94]:
+            - generic [ref=f6e95]: Where should the new folder button go?
+            - generic [ref=f6e770]:
+              - strong [ref=f6e771]: "Suggested location: Related List: Eating Out"
+              - paragraph [ref=f6e772]: This is the closest existing category the app can detect. Keeping related fringe vocabulary together makes it easier to find without moving established words.
+            - generic [ref=f6e96]:
+              - generic [ref=f6e97]:
+                - searchbox "Filter the page list" [ref=f6e98]: Topics Menu Page
+                - button "Clear filter" [ref=f6e99] [cursor=pointer]
+              - listbox "Where should the new folder button go?" [ref=f6e773]:
+                - option "Topics Menu Page" [selected] [ref=f6e1975]
+            - paragraph [ref=f6e694]: Every page in the open page set is listed. Open a page in TD Snap and the preview follows it automatically. Selecting a page loads its occupied cells before editing. The link will use the first free cell on “Topics Menu Page”.
+          - generic [ref=f6e695]:
+            - button "Update TD Snap" [ref=f6e696] [cursor=pointer]
+            - button "Reconnect to TD Snap" [ref=f6e698] [cursor=pointer]
+        - complementary "Preview" [ref=f6e699]:
+          - generic [ref=f6e700]:
+            - generic [ref=f6e701]:
+              - generic [ref=f6e702]: Preview
+              - paragraph [ref=f6e703]: Drag buttons to the exact cells you want, or focus one and use the arrow keys.
+            - generic [ref=f6e704]: Live · Topics Menu Page
+          - generic "Draggable preview of the new page's button grid" [ref=f6e707]:
+            - button "What do you recommend?, row 1, column 1. Drag or use arrow keys to move." [ref=f6e2001]: What do you recommend?
+            - button "This place is busy, row 1, column 2. Drag or use arrow keys to move." [ref=f6e2002]: This place is busy
+            - button "I really like this, row 1, column 3. Drag or use arrow keys to move." [ref=f6e2003]: I really like this
+            - button "I do not like that, row 1, column 4. Drag or use arrow keys to move." [ref=f6e2004]: I do not like that
+            - button "My favorite is Chipotle, row 1, column 5. Drag or use arrow keys to move." [ref=f6e2005]: My favorite is Chipotle
+          - generic [ref=f6e757]:
+            - paragraph [ref=f6e758]: Existing buttons are locked. Focus a new button and use the arrow keys for precise placement.
+            - generic "Communicative function colors" [ref=f6e759]:
+              - generic [ref=f6e760]: Question
+              - generic [ref=f6e761]: Comment
+              - generic [ref=f6e762]: Positive
+              - generic [ref=f6e763]: Negative
+              - generic [ref=f6e764]: Personal
+  - contentinfo [ref=f6e58]:
+    - paragraph [ref=f6e59]: Runs entirely on this computer · nothing is uploaded to the internet
+    - button "Quit the app" [ref=f6e60] [cursor=pointer]

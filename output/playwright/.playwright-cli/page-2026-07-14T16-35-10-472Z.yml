@@ -1,0 +1,51 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e10]:
+        - heading "TD Snap Page Builder" [level=1] [ref=e11]
+        - generic [ref=e12]: Local AAC workspace
+      - generic [ref=e13]: Private & local
+  - main [ref=e16]:
+    - region [ref=e18]:
+      - generic [ref=e19]:
+        - paragraph [ref=e20]: Welcome
+        - heading "Set up your workspace" [active] [level=2] [ref=e21]
+        - paragraph [ref=e22]: Choose the amount of guidance you want. Your answers only shape this screen and disappear when you close or reload the app.
+      - generic [ref=e23]:
+        - group [ref=e24]:
+          - radiogroup "What would you like to start with?" [ref=e26]:
+            - radio "A simple word page Keep guidance and helpful starting points visible." [checked] [ref=e27] [cursor=pointer]:
+              - strong [ref=e28]: A simple word page
+              - generic [ref=e29]: Keep guidance and helpful starting points visible.
+            - radio "The usual editor Use the current tools and defaults." [ref=e30] [cursor=pointer]:
+              - strong [ref=e31]: The usual editor
+              - generic [ref=e32]: Use the current tools and defaults.
+            - radio "Page-set tools Start with topic layout and less explanatory copy." [ref=e33] [cursor=pointer]:
+              - strong [ref=e34]: Page-set tools
+              - generic [ref=e35]: Start with topic layout and less explanatory copy.
+        - group [ref=e36]:
+          - radiogroup "How much local AI setup do you want to see?" [ref=e38]:
+            - radio "None Keep optional AI suggestions out of view." [checked] [ref=e39] [cursor=pointer]:
+              - strong [ref=e40]: None
+              - generic [ref=e41]: Keep optional AI suggestions out of view.
+            - radio "Built-in help Show the one-click model setup." [ref=e42] [cursor=pointer]:
+              - strong [ref=e43]: Built-in help
+              - generic [ref=e44]: Show the one-click model setup.
+            - radio "All settings Show both built-in and Ollama options." [ref=e45] [cursor=pointer]:
+              - strong [ref=e46]: All settings
+              - generic [ref=e47]: Show both built-in and Ollama options.
+        - group [ref=e48]:
+          - radiogroup "How familiar is this workspace?" [ref=e50]:
+            - radio "Show me around Keep step descriptions and a short guide." [checked] [ref=e51] [cursor=pointer]:
+              - strong [ref=e52]: Show me around
+              - generic [ref=e53]: Keep step descriptions and a short guide.
+            - radio "I know the layout Use a compact workflow rail." [ref=e54] [cursor=pointer]:
+              - strong [ref=e55]: I know the layout
+              - generic [ref=e56]: Use a compact workflow rail.
+        - generic [ref=e57]:
+          - button "Start editing" [ref=e58] [cursor=pointer]
+          - button "Skip, I know this app" [ref=e59] [cursor=pointer]
+        - paragraph [ref=e60]: Nothing is saved, uploaded, or added to the page set until you review an edit.
+  - contentinfo [ref=e61]:
+    - paragraph [ref=e62]: Runs entirely on this computer · nothing is uploaded to the internet
+    - button "Quit the app" [ref=e63] [cursor=pointer]

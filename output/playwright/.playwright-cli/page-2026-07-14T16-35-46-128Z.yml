@@ -1,0 +1,35 @@
+- generic [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e10]:
+        - heading "TD Snap Page Builder" [level=1] [ref=e11]
+        - generic [ref=e12]: Local AAC workspace
+      - generic [ref=e13]: Private & local
+  - main [ref=e16]:
+    - navigation "Edit progress" [ref=e64]:
+      - list [ref=e65]:
+        - listitem [ref=e66]:
+          - generic [ref=e67]: "1"
+          - strong [ref=e70]: Connect
+        - listitem [ref=e71]:
+          - generic [ref=e72]: "2"
+          - strong [ref=e75]: Build
+        - listitem [ref=e76]:
+          - generic [ref=e77]: "3"
+          - strong [ref=e80]: Review
+    - region [ref=e81]:
+      - generic [ref=e82]:
+        - paragraph [ref=e83]: Step 1
+        - heading "Connect to TD Snap" [active] [level=2] [ref=e84]
+        - paragraph [ref=e85]: Changes go directly into the page set already open in TD Snap. There are no exports, duplicate files, or imports to manage.
+      - generic [ref=e86]:
+        - generic [ref=e87]:
+          - strong [ref=e88]: Connect to your TD Snap page set
+          - generic [ref=e89]: If TD Snap is closed, this opens it. Keep Windows unlocked while an edit runs.
+        - button "Connect to TD Snap" [ref=e90] [cursor=pointer]
+      - status [ref=e91]
+      - group [ref=e92]:
+        - generic "Before you connect" [ref=e93] [cursor=pointer]
+  - contentinfo [ref=e61]:
+    - paragraph [ref=e62]: Runs entirely on this computer · nothing is uploaded to the internet
+    - button "Quit the app" [ref=e63] [cursor=pointer]

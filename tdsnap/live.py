@@ -25,6 +25,7 @@ from .builder import _normalize_items
 from .errors import PagesetError
 
 DEFAULT_PARENT = "Topics Menu Page"
+TD_SNAP_APP = r"shell:AppsFolder\TobiiDynavox.Snap_626b2w651dr5w!App"
 _EXCLUDED_GROUPS = {"Message Bar", "Tool Bar"}
 
 
@@ -187,6 +188,21 @@ def _window(auto):
     if not window.Exists(1):
         raise PagesetError("Open TD Snap before using direct editing.")
     return window
+
+
+def launch():
+    """Ask Windows to open TD Snap; do nothing when it is already ready."""
+    if sys.platform != "win32":
+        raise PagesetError("TD Snap can only be opened automatically on Windows.")
+    if status(False).get("running"):
+        return {"launched": False}
+    try:
+        os.startfile(TD_SNAP_APP)
+    except OSError as exc:
+        raise PagesetError(
+            "TD Snap could not be opened automatically. Open it from Start, then try again."
+        ) from exc
+    return {"launched": True}
 
 
 def _focus_window(window):
@@ -1214,11 +1230,22 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     _enter_edit_mode(window)
     _collapse_editor(window)
     grid = _grid(_page_group(window))
-    if len(normalized) > len(grid.xs) * len(grid.ys):
-        raise PagesetError("The words do not fit on one TD Snap grid screen.")
-
     parent_cell = _empty_cell(window, grid)
     _create_page_link(auto, window, title, parent_cell)
+
+    # Capacity belongs to the new page's own grid, not the parent's: the words
+    # land on the page we just created, while the parent only needed one free
+    # cell for the folder link. Checking the parent (e.g. a small "Personal"
+    # menu page) wrongly rejected word sets that fit the new page fine.
+    _collapse_editor(window)
+    try:
+        new_grid = _grid(_page_group(window))
+    except PagesetError:
+        # ponytail: fresh page has no measurable buttons yet; skip the fast-fail
+        # and let placement raise if the words really overflow the new grid.
+        new_grid = None
+    if new_grid is not None and len(normalized) > len(new_grid.xs) * len(new_grid.ys):
+        raise PagesetError("The words do not fit on one TD Snap grid screen.")
     symbols = 0
     styled = 0
     used_slots = set()

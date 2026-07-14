@@ -26,7 +26,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 from .. import __version__, builder, live, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
-from . import localai, ollama
+from . import grounding, localai, ollama
 
 APP_ID = "tdsnap-page-builder"
 DEFAULT_PORT = 8765
@@ -258,7 +258,13 @@ def index():
 
 @app.get("/api/tdsnap/status")
 def live_status():
-    return jsonify({"ok": True, **live.status()})
+    status = live.status(False) if request.headers.get("X-TDSnap-Brief") == "1" else live.status()
+    return jsonify({"ok": True, **status})
+
+
+@app.post("/api/tdsnap/launch")
+def live_launch():
+    return jsonify({"ok": True, **live.launch()})
 
 
 @app.get("/api/tdsnap/page-layout")
@@ -445,30 +451,39 @@ def ai_words():
     then the built-in downloaded model.
     """
     payload = request.get_json(force=True, silent=True) or {}
+    existing = payload.get("existing", [])
+    if not isinstance(existing, list):
+        raise PagesetError("'existing' must be a list of button labels.")
+    category = payload.get("category", "")
     args = {
-        "category": payload.get("category", ""),
+        "category": category,
         "count": payload.get("count", 10),
         "kind": payload.get("kind", "words"),
         "function": payload.get("function"),
+        "existing": [str(label).strip()[:80] for label in existing[:100]
+                     if str(label).strip()],
     }
     host = payload.get("host", ollama.DEFAULT_HOST)
     ollama_state = ollama.status(host)
     # An Ollama server with no models can't generate anything; fall through
     # to the built-in engine instead of failing with "model not found".
     if ollama_state["reachable"] and ollama_state["models"]:
-        words, error = ollama.generate_words(
+        engine, generate = "ollama", lambda: ollama.generate_words(
             host=host, model=payload.get("model", ollama.DEFAULT_MODEL), **args
         )
-        engine = "ollama"
     elif localai.engine_available() and localai.is_downloaded():
-        words, error = localai.generate_words(**args)
-        engine = "local"
+        engine, generate = "local", lambda: localai.generate_words(**args)
     else:
         return jsonify(
             {"ok": False, "words": [],
              "error": "No AI engine is ready yet — download the built-in "
                       "model below, or start Ollama."}
         ), 400
+    # Only look up reference facts once we know a model will actually run. Real
+    # facts about the title stop a small model naming the wrong thing (e.g.
+    # cartoon characters for "Roblox characters"). Best-effort: "" if offline.
+    args["reference"] = grounding.reference_text(category)
+    words, error = generate()
     if error:
         return jsonify({"ok": False, "error": error, "words": [],
                         "engine": engine}), 502

@@ -1,0 +1,1 @@
+{"local":{"download":{"done":0,"error":null,"status":"idle","total":0},"downloaded":false,"engine_available":false,"model":{"license":"Apache-2.0","name":"Qwen2.5 1.5B Instruct","size":"about 1 GB"}},"ollama":{"message":"Connected.","models":["qwen2.5-coder:7b","qwen3-coder:30b","qwen3:30b-a3b","llama3.2:latest","gemma4:latest"],"reachable":true}}
