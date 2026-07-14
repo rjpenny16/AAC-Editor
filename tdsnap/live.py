@@ -8,12 +8,16 @@ the current page, buttons, edit fields, and navigation directly.
 
 import argparse
 import ctypes
+import glob
 import hashlib
 import json
 import os
+import sqlite3
 import statistics
 import sys
 import time
+from collections import deque
+from contextlib import closing
 from ctypes import wintypes
 from dataclasses import dataclass
 
@@ -185,6 +189,15 @@ def _window(auto):
     return window
 
 
+def _focus_window(window):
+    """Keep raw grid clicks from landing on a window covering TD Snap."""
+    try:
+        window.SetFocus()
+    except (AttributeError, OSError):
+        raise PagesetError("TD Snap could not be brought to the foreground.")
+    time.sleep(0.2)
+
+
 def _page_group(window):
     candidates = []
     for control, _ in _walk(window, 5):
@@ -200,6 +213,117 @@ def _page_group(window):
     return max(candidates, key=lambda c: c.BoundingRectangle.right - c.BoundingRectangle.left)
 
 
+def _page_name(window, group=None):
+    """Return the user-facing current page title shown above the grid."""
+    group = group or _page_group(window)
+    page_rect = group.BoundingRectangle
+    titles = []
+    for control, _ in _walk(window, 4):
+        rect = control.BoundingRectangle
+        name = (control.Name or "").strip()
+        if (
+            control.ControlTypeName == "TextControl"
+            and name
+            and rect.bottom <= page_rect.top
+            and rect.left >= page_rect.left
+            and rect.right <= page_rect.right
+        ):
+            titles.append(control)
+    return min(
+        titles,
+        key=lambda control: control.BoundingRectangle.top,
+        default=group,
+    ).Name
+
+
+def _active_pageset_path():
+    """Return the page-set database selected in TD Snap's user settings."""
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return None
+    settings_files = glob.glob(os.path.join(
+        local, "Packages", "TobiiDynavox.Snap_*", "LocalState",
+        "Users", "*", "Settings.ssf",
+    ))
+    for settings_path in settings_files:
+        try:
+            with closing(sqlite3.connect(
+                f"file:{settings_path}?mode=ro", uri=True, timeout=1
+            )) as conn:
+                row = conn.execute(
+                    "SELECT PageSetGuid FROM UserSettings LIMIT 1"
+                ).fetchone()
+            if not row or not row[0]:
+                continue
+            pageset_path = os.path.join(
+                os.path.dirname(settings_path), f"{row[0]}.sps"
+            )
+            if os.path.isfile(pageset_path):
+                return pageset_path
+        except (OSError, sqlite3.Error):
+            continue
+    return None
+
+
+def _active_pageset_pages():
+    """Read every vocabulary-page title from the page set open in TD Snap."""
+    pageset_path = _active_pageset_path()
+    if not pageset_path:
+        return []
+    try:
+        with closing(sqlite3.connect(
+            f"file:{pageset_path}?mode=ro", uri=True, timeout=1
+        )) as conn:
+            rows = conn.execute(
+                "SELECT COALESCE(NULLIF(Title, ''), 'Page ' || Id) "
+                "FROM Page WHERE PageType = 1 ORDER BY Title COLLATE NOCASE"
+            ).fetchall()
+        return list(dict.fromkeys(row[0] for row in rows))
+    except (OSError, sqlite3.Error):
+        return []
+
+
+def _page_route(start, target):
+    """Find button presses from *start* to *target* in the active page set."""
+    pageset_path = _active_pageset_path()
+    if not pageset_path:
+        return None
+    try:
+        with closing(sqlite3.connect(
+            f"file:{pageset_path}?mode=ro", uri=True, timeout=1
+        )) as conn:
+            rows = conn.execute(
+                "SELECT source.Title, source.PageType, button.Label, target.Title "
+                "FROM ButtonPageLink link "
+                "JOIN Button button ON button.Id = link.ButtonId "
+                "JOIN ElementReference ref ON ref.Id = button.ElementReferenceId "
+                "JOIN Page source ON source.Id = ref.PageId "
+                "JOIN Page target ON target.UniqueId = link.PageUniqueId "
+                "WHERE target.PageType = 1 AND source.Title IS NOT NULL "
+                "AND button.Label IS NOT NULL AND target.Title IS NOT NULL"
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return None
+
+    graph = {}
+    toolbar = []
+    for source, page_type, button, destination in rows:
+        edge = (button, destination, page_type != 1)
+        (toolbar if page_type != 1 else graph.setdefault(source.casefold(), [])).append(edge)
+    queue = deque([(start, [])])
+    seen = {start.casefold()}
+    while queue:
+        page, route = queue.popleft()
+        if page.casefold() == target.casefold():
+            return route
+        for edge in graph.get(page.casefold(), []) + toolbar:
+            destination = edge[1]
+            if destination.casefold() not in seen:
+                seen.add(destination.casefold())
+                queue.append((destination, route + [edge]))
+    return []
+
+
 def _clusters(values, tolerance=8):
     groups = []
     for value in sorted(values):
@@ -208,6 +332,75 @@ def _clusters(values, tolerance=8):
         else:
             groups[-1].append(value)
     return tuple(round(statistics.mean(group)) for group in groups)
+
+
+def _stored_sparse_grid(group, buttons, width, height):
+    """Use TD Snap's saved placements when too few controls expose the grid."""
+    if len(buttons) > 12:
+        return None
+    pageset_path = _active_pageset_path()
+    title = (getattr(group, "Name", "") or "").strip()
+    if not pageset_path or not title:
+        return None
+    try:
+        with closing(sqlite3.connect(pageset_path)) as connection:
+            layout = connection.execute(
+                """
+                SELECT pl.Id, COALESCE(p.GridDimension, pl.PageLayoutSetting)
+                FROM Page p JOIN PageLayout pl ON pl.PageId = p.Id
+                WHERE p.Title = ? ORDER BY pl.Id DESC LIMIT 1
+                """,
+                (title,),
+            ).fetchone()
+            if not layout:
+                return None
+            cols, rows = (int(value) for value in layout[1].split(",")[:2])
+            placements = dict(connection.execute(
+                """
+                SELECT lower(b.Label), ep.GridPosition
+                FROM Button b
+                JOIN ElementReference er ON er.Id = b.ElementReferenceId
+                JOIN ElementPlacement ep ON ep.ElementReferenceId = er.Id
+                WHERE ep.PageLayoutId = ? AND ep.Visible = 1
+                """,
+                (layout[0],),
+            ))
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        return None
+
+    observed = []
+    for button in buttons:
+        position = placements.get((button.Name or "").casefold())
+        if not position:
+            continue
+        column, row = (int(value) for value in position.split(",")[:2])
+        rect = button.BoundingRectangle
+        observed.append(((rect.left + rect.right) // 2,
+                         (rect.top + rect.bottom) // 2, column, row))
+    if not observed:
+        return None
+
+    def measured_step(center_index, position_index):
+        candidates = []
+        for index, first in enumerate(observed):
+            for second in observed[index + 1:]:
+                difference = second[position_index] - first[position_index]
+                if difference:
+                    candidates.append(abs(
+                        (second[center_index] - first[center_index]) / difference
+                    ))
+        return statistics.median(candidates) if candidates else None
+
+    x_step = measured_step(0, 2) or width + 13
+    y_step = measured_step(1, 3) or height + (x_step - width)
+    first_x = statistics.median([x - column * x_step for x, _, column, _ in observed])
+    first_y = statistics.median([y - row * y_step for _, y, _, row in observed])
+    return Grid(
+        tuple(round(first_x + index * x_step) for index in range(cols)),
+        tuple(round(first_y + index * y_step) for index in range(rows)),
+        width,
+        height,
+    )
 
 
 def _grid(group):
@@ -219,13 +412,67 @@ def _grid(group):
     if not buttons:
         raise PagesetError("TD Snap's button grid could not be measured.")
     rects = [button.BoundingRectangle for button in buttons]
-    xs = _clusters([(rect.left + rect.right) // 2 for rect in rects])
-    ys = _clusters([(rect.top + rect.bottom) // 2 for rect in rects])
-    if len(xs) < 2 or len(ys) < 2:
-        raise PagesetError("TD Snap's button grid is too sparse to measure safely.")
     widths = [rect.right - rect.left for rect in rects]
     heights = [rect.bottom - rect.top for rect in rects]
-    return Grid(xs, ys, round(statistics.median(widths)), round(statistics.median(heights)))
+    width = round(statistics.median(widths))
+    height = round(statistics.median(heights))
+    stored = _stored_sparse_grid(group, buttons, width, height)
+    if stored:
+        return stored
+    xs = _clusters([
+        (rect.left + rect.right) // 2
+        for rect in rects if rect.right - rect.left <= width * 1.5
+    ])
+    ys = _clusters([
+        (rect.top + rect.bottom) // 2
+        for rect in rects if rect.bottom - rect.top <= height * 1.5
+    ])
+    x_step = (
+        statistics.median([b - a for a, b in zip(xs, xs[1:])])
+        if len(xs) > 1 else None
+    )
+    y_step = (
+        statistics.median([b - a for a, b in zip(ys, ys[1:])])
+        if len(ys) > 1 else None
+    )
+    if x_step is None:
+        x_step = y_step * width / height if y_step else width * 1.1
+    if y_step is None:
+        y_step = x_step * height / width if x_step else height * 1.1
+
+    def fill_gaps(centers, step):
+        filled = []
+        for center in centers:
+            if filled:
+                missing = round((center - filled[-1]) / step) - 1
+                if missing > 0:
+                    previous = filled[-1]
+                    filled.extend(
+                        round(previous + step * index)
+                        for index in range(1, missing + 1)
+                    )
+            filled.append(center)
+        return tuple(filled)
+
+    xs = fill_gaps(xs, x_step)
+    ys = fill_gaps(ys, y_step)
+
+    def complete_axis(centers, start, size, cell_size, step):
+        if len(centers) > 1:
+            return centers
+        gap = max(0, step - cell_size)
+        count = max(2, round((size + gap) / step))
+        span = (count - 1) * step + cell_size
+        first = start + (size - span) / 2 + cell_size / 2
+        if centers:
+            nearest = round((centers[0] - first) / step)
+            first += centers[0] - (first + nearest * step)
+        return tuple(round(first + index * step) for index in range(count))
+
+    bounds = group.BoundingRectangle
+    xs = complete_axis(xs, bounds.left, bounds.right - bounds.left, width, x_step)
+    ys = complete_axis(ys, bounds.top, bounds.bottom - bounds.top, height, y_step)
+    return Grid(xs, ys, width, height)
 
 
 def _fingerprint(group):
@@ -249,8 +496,10 @@ def _page_layout(group, grid):
     buttons = []
     for child in group.GetChildren():
         rect = child.BoundingRectangle
+        label = (child.Name or "").strip()
         if (
             child.ControlTypeName != "ButtonControl"
+            or not label
             or rect.right <= rect.left
             or rect.bottom <= rect.top
         ):
@@ -263,7 +512,7 @@ def _page_layout(group, grid):
             continue
         buttons.append({
             "slot": row * len(grid.xs) + column,
-            "label": (child.Name or "").strip(),
+            "label": label,
         })
     return sorted(buttons, key=lambda item: item["slot"])
 
@@ -315,6 +564,28 @@ def _cell_at(grid, slot):
     )
 
 
+def _anchored_grid(template, button, slot):
+    """Place a known grid shape around the first button on a sparse page."""
+    row, column = divmod(int(slot), len(template.xs))
+    rect = button.BoundingRectangle
+    center_x = (rect.left + rect.right) // 2
+    center_y = (rect.top + rect.bottom) // 2
+    x_step = statistics.median([
+        right - left for left, right in zip(template.xs, template.xs[1:])
+    ])
+    y_step = statistics.median([
+        bottom - top for top, bottom in zip(template.ys, template.ys[1:])
+    ])
+    first_x = center_x - column * x_step
+    first_y = center_y - row * y_step
+    return Grid(
+        tuple(round(first_x + index * x_step) for index in range(len(template.xs))),
+        tuple(round(first_y + index * y_step) for index in range(len(template.ys))),
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+    )
+
+
 def _empty_cell(window, grid, allow_scroll=True):
     seen = set()
     while True:
@@ -327,7 +598,9 @@ def _empty_cell(window, grid, allow_scroll=True):
             child for child in group.GetChildren()
             if child.ControlTypeName == "ButtonControl"
         ]
-        empty = _first_empty(grid, [button.BoundingRectangle for button in buttons])
+        empty = _first_empty(grid, [
+            button.BoundingRectangle for button in buttons if (button.Name or "").strip()
+        ])
         if empty:
             return empty
         if not allow_scroll:
@@ -416,55 +689,50 @@ def _enter_edit_mode(window):
     )
 
 
-def _double_activate(control):
-    if control is None:
-        raise PagesetError("TD Snap changed while the page was opening.")
-    double_click = getattr(control, "DoubleClick", None)
-    if double_click:
-        try:
-            double_click(simulateMove=False)
-        except TypeError:
-            double_click()
-        return
-    control.Click(simulateMove=False)
-    time.sleep(0.12)
-    control.Click(simulateMove=False)
-
-
 def _open_page_button(window, button, page_name):
-    """Open a page link using the double-click behavior TD Snap expects."""
-    before = _page_group(window).Name
-    _double_activate(button)
+    """Open a page link using TD Snap's accessibility action."""
+    before = _page_name(window)
+    _activate(button)
     return _wait_for(
         lambda: (
-            _page_group(window).Name
-            if _page_group(window).Name != before else None
+            _page_name(window)
+            if _page_name(window).casefold() != before.casefold() else None
         ),
-        f"TD Snap did not open {page_name!r} after double-clicking its button.",
+        f"TD Snap did not open {page_name!r} after activating its button.",
         timeout=10,
     )
 
 
 def _navigate_to_parent(window, parent):
     _exit_edit_mode(window)
-    if _page_group(window).Name == parent:
+    current = _page_name(window)
+    if current.casefold() == parent.casefold():
         return parent
-    toolbar = _find(window, name="Tool Bar", control_type="GroupControl")
-    topic_button = _find(toolbar, name="Topics", control_type="ButtonControl")
-    _activate(topic_button)
-    _wait_for(
-        lambda: _page_group(window).Name == DEFAULT_PARENT,
-        f"TD Snap did not open {DEFAULT_PARENT!r}.",
-    )
-    if parent == DEFAULT_PARENT:
-        return DEFAULT_PARENT
-    link = _find(_page_group(window), name=parent, control_type="ButtonControl")
-    if link is None:
+    route = _page_route(current, parent)
+    if not route:
         raise PagesetError(
-            f"{parent!r} is not visible on {DEFAULT_PARENT!r}. Open that page "
-            "in TD Snap and reconnect, or choose another suggested page."
+            f"TD Snap has no page-link route from {current!r} to {parent!r}. "
+            "Open that page in TD Snap and the live preview will follow it."
         )
-    return _open_page_button(window, link, parent)
+    toolbar = _find(window, name="Tool Bar", control_type="GroupControl")
+    for button_name, destination, from_toolbar in route:
+        container = toolbar if from_toolbar else _page_group(window)
+        button = _find(container, name=button_name, control_type="ButtonControl")
+        if button is None:
+            raise PagesetError(
+                f"TD Snap's route to {parent!r} uses {button_name!r}, but that "
+                "button is not visible on the current grid."
+            )
+        if from_toolbar:
+            _activate(button)
+        else:
+            _open_page_button(window, button, destination)
+        _wait_for(
+            lambda: _page_name(window).casefold() == destination.casefold(),
+            f"TD Snap did not open {destination!r} while navigating to {parent!r}.",
+            timeout=10,
+        )
+    return parent
 
 
 def _undo_if_needed(window):
@@ -474,7 +742,6 @@ def _undo_if_needed(window):
 
 
 def _window_dpi(window):
-    """Return the DPI used by the monitor containing the TD Snap window."""
     if sys.platform != "win32":
         return 96
     user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -487,18 +754,26 @@ def _window_dpi(window):
     return getter(handle) or 96
 
 
-def _physical_point(window, x, y):
-    """Convert TD Snap's 96-DPI child coordinates to mouse coordinates.
+def _client_origin(window):
+    if sys.platform != "win32" or not getattr(window, "NativeWindowHandle", 0):
+        return None
+    point = wintypes.POINT()
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    if not user32.ClientToScreen(window.NativeWindowHandle, ctypes.byref(point)):
+        return None
+    return point.x, point.y
 
-    TD Snap's accessibility provider reports the page-grid children in
-    device-independent pixels even to a DPI-aware automation client.  Win32
-    mouse input, however, expects physical screen pixels.  At display scales
-    above 100%, passing a grid rectangle straight to ``auto.Click`` therefore
-    lands on an earlier row/column (for example, 125% scaling turned the first
-    empty cell into the existing button above-left).
-    """
+
+def _physical_point(window, x, y):
+    """Map TD Snap's client-relative logical grid point to screen pixels."""
+    origin = _client_origin(window)
+    if origin is None:
+        return round(x), round(y)
     scale = _window_dpi(window) / 96
-    return round(x * scale), round(y * scale)
+    return (
+        round(origin[0] + (x - origin[0]) * scale),
+        round(origin[1] + (y - origin[1]) * scale),
+    )
 
 
 def _click_empty_icon(auto, window, cell, x_offset, y_offset, expected_text):
@@ -520,11 +795,7 @@ def _click_empty_icon(auto, window, cell, x_offset, y_offset, expected_text):
             _undo_if_needed(window)
         else:
             auto.SendKeys("{Esc}", waitTime=0.1)
-        raise PagesetError(
-            "TD Snap's empty-cell controls moved. No edit was kept. Set the "
-            "TDSNAP_LINK_ICON_X/Y or TDSNAP_ADD_ICON_X/Y calibration values "
-            "or update the bundled skill."
-        )
+        raise PagesetError("TD Snap's empty-cell action could not be selected.")
 
 
 def _set_value(control, value):
@@ -541,10 +812,11 @@ def _set_value(control, value):
 
 
 def _create_page_link(auto, window, title, cell):
-    x_offset = float(os.environ.get("TDSNAP_LINK_ICON_X", "0.39"))
-    y_offset = float(os.environ.get("TDSNAP_LINK_ICON_Y", "-0.33"))
     choice = _click_empty_icon(
-        auto, window, cell, x_offset, y_offset, "Link to new page"
+        auto, window, cell,
+        float(os.environ.get("TDSNAP_LINK_ICON_X", "0.39")),
+        float(os.environ.get("TDSNAP_LINK_ICON_Y", "-0.33")),
+        "Link to new page",
     )
     _activate(choice)
     create = _wait_for(
@@ -562,17 +834,31 @@ def _create_page_link(auto, window, title, cell):
     _set_value((named or edits)[0], title)
     _activate(create)
     _wait_for(
-        lambda: _page_group(window).Name == title,
+        lambda: (
+            True if _page_name(window).casefold() == title.casefold() else
+            _find(_page_group(window), name=title, control_type="ButtonControl")
+        ),
+        "TD Snap did not create the new page link.",
+        timeout=10,
+    )
+    if _page_name(window).casefold() != title.casefold():
+        _exit_edit_mode(window)
+        link = _find(_page_group(window), name=title, control_type="ButtonControl")
+        _open_page_button(window, link, title)
+        _enter_edit_mode(window)
+    _wait_for(
+        lambda: _page_name(window).casefold() == title.casefold(),
         "TD Snap did not open the newly created page.",
         timeout=10,
     )
 
 
-def _search_results(window):
+def _search_results(window, web=False):
+    result_type = "MyTdxWebImage" if web else "SymbolLibrarySearchResult"
     return [
         control for control, _ in _walk(window, 8)
         if control.ControlTypeName == "ListItemControl"
-        and "SymbolLibrarySearchResult" in (control.Name or "")
+        and result_type in (control.Name or "")
         and control.BoundingRectangle.right > control.BoundingRectangle.left
     ]
 
@@ -611,7 +897,7 @@ def _choose_symbol(window, label):
                 _activate(web)
                 _activate(query)
             results = _wait_for(
-                lambda: _search_results(window),
+                lambda: _search_results(window, web=True),
                 "No symbol or web image matched.", timeout=6,
             )
         _activate(results[0])
@@ -667,7 +953,7 @@ def _apply_border(window, border_color):
             and control.Name == "Color"
             and control.BoundingRectangle.top > border_heading.BoundingRectangle.top
         ]
-        color_row = max(color_labels, key=lambda c: c.BoundingRectangle.top)
+        color_row = min(color_labels, key=lambda c: c.BoundingRectangle.top)
         _activate(color_row.GetParentControl())
         choice = _wait_for(
             lambda: _closest_color_item(window, border_color),
@@ -701,37 +987,50 @@ def _apply_border(window, border_color):
         return False
 
 
+def _empty_label_field(window):
+    """The button-editor label box when it is open and not yet filled.
+
+    Clicking an empty cell either creates a new button (truly-empty grid) or
+    selects a pre-placed blank button (template pages fill every cell with a
+    blank placeholder). Both open TD Snap's label field *empty*. Requiring the
+    field to be empty also skips the field still showing the previous button's
+    label between adds, so we never relabel the button we just made.
+    """
+    for control, _ in _walk(window, 12):
+        if (
+            control.ControlTypeName == "EditControl"
+            and control.AutomationId == "TextBox"
+            and control.IsEnabled
+        ):
+            getter = getattr(control, "GetValuePattern", None)
+            pattern = getter() if getter else None
+            if pattern is None or not (pattern.Value or "").strip():
+                return control
+    return None
+
+
 def _add_button(auto, window, cell, label, message=None,
                 border_color=None, use_symbol=False):
-    x_offset = float(os.environ.get("TDSNAP_ADD_ICON_X", "0"))
-    y_offset = float(os.environ.get("TDSNAP_ADD_ICON_Y", "0"))
     before = _fingerprint(_page_group(window))
     x, y = _physical_point(
         window,
-        cell.x + cell.width * x_offset,
-        cell.y + cell.height * y_offset,
+        cell.x + cell.width * float(os.environ.get("TDSNAP_ADD_ICON_X", "0")),
+        cell.y + cell.height * float(os.environ.get("TDSNAP_ADD_ICON_Y", "0")),
     )
     auto.Click(x, y, waitTime=0.2)
-    created = False
+    opened = False
     try:
-        _wait_for(
-            lambda: _fingerprint(_page_group(window)) != before,
-            "TD Snap did not create a button in the empty cell.",
+        # An empty label field appearing — not a change in the button
+        # fingerprint — is the signal the cell is ready. Clicking a blank
+        # placeholder button on a template page opens the editor without adding
+        # a button, so the old fingerprint check wrongly reported failure and
+        # left the cell blank.
+        textbox = _wait_for(
+            lambda: _empty_label_field(window),
+            "TD Snap did not open a button in the empty cell.",
             timeout=6,
         )
-        created = True
-
-        # When the properties panel is collapsed, TD Snap keeps the selected
-        # button's editors in the accessibility tree with zero-sized bounds.
-        # They are still enabled and writable; requiring a visible "Label"
-        # element made every direct add fail after the blank button appeared.
-        edits = [
-            control for control, _ in _walk(window, 12)
-            if control.ControlTypeName == "EditControl"
-        ]
-        textbox = next((e for e in edits if e.AutomationId == "TextBox"), None)
-        if textbox is None or not textbox.IsEnabled:
-            raise PagesetError("TD Snap's button label field was not found.")
+        opened = True
         _set_value(textbox, label)
         _wait_for(
             lambda: _find(_page_group(window), name=label, control_type="ButtonControl"),
@@ -755,12 +1054,12 @@ def _add_button(auto, window, cell, label, message=None,
                 pass
         return {"symbol": symbol_applied, "border": border_applied}
     except PagesetError:
-        if created or _fingerprint(_page_group(window)) != before:
+        if opened or _fingerprint(_page_group(window)) != before:
             _undo_if_needed(window)
         raise
 
 
-def status():
+def status(include_pages=True):
     result = {
         "available": sys.platform == "win32",
         "running": False,
@@ -778,13 +1077,17 @@ def status():
     except PagesetError as exc:
         result["error"] = str(exc)
         return result
-    detected_pages = _named_page_buttons(group) if group.Name == DEFAULT_PARENT else []
     result.update(
         running=True,
-        page=group.Name,
+        page=_page_name(window, group),
         grid={"cols": len(grid.xs), "rows": len(grid.ys)},
-        pages=list(dict.fromkeys([group.Name, DEFAULT_PARENT] + detected_pages)),
     )
+    if include_pages:
+        pages = _active_pageset_pages()
+        if not pages:
+            detected = _named_page_buttons(group) if group.Name == DEFAULT_PARENT else []
+            pages = [DEFAULT_PARENT] + detected
+        result["pages"] = list(dict.fromkeys([result["page"]] + pages))
     return result
 
 
@@ -795,13 +1098,13 @@ def inspect_page(page=None):
     auto = _automation()
     window = _window(auto)
     requested = str(page or "").strip()
-    if requested and _page_group(window).Name != requested:
+    if requested and _page_name(window).casefold() != requested.casefold():
         _navigate_to_parent(window, requested)
     group = _page_group(window)
     grid = _grid(group)
     buttons = _page_layout(group, grid)
     return {
-        "page": group.Name,
+        "page": _page_name(window, group),
         "grid": {"cols": len(grid.xs), "rows": len(grid.ys)},
         "buttons": buttons,
         "free_slots": [
@@ -822,10 +1125,11 @@ def add_to_existing_page(page, items, fingerprint=None):
 
     auto = _automation()
     window = _window(auto)
+    _focus_window(window)
     requested = str(page or "").strip()
     if not requested:
         raise PagesetError("Choose an existing TD Snap page.")
-    if _page_group(window).Name != requested:
+    if _page_name(window).casefold() != requested.casefold():
         _navigate_to_parent(window, requested)
     group = _page_group(window)
     if fingerprint and _fingerprint_token(group) != fingerprint:
@@ -855,8 +1159,9 @@ def add_to_existing_page(page, items, fingerprint=None):
     try:
         for item in normalized:
             _collapse_editor(window)
+            edit_grid = _grid(_page_group(window))
             result = _add_button(
-                auto, window, _cell_at(grid, item["slot"]), item["label"],
+                auto, window, _cell_at(edit_grid, item["slot"]), item["label"],
                 item["message"], item["border_color"], item.get("symbol", True),
             )
             symbols += int(result["symbol"])
@@ -872,7 +1177,7 @@ def add_to_existing_page(page, items, fingerprint=None):
     expected_symbols = sum(item.get("symbol", True) for item in normalized)
     expected_styles = sum(item["border_color"] is not None for item in normalized)
     return {
-        "page": final_group.Name,
+        "page": _page_name(window, final_group),
         "buttons": len(normalized),
         "checks": {
             "td_snap_edit": "pass",
@@ -903,6 +1208,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
 
     auto = _automation()
     window = _window(auto)
+    _focus_window(window)
     parent = str(parent or DEFAULT_PARENT).strip()
     actual_parent = _navigate_to_parent(window, parent)
     _enter_edit_mode(window)
@@ -916,25 +1222,33 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     symbols = 0
     styled = 0
     used_slots = set()
+    page_grid = None
     for item in normalized:
         _collapse_editor(window)
+        active_grid = page_grid or grid
         requested = item.get("slot")
-        cell = _cell_at(grid, requested)
+        cell = _cell_at(active_grid, requested)
         if cell is None or requested in used_slots:
-            cell = _empty_cell(window, grid, allow_scroll=False)
+            cell = _empty_cell(window, active_grid, allow_scroll=False)
         else:
             used_slots.add(requested)
         result = _add_button(
             auto, window, cell, item["label"], item["message"],
             item["border_color"], item.get("symbol", True),
         )
+        if page_grid is None and requested is not None:
+            button = _find(
+                _page_group(window), name=item["label"],
+                control_type="ButtonControl",
+            )
+            page_grid = _anchored_grid(grid, button, requested)
         symbols += int(result["symbol"])
         styled += int(result["border"] and item["border_color"] is not None)
 
     _exit_edit_mode(window)
     _activate(_find(window, automation_id="BackButton", control_type="ButtonControl"))
     _wait_for(
-        lambda: _page_group(window).Name == actual_parent,
+        lambda: _page_name(window).casefold() == actual_parent.casefold(),
         "The page was created, but TD Snap did not return to its parent.",
     )
     link = _find(_page_group(window), name=title, control_type="ButtonControl")
