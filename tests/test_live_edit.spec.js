@@ -624,18 +624,15 @@ test('radio groups and preview support keyboard-only operation', async ({ page }
 
   await openEditor(page);
   await page.locator('#live-connect-btn').click();
-  await page.locator('#operation-existing').focus();
-  await page.keyboard.press('ArrowRight');
+  await page.locator('#operation-existing').press('ArrowRight');
   await expect(page.locator('#operation-new')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#title-field')).toBeVisible();
-  await page.locator('#style-words').focus();
-  await page.keyboard.press('ArrowRight');
+  await page.locator('#style-words').press('ArrowRight');
   await expect(page.locator('#style-topic')).toHaveAttribute('aria-checked', 'true');
   await page.locator('#word-input').fill('How are you?, Great');
   await page.locator('#word-input').press('Enter');
   const first = page.locator('#preview .cell.used').filter({ hasText: 'How are you?' });
-  await first.focus();
-  await page.keyboard.press('ArrowRight');
+  await first.press('ArrowRight');
   await expect(page.locator('#preview .cell.used').filter({ hasText: 'How are you?' }))
     .toHaveAttribute('aria-label', /column 2/);
 });
