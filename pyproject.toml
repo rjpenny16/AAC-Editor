@@ -31,4 +31,4 @@ Issues = "https://github.com/rjpenny16/AAC-Editor/issues"
 include = ["tdsnap*"]
 
 [tool.setuptools.package-data]
-"tdsnap.web" = ["static/*"]
+"tdsnap.web" = ["static/*", "static/assets/*"]

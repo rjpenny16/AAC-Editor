@@ -16,14 +16,16 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -43,13 +45,27 @@ jobs:
       - name: Build app
         run: pyinstaller packaging/tdsnap.spec --noconfirm
 
-      - name: Zip build
-        run: Compress-Archive -Path "dist/TDSnapPageBuilder" -DestinationPath "TDSnapPageBuilder-windows.zip"
+      - name: Package build
+        id: package
+        shell: pwsh
+        run: |
+          $archive = "TDSnapPageBuilder-${{ inputs.tag_name || github.ref_name }}-windows-x64.zip"
+          Compress-Archive -Path "dist/TDSnapPageBuilder" -DestinationPath $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $archive" | Set-Content -Encoding ascii "$archive.sha256"
+          "archive=$archive" >> $env:GITHUB_OUTPUT
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.package.outputs.archive }}
 
       - name: Attach to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag_name || github.ref_name }}
           draft: true
           generate_release_notes: true
-          files: TDSnapPageBuilder-windows.zip
+          files: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.archive }}.sha256

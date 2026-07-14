@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a reproducible problem without sharing private AAC data
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve TD Snap Page Builder. Do not upload a real page set, Playwright trace, access token, or personal vocabulary.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release version or commit SHA
+      placeholder: v2.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Live TD Snap editing
+        - Exported-file editing
+        - Web interface
+        - Command line
+        - Local AI suggestions
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use generic labels and synthetic data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Paste relevant errors or `tdsnap verify` output after removing personal information.
+      render: shell
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed page sets, tokens, personal vocabulary, and identifying information.
+          required: true

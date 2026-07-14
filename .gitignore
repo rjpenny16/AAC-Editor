@@ -40,6 +40,9 @@ Thumbs.db
 node_modules/
 test-results/
 playwright-report/
+.playwright-cli/
+output/
+@AutomationLog.txt
 
 # Application specific
 td_snap_coordinates.json
