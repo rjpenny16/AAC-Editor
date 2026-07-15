@@ -4,9 +4,11 @@
 [![Latest release](https://img.shields.io/github/v/release/rjpenny16/AAC-Editor)](https://github.com/rjpenny16/AAC-Editor/releases/latest)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Add vocabulary and topic pages to the TD Snap page set already open on your
-Windows computer. Existing buttons stay in place, changes are reviewed before
-they run, and optional AI suggestions stay on your device.
+TD Snap Page Builder helps AAC users, parents, SLPs, and other professionals
+spend less time editing buttons and more time communicating. Add many words or
+entire topic pages at once, review every change before it runs, and update the
+page set already open in TD Snap so it keeps its existing sharing and sync
+identity—saving hours of repetitive work.
 
 ![TD Snap Page Builder live editor with a page preview](docs/screenshot.png)
 
