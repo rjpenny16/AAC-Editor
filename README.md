@@ -108,6 +108,19 @@ integration fixture when needed.
 Bug reports and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md)
 and the [security policy](SECURITY.md) first.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate
+by [SignPath Foundation](https://signpath.org/).
+
+- Committer and reviewer: [Ryan Penny](https://github.com/rjpenny16)
+- Signing approver: [Ryan Penny](https://github.com/rjpenny16)
+- Signed releases are built from tagged source by the public GitHub Actions
+  workflow.
+- Privacy: AAC Editor will not transfer information to other networked systems
+  unless specifically requested by the user or the person installing or
+  operating it.
+
 ## License and trademarks
 
 [MIT](LICENSE). The optional AI model is downloaded separately under its own
