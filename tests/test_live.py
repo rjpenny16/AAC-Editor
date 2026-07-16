@@ -318,7 +318,7 @@ def test_create_page_opens_new_link_when_dialog_stays_on_parent(monkeypatch):
     monkeypatch.setattr(
         live, "_open_page_button",
         lambda _window, control, title: (
-            state.update(page=title, opened=control) or title
+            state.update(page="Topic: Custom 5", opened=control) or "Topic: Custom 5"
         ),
     )
 

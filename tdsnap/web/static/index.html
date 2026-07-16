@@ -7,30 +7,16 @@
 <meta name="theme-color" content="#ffffff">
 <title>AAC Editor</title>
 <link rel="stylesheet" href="/static/app.css">
-<link rel="icon" type="image/png" href="/static/assets/aac-editor-logo.png">
 </head>
 <body>
 
 <header class="topbar">
   <div class="topbar-inner">
-    <button type="button" id="menu-btn" class="topbar-icon-btn" aria-label="Open workspace setup">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-    </button>
-    <span class="wordmark" aria-hidden="true">
-      <img src="/static/assets/aac-editor-logo.png" alt="">
-    </span>
-    <div class="brand-lockup">
-      <h1>AAC Editor</h1>
-    </div>
-    <div class="topbar-status">
-      <span class="local-status"><span aria-hidden="true"></span>Private &amp; local</span>
+    <img class="brand-logo" src="/static/assets/aac-editor-logo.png" alt="">
+    <h1>AAC Editor</h1>
+    <div class="connection-area">
+      <span class="local-status"><span aria-hidden="true"></span>Private and local</span>
       <button type="button" id="file-badge" class="file-badge" aria-label="Reconnect to TD Snap" hidden></button>
-      <button type="button" id="settings-btn" class="topbar-icon-btn" aria-label="Open workspace settings">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
-          <path d="m19.2 13.4 1.3 1-.9 2.2-1.7-.2a7.7 7.7 0 0 1-1.5 1.5l.2 1.7-2.2.9-1-1.3a7.6 7.6 0 0 1-2.8 0l-1 1.3-2.2-.9.2-1.7a7.7 7.7 0 0 1-1.5-1.5l-1.7.2-.9-2.2 1.3-1a7.6 7.6 0 0 1 0-2.8l-1.3-1 .9-2.2 1.7.2a7.7 7.7 0 0 1 1.5-1.5l-.2-1.7 2.2-.9 1 1.3a7.6 7.6 0 0 1 2.8 0l1-1.3 2.2.9-.2 1.7a7.7 7.7 0 0 1 1.5 1.5l1.7-.2.9 2.2-1.3 1a7.6 7.6 0 0 1 0 2.8Z"/>
-        </svg>
-      </button>
     </div>
   </div>
 </header>
@@ -41,450 +27,323 @@
 </div>
 
 <main class="shell">
-
-  <nav class="workflow-rail" aria-label="Edit progress" hidden>
-    <div class="workflow-intro">
-      <span>Workflow</span>
-      <strong>Build vocabulary with confidence.</strong>
+  <section class="wizard-progress" aria-label="Task progress">
+    <div class="progress-copy">
+      <strong id="wizard-progress-label">Step 1 of 5 · Connect</strong>
+      <span id="wizard-progress-percent">20%</span>
     </div>
-    <ol>
-      <li class="workflow-item" data-step="1">
-        <span class="workflow-marker" aria-hidden="true"><span class="step-number">1</span><span class="step-check">✓</span></span>
-        <span><small>Step 1</small><strong>Connect</strong><em>Choose the open TD Snap page set.</em></span>
-      </li>
-      <li class="workflow-item" data-step="2">
-        <span class="workflow-marker" aria-hidden="true"><span class="step-number">2</span><span class="step-check">✓</span></span>
-        <span><small>Step 2</small><strong>Build</strong><em>Add vocabulary and arrange the grid.</em></span>
-      </li>
-      <li class="workflow-item" data-step="3">
-        <span class="workflow-marker" aria-hidden="true"><span class="step-number">3</span><span class="step-check">✓</span></span>
-        <span><small>Step 3</small><strong>Review</strong><em>Verify the finished edit.</em></span>
-      </li>
-    </ol>
-    <div id="workflow-tour" class="workflow-tour" role="region"
-         aria-label="Workflow guide" hidden>
-      <span id="workflow-tour-count" class="workflow-tour-count"></span>
-      <strong id="workflow-tour-title"></strong>
-      <p id="workflow-tour-copy"></p>
-      <div class="workflow-tour-actions">
-        <button type="button" id="workflow-tour-dismiss" class="btn btn-ghost btn-compact">Dismiss</button>
-        <button type="button" id="workflow-tour-next" class="btn btn-secondary btn-compact">Next</button>
-      </div>
-    </div>
-    <p class="workflow-note"><span aria-hidden="true">●</span> Nothing leaves this computer.</p>
-  </nav>
-
-  <div class="content-stack">
-
-  <section id="step-welcome" class="panel welcome-panel" aria-labelledby="welcome-heading" hidden>
-    <div class="welcome-progress" aria-label="Workspace setup progress">
-      <ol aria-hidden="true">
-        <li class="current">1</li><li>2</li><li>3</li>
-      </ol>
-      <span id="welcome-count">1 of 3</span>
-    </div>
-
-    <div class="panel-head">
-      <h2 id="welcome-heading">How would you like to begin?</h2>
-      <p class="panel-sub" id="welcome-sub">Choose the experience that feels right. You can change this later.</p>
-    </div>
-
-    <form id="welcome-form">
-      <fieldset class="welcome-question" data-welcome-step="0">
-        <legend class="sr-only">Guidance preference</legend>
-        <div class="welcome-options" role="radiogroup" aria-label="Guidance preference">
-          <button type="button" id="profile-aac-guided" class="welcome-choice selected"
-                  role="radio" aria-checked="true" data-profile="aac" data-value="guided">
-            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-guide.png" alt=""></span>
-            <strong>Guide me</strong>
-            <span class="welcome-choice-summary">Keep helpful starting points and explanations visible.</span>
-            <span class="welcome-choice-context">Best if you want the app to choose clear defaults and explain each step.</span>
-          </button>
-          <button type="button" id="profile-aac-standard" class="welcome-choice"
-                  role="radio" aria-checked="false" data-profile="aac" data-value="standard">
-            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-lead.png" alt=""></span>
-            <strong>Let me take the lead</strong>
-            <span class="welcome-choice-summary">Use the familiar editor with fewer prompts.</span>
-            <span class="welcome-choice-context">Best if you already know what you want to build; all editor controls stay available.</span>
-          </button>
-        </div>
-      </fieldset>
-
-      <fieldset class="welcome-question" data-welcome-step="1" hidden>
-        <legend class="sr-only">Local AI preference</legend>
-        <div class="welcome-options" role="radiogroup" aria-label="Local AI preference">
-          <button type="button" id="profile-ai-none" class="welcome-choice selected"
-                  role="radio" aria-checked="true" data-profile="ai" data-value="none">
-            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-guide.png" alt=""></span>
-            <strong>Keep it simple</strong>
-            <span class="welcome-choice-summary">Hide optional AI suggestions for now.</span>
-            <span class="welcome-choice-context">You can turn suggestions on later; nothing downloads during setup.</span>
-          </button>
-          <button type="button" id="profile-ai-assist" class="welcome-choice"
-                  role="radio" aria-checked="false" data-profile="ai" data-value="assist">
-            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-lead.png" alt=""></span>
-            <strong>Show local AI help</strong>
-            <span class="welcome-choice-summary">Add private word and phrase suggestions.</span>
-            <span class="welcome-choice-context">Shows one-click local model setup. Suggestions stay on this computer.</span>
-          </button>
-        </div>
-      </fieldset>
-
-      <fieldset class="welcome-question" data-welcome-step="2" hidden>
-        <legend class="sr-only">Workspace familiarity</legend>
-        <div class="welcome-options" role="radiogroup" aria-label="Workspace familiarity">
-          <button type="button" id="profile-layout-new" class="welcome-choice selected"
-                  role="radio" aria-checked="true" data-profile="layout" data-value="new">
-            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-guide.png" alt=""></span>
-            <strong>Show me around</strong>
-            <span class="welcome-choice-summary">Keep step descriptions and a short guide.</span>
-            <span class="welcome-choice-context">Starts a quick three-step tour after setup.</span>
-          </button>
-          <button type="button" id="profile-layout-familiar" class="welcome-choice"
-                  role="radio" aria-checked="false" data-profile="layout" data-value="familiar">
-            <span class="welcome-choice-art"><img src="/static/assets/walkthrough-lead.png" alt=""></span>
-            <strong>I know my way</strong>
-            <span class="welcome-choice-summary">Keep the workspace compact and focused.</span>
-            <span class="welcome-choice-context">Uses a compact progress rail and skips the introductory tour.</span>
-          </button>
-        </div>
-      </fieldset>
-
-      <div class="welcome-actions">
-        <button type="button" id="welcome-back" class="btn btn-ghost" hidden>Back</button>
-        <button type="submit" id="welcome-start" class="btn btn-primary">Continue</button>
-      </div>
-      <button type="button" id="welcome-skip" class="welcome-skip">Skip setup</button>
-    </form>
+    <progress id="wizard-progress" max="5" value="1">1 of 5</progress>
+    <p id="wizard-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
   </section>
 
-  <!-- Step 1 · Connect -->
-  <section id="step-load" class="panel" aria-labelledby="load-heading" hidden>
-    <div class="panel-head">
-      <p class="step-eyebrow" aria-hidden="true">Step 1</p>
-      <h2 id="load-heading">Connect to TD Snap</h2>
-      <p class="panel-sub">Changes go directly into the page set already open in
-      TD Snap. There are no exports, duplicate files, or imports to manage.</p>
-    </div>
+  <section id="step-load" class="wizard-card" aria-labelledby="load-heading" hidden>
+    <p class="step-eyebrow">Step 1</p>
+    <h2 id="load-heading" tabindex="-1">Connect to TD Snap</h2>
+    <p class="lead">Open the page you want to change in TD Snap, then connect. The editor will read that page without moving any buttons.</p>
 
-    <div class="live-connect">
+    <div class="primary-task">
       <div>
-        <strong>Connect to your TD Snap page set</strong>
-        <span>If TD Snap is closed, this opens it. Keep Windows unlocked while an edit runs.</span>
+        <strong>Ready to connect?</strong>
+        <p>Keep Windows unlocked while the editor is working.</p>
       </div>
       <button type="button" id="live-connect-btn" class="btn btn-primary">
-        Connect to TD Snap
+        <span class="btn-label">Connect to TD Snap</span>
       </button>
     </div>
     <p id="live-status" class="status-line" role="status" aria-live="polite"></p>
 
-    <details class="help">
-      <summary>Before you connect</summary>
+    <details class="help-disclosure">
+      <summary>Having trouble?</summary>
       <ol>
-        <li>If TD Snap is already open, switch to the user and page set you want to edit.</li>
-        <li>Open any page you want to preview or edit.</li>
-        <li>Click <strong>Connect to TD Snap</strong>. The app opens TD Snap when needed,
-            and it is okay if TD Snap is already in Edit mode.</li>
+        <li>Open TD Snap and choose the person and page set you want to edit.</li>
+        <li>Open the page you want to change.</li>
+        <li>Return here and select <strong>Connect to TD Snap</strong>.</li>
       </ol>
+      <p>Changes are applied directly. There are no exports to download or import.</p>
     </details>
   </section>
 
-  <!-- Step 2 · Build -->
-  <section id="step-build" class="panel" aria-labelledby="build-heading" hidden>
-    <div class="panel-head">
-      <p class="step-eyebrow" aria-hidden="true">Step 2</p>
-      <h2 id="build-heading">Choose what to add and where it belongs</h2>
-      <p class="panel-sub" id="build-sub"></p>
-    </div>
-
+  <section id="step-build" class="wizard-card" aria-label="Guided editor" hidden>
+    <p id="build-sub" class="sr-only"></p>
     <form id="build-form" novalidate>
-      <div class="editor-layout">
-      <div class="editor-main">
-      <div class="field">
-        <span class="label-row"><span class="label-text">What do you want to do?</span></span>
-        <div class="segmented" role="radiogroup" aria-label="Edit type">
-          <button type="button" id="operation-existing" class="seg-btn selected"
-                  role="radio" aria-checked="true">Add to an existing page</button>
-          <button type="button" id="operation-new" class="seg-btn"
-                  role="radio" aria-checked="false">Create a new page</button>
+      <section id="wizard-operation" class="wizard-step" data-wizard-step="operation" aria-labelledby="operation-heading" hidden>
+        <p class="step-eyebrow">Choose a task</p>
+        <h2 id="operation-heading" tabindex="-1">What would you like to do?</h2>
+        <p class="lead">Choose the option that matches what you want to change today.</p>
+        <div class="choice-list" role="radiogroup" aria-label="What would you like to do?">
+          <button type="button" id="operation-existing" class="choice-card selected" role="radio" aria-checked="true">
+            <strong>Add buttons to an existing page</strong>
+            <span>Use a page that is already in this TD Snap page set.</span>
+          </button>
+          <button type="button" id="operation-new" class="choice-card" role="radio" aria-checked="false">
+            <strong>Create a new page</strong>
+            <span>Make a page and link it from an existing page.</span>
+          </button>
         </div>
-        <p class="field-hint" id="operation-hint">Choose the category first, then add words without creating another folder.</p>
-      </div>
-
-      <div class="field" id="title-field" hidden>
-        <label for="title-input">Page title</label>
-        <input id="title-input" type="text" autocomplete="off" spellcheck="false"
-               placeholder="Snacks" required maxlength="60">
-        <p class="field-hint">Also becomes the folder button label. A clear title
-        helps the app recommend an existing page where it belongs.</p>
-      </div>
-
-      <div class="field">
-        <label for="parent-select" id="target-label">Destination page</label>
-        <p class="field-hint destination-help">The page open in TD Snap is selected. Choose another page if this vocabulary belongs elsewhere.</p>
-        <div class="placement-advice" id="placement-advice" hidden>
-          <div>
-            <strong id="placement-title">AAC-friendly placement</strong>
-            <p id="placement-copy">Name the page above and the app will suggest an
-            existing location, keeping related vocabulary together.</p>
-          </div>
-          <button type="button" id="use-placement" class="btn btn-secondary btn-compact" hidden>Use suggestion</button>
+        <p id="operation-hint" class="field-hint">The shorter path adds buttons to a page you already use.</p>
+        <p class="step-error" data-error-for="operation" role="alert" tabindex="-1" hidden></p>
+        <div class="wizard-actions">
+          <button type="button" class="btn btn-ghost wizard-back">Back</button>
+          <button type="button" class="btn btn-primary wizard-next">Continue</button>
         </div>
-        <div class="parent-picker">
-          <div class="parent-search-row">
-            <input id="parent-filter" type="search" placeholder="Filter page options"
-                   aria-label="Filter page options without changing the selection">
-            <button type="button" id="parent-filter-clear" class="btn btn-ghost btn-compact">Clear filter</button>
-          </div>
-          <select id="parent-select" aria-describedby="parent-note"></select>
+      </section>
+
+      <section id="wizard-title" class="wizard-step" data-wizard-step="title" aria-labelledby="title-heading" hidden>
+        <p class="step-eyebrow">Name the page</p>
+        <h2 id="title-heading" tabindex="-1">What should the new page be called?</h2>
+        <p class="lead">Use a short, familiar name that will make sense in TD Snap.</p>
+        <div class="field" id="title-field">
+          <label for="title-input">Page name</label>
+          <input id="title-input" type="text" autocomplete="off" spellcheck="false" placeholder="For example, Snacks" required maxlength="60" aria-describedby="title-help title-error">
+          <p id="title-help" class="field-hint">This will also be the label on the button that opens the page.</p>
+          <p id="title-error" class="step-error" data-error-for="title" role="alert" tabindex="-1" hidden></p>
         </div>
-        <p class="field-hint" id="parent-note"><span id="parent-capacity"></span></p>
-      </div>
-
-      <div class="field">
-        <span class="label-row"><span class="label-text">Choose the type of page</span></span>
-        <div class="segmented" role="radiogroup" aria-label="Page style">
-          <button type="button" id="style-words" class="seg-btn selected"
-                  role="radio" aria-checked="true">Word page</button>
-          <button type="button" id="style-topic" class="seg-btn"
-                  role="radio" aria-checked="false">Topic page</button>
+        <div class="wizard-actions">
+          <button type="button" class="btn btn-ghost wizard-back">Back</button>
+          <button type="button" class="btn btn-primary wizard-next">Continue</button>
         </div>
-        <p class="field-hint" id="style-hint">Single words — each button speaks its label.</p>
-      </div>
+      </section>
 
-      <div class="field">
-        <div class="label-row">
-          <label for="word-input">Buttons</label>
-          <span id="capacity" class="capacity" aria-live="polite"></span>
-        </div>
-        <p class="field-hint buttons-hint">Add one word per button.</p>
-
-        <div id="fn-palette" class="fn-palette" hidden>
-          <div class="fn-heading-row">
-            <span class="fn-label">Communicative-function colors</span>
-            <button type="button" id="auto-topic-layout" class="btn btn-ghost btn-compact">Reapply row layout</button>
-          </div>
-          <div class="fn-row" role="radiogroup" aria-label="Communicative function">
-            <button type="button" class="fn-pill selected" data-fn="" role="radio" aria-checked="true">None</button>
-            <button type="button" class="fn-pill" data-fn="question" style="--fn:#1E88E5" role="radio" aria-checked="false">Question</button>
-            <button type="button" class="fn-pill" data-fn="comment" style="--fn:#F57C00" role="radio" aria-checked="false">Comment</button>
-            <button type="button" class="fn-pill" data-fn="positive" style="--fn:#43A047" role="radio" aria-checked="false">Positive</button>
-            <button type="button" class="fn-pill" data-fn="negative" style="--fn:#E53935" role="radio" aria-checked="false">Negative</button>
-            <button type="button" class="fn-pill" data-fn="personal" style="--fn:#8E24AA" role="radio" aria-checked="false">Personal</button>
-          </div>
-          <p class="field-hint">Topic pages automatically start with blue questions,
-          then orange comments, green positive responses, red negative responses,
-          and purple personal messages. Move a button to another row to change its
-          function, or click a button chip to override it.</p>
-        </div>
-
-        <div id="chipbox" class="chipbox">
-          <div class="topic-row-control topic-row-label" data-row-fn="question">
-            <span class="topic-row-icon" aria-hidden="true">?</span><strong>Question</strong>
-          </div>
-          <div class="topic-row-control topic-row-phrases" data-row-phrases="question"></div>
-          <button type="button" class="topic-row-control topic-row-add" data-add-fn="question" aria-label="Add a question">+</button>
-          <div class="topic-row-control topic-row-label" data-row-fn="comment">
-            <span class="topic-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H10l-6 4V5Z"/></svg></span><strong>Comment</strong>
-          </div>
-          <div class="topic-row-control topic-row-phrases" data-row-phrases="comment"></div>
-          <button type="button" class="topic-row-control topic-row-add" data-add-fn="comment" aria-label="Add a comment">+</button>
-          <div class="topic-row-control topic-row-label" data-row-fn="positive">
-            <span class="topic-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 10 11 3c.4-1 2-1 2.2.2l.5 4.8H19c1.4 0 2.4 1.3 2 2.6l-2.3 7A2 2 0 0 1 16.8 19H8V10Zm-5 0h4v9H3v-9Z"/></svg></span><strong>Positive</strong>
-          </div>
-          <div class="topic-row-control topic-row-phrases" data-row-phrases="positive"></div>
-          <button type="button" class="topic-row-control topic-row-add" data-add-fn="positive" aria-label="Add a positive phrase">+</button>
-          <div class="topic-row-control topic-row-label" data-row-fn="negative">
-            <span class="topic-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 14 11 21c.4 1 2 1 2.2-.2l.5-4.8H19c1.4 0 2.4-1.3 2-2.6l-2.3-7A2 2 0 0 0 16.8 5H8v9Zm-5 0h4V5H3v9Z"/></svg></span><strong>Negative</strong>
-          </div>
-          <div class="topic-row-control topic-row-phrases" data-row-phrases="negative"></div>
-          <button type="button" class="topic-row-control topic-row-add" data-add-fn="negative" aria-label="Add a negative phrase">+</button>
-          <div class="topic-row-control topic-row-label" data-row-fn="personal">
-            <span class="topic-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c.6-5 3.2-7 8-7s7.4 2 8 7H4Z"/></svg></span><strong>Personal</strong>
-          </div>
-          <div class="topic-row-control topic-row-phrases" data-row-phrases="personal"></div>
-          <button type="button" class="topic-row-control topic-row-add" data-add-fn="personal" aria-label="Add a personal phrase">+</button>
-          <input id="word-input" type="text" autocomplete="off" spellcheck="false"
-                 placeholder="Type a word, press Enter — or paste a comma-separated list"
-                 aria-label="Add a word, press Enter to confirm">
-        </div>
-        <p id="chip-note" class="status-line" role="status" aria-live="polite"></p>
-
-        <details class="ai-suggest" id="ai-suggest">
-          <summary><span id="ai-summary-text">Suggest words with AI</span> <span class="ai-tag">optional · runs on this computer</span></summary>
-          <div class="ai-body">
-            <p class="ai-intro">AI suggestions are optional. The model runs on this
-            computer; to keep suggestions accurate for specific topics (shows, games,
-            characters), the app also looks up public reference facts online using the
-            page title. That lookup can be turned off (set TDSNAP_WEB_GROUNDING=0), and
-            suggestions still work offline without it.</p>
-            <p class="ai-engine-line"><strong>Current status:</strong>
-            <span id="ai-engine-state" role="status" aria-live="polite">Checking for a local model…</span></p>
-
-            <div id="ai-download-card" class="ai-download" hidden>
-              <h4>Recommended: use the built-in model</h4>
-              <p class="ai-download-info">This is the simplest setup. The free
-              <span id="ai-model-name">…</span> model is <span id="ai-model-size">…</span>
-              and uses the <span id="ai-model-license">…</span> license.</p>
-              <ol class="ai-setup-steps">
-                <li>Click <strong>Download AI model</strong> below.</li>
-                <li>Keep this window open while the one-time download finishes.</li>
-                <li>When the status says suggestions are ready, select an existing
-                    page or enter a new page title, then click <strong>Suggest words</strong>.</li>
-              </ol>
-              <button type="button" id="ai-download-btn" class="btn btn-secondary">
-                <span class="btn-label">Download AI model</span>
-              </button>
-              <div class="progress" id="ai-progress" hidden
-                   role="progressbar" aria-label="Model download progress"
-                   aria-valuemin="0" aria-valuemax="100">
-                <div class="progress-fill" id="ai-progress-fill"></div>
-              </div>
-              <p id="ai-download-status" class="status-line" role="status" aria-live="polite"></p>
+      <section id="wizard-destination" class="wizard-step" data-wizard-step="destination" aria-labelledby="destination-heading" hidden>
+        <p class="step-eyebrow">Choose a page</p>
+        <h2 id="destination-heading" tabindex="-1">Which page would you like to change?</h2>
+        <p id="destination-intro" class="lead">The page currently open in TD Snap is selected.</p>
+        <div class="field">
+          <label for="parent-select" id="target-label">Page</label>
+          <div class="placement-advice" id="placement-advice" hidden>
+            <div>
+              <strong id="placement-title">Suggested page</strong>
+              <p id="placement-copy"></p>
             </div>
-
-            <div class="ai-controls">
-              <input id="ai-count" type="number" min="1" max="40" value="10"
-                     aria-label="How many words to suggest">
-              <button type="button" id="ai-go" class="btn btn-secondary">Suggest words</button>
+            <button type="button" id="use-placement" class="btn btn-secondary" hidden>Use suggestion</button>
+          </div>
+          <div class="parent-picker">
+            <div class="parent-search-row">
+              <label class="sr-only" for="parent-filter">Find a page</label>
+              <input id="parent-filter" type="search" placeholder="Find a page" aria-label="Find a page without changing the selection">
+              <button type="button" id="parent-filter-clear" class="btn btn-ghost btn-compact">Clear</button>
             </div>
-            <details class="ai-advanced">
-              <summary>Use Ollama instead (your own local model)</summary>
-              <div class="ai-ollama-setup">
-                <p>Choose this option if you already use Ollama or want to select
-                a different local model.</p>
-                <ol class="ai-setup-steps">
-                  <li><a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">Install Ollama</a>
-                      for Windows, macOS, or Linux, then open it.</li>
-                  <li>Open PowerShell or Terminal and run:<br>
-                    <code class="ai-command">ollama pull llama3.2</code>
-                  </li>
-                  <li>Leave Ollama running. Return here and click
-                      <strong>Check connection</strong>.</li>
-                </ol>
+            <select id="parent-select" aria-describedby="parent-capacity destination-error"></select>
+          </div>
+          <p class="field-hint"><span id="parent-capacity"></span></p>
+          <p id="destination-error" class="step-error" data-error-for="destination" role="alert" tabindex="-1" hidden></p>
+        </div>
+        <div id="build-error" class="alert" role="alert" tabindex="-1" hidden></div>
+        <div class="wizard-actions">
+          <button type="button" class="btn btn-ghost wizard-back">Back</button>
+          <button type="button" class="btn btn-primary wizard-next">Continue</button>
+        </div>
+        <button type="button" id="reset-btn" class="text-button">Disconnect and start over</button>
+      </section>
+
+      <section id="wizard-items" class="wizard-step" data-wizard-step="items" aria-labelledby="items-heading" hidden>
+        <p class="step-eyebrow">Add vocabulary</p>
+        <h2 id="items-heading" tabindex="-1">What words or phrases would you like to add?</h2>
+        <p class="lead">Type one item and select Add. You can also paste a comma-separated list.</p>
+
+        <div class="field">
+          <div class="label-row">
+            <label for="word-input">Words or phrases</label>
+            <span id="capacity" class="capacity" aria-live="polite"></span>
+          </div>
+          <p class="field-hint buttons-hint">Each item becomes one speaking button.</p>
+
+          <div id="fn-palette" class="fn-palette" hidden>
+            <div class="fn-heading-row">
+              <strong>Topic-page rows</strong>
+              <button type="button" id="auto-topic-layout" class="btn btn-ghost btn-compact">Arrange automatically</button>
+            </div>
+            <div class="fn-row" role="radiogroup" aria-label="Type of message">
+              <button type="button" class="fn-pill selected" data-fn="" role="radio" aria-checked="true">None</button>
+              <button type="button" class="fn-pill" data-fn="question" role="radio" aria-checked="false">Question</button>
+              <button type="button" class="fn-pill" data-fn="comment" role="radio" aria-checked="false">Comment</button>
+              <button type="button" class="fn-pill" data-fn="positive" role="radio" aria-checked="false">Positive</button>
+              <button type="button" class="fn-pill" data-fn="negative" role="radio" aria-checked="false">Negative</button>
+              <button type="button" class="fn-pill" data-fn="personal" role="radio" aria-checked="false">Personal</button>
+            </div>
+          </div>
+
+          <div class="word-entry-row">
+            <div id="chipbox" class="chipbox">
+              <div class="topic-row-control topic-row-label" data-row-fn="question"><strong>Question</strong></div>
+              <div class="topic-row-control topic-row-phrases" data-row-phrases="question"></div>
+              <button type="button" class="topic-row-control topic-row-add" data-add-fn="question" aria-label="Add a question">Add</button>
+              <div class="topic-row-control topic-row-label" data-row-fn="comment"><strong>Comment</strong></div>
+              <div class="topic-row-control topic-row-phrases" data-row-phrases="comment"></div>
+              <button type="button" class="topic-row-control topic-row-add" data-add-fn="comment" aria-label="Add a comment">Add</button>
+              <div class="topic-row-control topic-row-label" data-row-fn="positive"><strong>Positive</strong></div>
+              <div class="topic-row-control topic-row-phrases" data-row-phrases="positive"></div>
+              <button type="button" class="topic-row-control topic-row-add" data-add-fn="positive" aria-label="Add a positive phrase">Add</button>
+              <div class="topic-row-control topic-row-label" data-row-fn="negative"><strong>Negative</strong></div>
+              <div class="topic-row-control topic-row-phrases" data-row-phrases="negative"></div>
+              <button type="button" class="topic-row-control topic-row-add" data-add-fn="negative" aria-label="Add a negative phrase">Add</button>
+              <div class="topic-row-control topic-row-label" data-row-fn="personal"><strong>Personal</strong></div>
+              <div class="topic-row-control topic-row-phrases" data-row-phrases="personal"></div>
+              <button type="button" class="topic-row-control topic-row-add" data-add-fn="personal" aria-label="Add a personal phrase">Add</button>
+              <input id="word-input" type="text" autocomplete="off" spellcheck="false" placeholder="For example, help" aria-label="Word or phrase to add" aria-describedby="chip-note items-error">
+            </div>
+            <button type="button" id="word-add-btn" class="btn btn-secondary">Add</button>
+          </div>
+          <p id="chip-note" class="status-line" role="status" aria-live="polite"></p>
+          <p id="items-error" class="step-error" data-error-for="items" role="alert" tabindex="-1" hidden></p>
+        </div>
+
+        <details class="more-options">
+          <summary>More options</summary>
+          <div class="more-options-body">
+            <button type="button" id="layout-options-btn" class="btn btn-secondary">Change page layout</button>
+
+            <details class="ai-suggest" id="ai-suggest">
+              <summary><span id="ai-summary-text">Help me think of words</span> <span class="optional-tag">Optional · private</span></summary>
+              <div class="ai-body">
+                <p>Suggestions run on this computer. Nothing is required to finish your edit.</p>
+                <p><strong>Status:</strong> <span id="ai-engine-state" role="status" aria-live="polite">Check when you are ready.</span></p>
+                <div id="ai-download-card" class="ai-download" hidden>
+                  <h4>Recommended: use the built-in model</h4>
+                  <p>Download the free built-in model once to use private suggestions.</p>
+                  <p><span id="ai-model-name"></span> · <span id="ai-model-size"></span> · <span id="ai-model-license"></span></p>
+                  <button type="button" id="ai-download-btn" class="btn btn-secondary"><span class="btn-label">Download AI model</span></button>
+                  <div class="download-progress" id="ai-progress" hidden role="progressbar" aria-label="Model download progress" aria-valuemin="0" aria-valuemax="100"><div id="ai-progress-fill"></div></div>
+                  <p id="ai-download-status" class="status-line" role="status" aria-live="polite"></p>
+                </div>
+                <div class="ai-controls">
+                  <label for="ai-count">Number of suggestions</label>
+                  <input id="ai-count" type="number" min="1" max="40" value="10">
+                  <button type="button" id="ai-go" class="btn btn-secondary">Suggest words</button>
+                </div>
+                <details class="ai-advanced">
+                  <summary>Use my own Ollama model</summary>
+                  <ol class="ai-setup-steps">
+                    <li>Install and open Ollama.</li>
+                    <li>In PowerShell or Terminal, run <code>ollama pull llama3.2</code>.</li>
+                    <li>Leave Ollama running, then select <strong>Check connection</strong>.</li>
+                  </ol>
+                  <div class="ai-settings">
+                    <label for="ai-host">Ollama address</label>
+                    <input id="ai-host" type="text" value="http://localhost:11434">
+                    <label for="ai-model">Model name</label>
+                    <input id="ai-model" type="text" value="llama3.2">
+                  </div>
+                  <button type="button" id="ai-check-btn" class="btn btn-ghost">Check connection</button>
+                </details>
+                <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
               </div>
-              <div class="ai-settings">
-                <label>Ollama server address
-                  <input id="ai-host" type="text" value="http://localhost:11434">
-                </label>
-                <label>Ollama model name
-                  <input id="ai-model" type="text" value="llama3.2">
-                </label>
-              </div>
-              <button type="button" id="ai-check-btn" class="btn btn-ghost ai-check-btn">Check connection</button>
             </details>
-            <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
           </div>
         </details>
-      </div>
 
-      <div id="build-error" class="alert" role="alert" hidden></div>
+        <div class="wizard-actions">
+          <button type="button" class="btn btn-ghost wizard-back">Back</button>
+          <button type="submit" id="build-btn" class="btn btn-primary"><span id="build-btn-label" class="btn-label">Review changes</span></button>
+        </div>
+      </section>
 
-      <div class="editor-actions">
-        <button type="button" id="reset-btn" class="btn btn-ghost">Reconnect to TD Snap</button>
-      </div>
-      </div>
+      <section id="wizard-layout" class="wizard-step" data-wizard-step="layout" aria-labelledby="layout-heading" hidden>
+        <p class="step-eyebrow">Optional</p>
+        <h2 id="layout-heading" tabindex="-1">Change page layout</h2>
+        <p class="lead">Standard buttons are recommended. Topic-page rows group phrases by how they help someone communicate.</p>
+        <div class="field">
+          <span class="label-text">Page layout</span>
+          <div class="segmented" role="radiogroup" aria-label="Page layout">
+            <button type="button" id="style-words" class="seg-btn selected" role="radio" aria-checked="true">Standard buttons</button>
+            <button type="button" id="style-topic" class="seg-btn" role="radio" aria-checked="false">Topic-page rows</button>
+          </div>
+          <p id="style-hint" class="field-hint">Each button speaks its label.</p>
+        </div>
+        <div class="wizard-actions">
+          <button type="button" id="layout-back-btn" class="btn btn-primary">Back to words and phrases</button>
+        </div>
+      </section>
 
-      <aside class="preview-workspace" aria-labelledby="preview-label">
+      <section id="wizard-placement" class="wizard-step placement-step" data-wizard-step="placement" aria-labelledby="placement-heading" hidden>
+        <p class="step-eyebrow">Optional</p>
+        <h2 id="placement-heading" tabindex="-1">Adjust button placement</h2>
+        <p class="lead">Drag buttons to the exact cells you want, or focus one and use the arrow keys. Existing buttons stay locked.</p>
         <div class="preview-heading">
           <div>
-            <span class="label-text" id="preview-label">Preview</span>
-            <p class="field-hint preview-hint" id="preview-hint">Drag buttons to the exact cells you want, or focus one and use the arrow keys.</p>
+            <strong id="preview-page-title">AAC page preview</strong>
+            <p id="preview-hint" class="field-hint">This is an approximate layout preview.</p>
           </div>
           <span class="preview-live"><span aria-hidden="true"></span><b id="preview-live-text">Live</b></span>
         </div>
         <div class="preview-frame">
-          <div class="preview-chrome" aria-hidden="true">
-            <span class="preview-appmark">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path d="M5 5.5h14v10H10l-5 3.5V5.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                <path d="M8.5 9h7M8.5 12h4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              </svg>
-            </span>
-            <strong id="preview-page-title">AAC page preview</strong>
-            <span>Layout preview</span>
-          </div>
-          <div id="preview" class="preview" aria-label="Draggable preview of the new page's button grid"></div>
+          <div id="preview" class="preview" aria-label="Draggable preview of the button grid"></div>
           <div id="preview-loading" class="preview-loading" role="status" aria-live="polite" hidden>
             <span class="activity-spinner" aria-hidden="true"></span>
             <span id="preview-loading-text">Loading the page layout…</span>
           </div>
         </div>
-        <div class="preview-help">
-          <p>Existing buttons are locked. Focus a new button and use the arrow keys for precise placement.</p>
-          <div id="preview-legend" class="preview-legend" aria-label="Communicative function colors" hidden>
-            <span style="--legend:#1E88E5">Question</span>
-            <span style="--legend:#F57C00">Comment</span>
-            <span style="--legend:#43A047">Positive</span>
-            <span style="--legend:#E53935">Negative</span>
-            <span style="--legend:#8E24AA">Personal</span>
-          </div>
+        <div id="preview-legend" class="preview-legend" aria-label="Topic-page row colors" hidden>
+          <span>Question</span><span>Comment</span><span>Positive</span><span>Negative</span><span>Personal</span>
         </div>
-        <div class="actions preview-actions">
-          <button type="submit" id="build-btn" class="btn btn-primary">
-            <span id="build-btn-label" class="btn-label">Update TD Snap</span>
-          </button>
+        <div class="wizard-actions">
+          <button type="button" id="placement-back-btn" class="btn btn-primary">Back to review</button>
         </div>
-      </aside>
-      </div>
+      </section>
     </form>
   </section>
 
-  <!-- Step 3 · Result -->
-  <section id="step-result" class="panel" aria-labelledby="result-heading" hidden>
-    <div class="panel-head">
-      <p class="step-eyebrow" aria-hidden="true">Step 3</p>
-      <h2 id="result-heading">Page added <span id="edit-count" class="edit-count"></span></h2>
-      <p class="panel-sub" id="result-sub"></p>
+  <section id="step-result" class="wizard-card" aria-labelledby="result-heading" hidden>
+    <p class="step-eyebrow" id="result-eyebrow">Review</p>
+    <h2 id="result-heading" tabindex="-1">Ready to update TD Snap?</h2>
+    <p class="lead" id="result-sub"></p>
+
+    <div id="review-state">
+      <dl class="review-summary">
+        <div><dt>Change</dt><dd id="review-action"></dd></div>
+        <div><dt>Page</dt><dd id="review-target"></dd></div>
+        <div><dt>Buttons</dt><dd id="review-count"></dd></div>
+        <div><dt>Placement</dt><dd id="review-placement"></dd></div>
+      </dl>
+      <div class="review-list-wrap">
+        <h3>Buttons to add</h3>
+        <ul id="review-items" class="review-items"></ul>
+      </div>
+      <div id="review-error" class="alert" role="alert" tabindex="-1" hidden></div>
+      <div class="wizard-actions review-actions">
+        <button type="button" id="review-back-btn" class="btn btn-ghost">Back</button>
+        <button type="button" id="adjust-placement-btn" class="btn btn-secondary">Adjust placement</button>
+        <button type="button" id="confirm-update-btn" class="btn btn-primary"><span id="confirm-update-label" class="btn-label">Update TD Snap</span></button>
+      </div>
     </div>
 
-    <ul id="checks" class="checks" aria-label="Validation results"></ul>
-    <div id="result-warnings" class="alert warning" role="status" hidden></div>
-
-    <div class="actions">
-      <button type="button" id="another-btn" class="btn btn-secondary">Make another edit</button>
+    <div id="success-state" hidden>
+      <span id="edit-count" class="sr-only"></span>
+      <ul id="checks" class="checks" aria-label="Verification results"></ul>
+      <div id="result-warnings" class="alert warning" role="status" hidden></div>
+      <div class="wizard-actions">
+        <button type="button" id="another-btn" class="btn btn-secondary">Make another edit</button>
+      </div>
+      <p id="live-result-note" class="safety">Use Sync in TD Snap whenever you are ready to share the change.</p>
     </div>
-
-    <p id="live-result-note" class="safety">
-      The original page set in TD Snap was edited and verified. Use TD Snap's normal
-      Sync button whenever you are ready to share the change.
-    </p>
   </section>
-
-  </div>
-
 </main>
 
 <dialog id="chip-editor" class="chip-dialog" aria-labelledby="chip-editor-title">
   <form method="dialog" id="chip-editor-form">
-    <h3 id="chip-editor-title">Edit button</h3>
+    <h2 id="chip-editor-title">Edit button</h2>
     <div class="field">
       <label for="edit-label">Button label</label>
       <input id="edit-label" type="text" autocomplete="off" maxlength="60" required>
-      <p class="field-hint">What's shown on the button.</p>
+      <p class="field-hint">What appears on the button.</p>
     </div>
     <div class="field">
-      <label for="edit-message">Spoken phrase <span class="optional-tag">optional</span></label>
-      <input id="edit-message" type="text" autocomplete="off" maxlength="200"
-             placeholder="Leave empty to speak the label">
-      <p class="field-hint">Say a full sentence while the button stays short —
-      e.g. label “Lunch?”, phrase “What are we having for lunch?”.</p>
+      <label for="edit-message">What the button says <span class="optional-tag">optional</span></label>
+      <input id="edit-message" type="text" autocomplete="off" maxlength="200" placeholder="Leave empty to say the label">
     </div>
     <div class="field">
-      <span class="label-row"><span class="label-text">Color code</span></span>
-      <div class="fn-row" id="edit-fn-row" role="radiogroup" aria-label="Communicative function">
+      <span class="label-text">Topic-page row</span>
+      <div class="fn-row" id="edit-fn-row" role="radiogroup" aria-label="Type of message">
         <button type="button" class="fn-pill" data-fn="" role="radio">None</button>
-        <button type="button" class="fn-pill" data-fn="question" style="--fn:#1E88E5" role="radio">Question</button>
-        <button type="button" class="fn-pill" data-fn="comment" style="--fn:#F57C00" role="radio">Comment</button>
-        <button type="button" class="fn-pill" data-fn="positive" style="--fn:#43A047" role="radio">Positive</button>
-        <button type="button" class="fn-pill" data-fn="negative" style="--fn:#E53935" role="radio">Negative</button>
-        <button type="button" class="fn-pill" data-fn="personal" style="--fn:#8E24AA" role="radio">Personal</button>
+        <button type="button" class="fn-pill" data-fn="question" role="radio">Question</button>
+        <button type="button" class="fn-pill" data-fn="comment" role="radio">Comment</button>
+        <button type="button" class="fn-pill" data-fn="positive" role="radio">Positive</button>
+        <button type="button" class="fn-pill" data-fn="negative" role="radio">Negative</button>
+        <button type="button" class="fn-pill" data-fn="personal" role="radio">Personal</button>
       </div>
     </div>
-    <div class="actions dialog-actions">
-      <button type="submit" id="edit-save" class="btn btn-primary" value="save">
-        <span class="btn-label">Save</span>
-      </button>
+    <div class="dialog-actions">
+      <button type="submit" id="edit-save" class="btn btn-primary" value="save">Save</button>
       <button type="submit" class="btn btn-ghost" value="cancel" formnovalidate>Cancel</button>
       <button type="submit" id="edit-remove" class="btn btn-danger" value="remove" formnovalidate>Remove button</button>
     </div>
@@ -492,14 +351,13 @@
 </dialog>
 
 <footer class="foot">
-  <p><strong>Tip:</strong> Decide what you want to add and where it belongs before arranging buttons.</p>
-  <button type="button" id="quit-btn" class="quit-btn" hidden>Quit the app</button>
+  <p>Nothing leaves this computer.</p>
+  <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
 </footer>
 
-<section id="quit-screen" class="panel quit-screen" aria-live="polite" hidden>
+<section id="quit-screen" class="wizard-card quit-screen" aria-live="polite" hidden>
   <h2>The app has stopped</h2>
-  <p>AAC Editor is no longer running on this computer.
-  You can close this tab.</p>
+  <p>AAC Editor is no longer running on this computer. You can close this tab.</p>
 </section>
 
 <script src="/static/app.js"></script>

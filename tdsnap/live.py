@@ -893,6 +893,7 @@ def _set_value(control, value):
 
 
 def _create_page_link(auto, window, title, cell):
+    parent_page = _page_name(window)
     choice = _click_empty_icon(
         auto, window, cell,
         float(os.environ.get("TDSNAP_LINK_ICON_X", "0.39")),
@@ -916,19 +917,19 @@ def _create_page_link(auto, window, title, cell):
     _activate(create)
     _wait_for(
         lambda: (
-            True if _page_name(window).casefold() == title.casefold() else
+            True if _page_name(window).casefold() != parent_page.casefold() else
             _find(_page_group(window), name=title, control_type="ButtonControl")
         ),
         "TD Snap did not create the new page link.",
         timeout=10,
     )
-    if _page_name(window).casefold() != title.casefold():
+    if _page_name(window).casefold() == parent_page.casefold():
         _exit_edit_mode(window)
         link = _find(_page_group(window), name=title, control_type="ButtonControl")
         _open_page_button(window, link, title)
         _enter_edit_mode(window)
     _wait_for(
-        lambda: _page_name(window).casefold() == title.casefold(),
+        lambda: _page_name(window).casefold() != parent_page.casefold(),
         "TD Snap did not open the newly created page.",
         timeout=10,
     )

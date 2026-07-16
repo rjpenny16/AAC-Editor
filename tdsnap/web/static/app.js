@@ -1,6 +1,5 @@
 /* AAC Editor frontend. Plain JS, no build step.
-   State machine: load → build → result (result keeps the session so more
-   pages can be added before downloading). */
+   One-question wizard with a separate, explicit review and confirmation. */
 
 "use strict";
 
@@ -33,9 +32,12 @@ function inferPhraseFunction(label, suggested = "") {
 }
 
 const state = {
-  profile: { aac: "guided", ai: "none", layout: "new", assessed: false, skipped: false },
   mode: "live",
+  connected: false,
   operation: "existing", // "existing" | "new"
+  wizardStep: "connect",
+  pendingEdit: null,
+  placementAdjusted: false,
   grid: { cols: 8, rows: 5 },
   existingButtons: [],
   layoutFingerprint: null,
@@ -98,23 +100,91 @@ async function api(path, options) {
   return data;
 }
 
-function show(step) {
-  document.body.dataset.step = step;
-  $("step-welcome").hidden = step !== "welcome";
-  $("step-load").hidden = step !== "load";
-  $("step-build").hidden = step !== "build";
-  $("step-result").hidden = step !== "result";
-  const rail = document.querySelector(".workflow-rail");
-  if (rail) rail.hidden = step === "welcome";
-  const active = $(`step-${step}`);
-  if (active && typeof active.scrollIntoView === "function") {
-    active.scrollIntoView({ behavior: "smooth", block: "start" });
+function stepsFor(operation = state.operation) {
+  return operation === "new"
+    ? ["connect", "operation", "title", "destination", "items", "review"]
+    : ["connect", "operation", "destination", "items", "review"];
+}
+
+function stepName(step) {
+  if (step === "connect") return "Connect";
+  if (step === "operation") return "Choose a task";
+  if (step === "title") return "Name the page";
+  if (step === "destination") {
+    return state.operation === "existing" ? "Choose a page" : "Choose where it belongs";
   }
-  if (step === "welcome" || step === "result") {
-    const heading = active && active.querySelector("h2");
+  if (step === "items") return "Add words or phrases";
+  if (step === "review") return "Review";
+  return "Adjust placement";
+}
+
+function headingFor(step) {
+  return {
+    connect: "load-heading",
+    operation: "operation-heading",
+    title: "title-heading",
+    destination: "destination-heading",
+    items: "items-heading",
+    layout: "layout-heading",
+    placement: "placement-heading",
+    review: "result-heading",
+    result: "result-heading",
+  }[step];
+}
+
+function updateProgress(step) {
+  const steps = stepsFor();
+  const complete = step === "result";
+  const shownStep = step === "placement" ? "review" : step === "layout" ? "items" : step;
+  const index = Math.max(0, steps.indexOf(shownStep));
+  const value = complete ? steps.length : index + 1;
+  const label = complete
+    ? "Complete"
+    : step === "placement" || step === "layout"
+      ? `Optional · ${step === "placement" ? "Adjust placement" : "Change page layout"}`
+      : `Step ${value} of ${steps.length} · ${stepName(step)}`;
+  const progress = $("wizard-progress");
+  progress.max = steps.length;
+  progress.value = value;
+  progress.textContent = `${value} of ${steps.length}`;
+  $("wizard-progress-label").textContent = label;
+  $("wizard-progress-percent").textContent = `${Math.round((value / steps.length) * 100)}%`;
+  $("wizard-announcer").textContent = label;
+}
+
+function show(step, focus = true) {
+  if (step === "load") step = "connect";
+  state.wizardStep = step;
+  document.body.dataset.step = step;
+
+  const buildSteps = ["operation", "title", "destination", "items", "layout", "placement"];
+  $("step-load").hidden = step !== "connect";
+  $("step-build").hidden = !buildSteps.includes(step);
+  $("step-result").hidden = !["review", "result"].includes(step);
+  document.querySelectorAll("[data-wizard-step]").forEach((section) => {
+    section.hidden = section.dataset.wizardStep !== step;
+  });
+  updateProgress(step);
+
+  const active = step === "connect"
+    ? $("step-load")
+    : ["review", "result"].includes(step)
+      ? $("step-result")
+      : $(`wizard-${step}`);
+  if (active && typeof active.scrollIntoView === "function") {
+    const compactReflow = window.matchMedia(
+      "(max-height: 40rem), (min-resolution: 1.75dppx)"
+    ).matches;
+    const scrollTarget = compactReflow
+      ? document.querySelector(".wizard-progress")
+      : active;
+    scrollTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  if (focus) {
+    const heading = $(headingFor(step));
     if (heading) {
       heading.tabIndex = -1;
-      heading.focus({ preventScroll: true });
+      requestAnimationFrame(() => heading.focus({ preventScroll: true }));
     }
   }
 }
@@ -140,200 +210,13 @@ function setActivity(message = "") {
 }
 
 function setPreviewBusy(busy, message = "Loading the page layout…") {
-  const workspace = document.querySelector(".preview-workspace");
+  const workspace = document.querySelector(".preview-frame");
   const loading = $("preview-loading");
   workspace.classList.toggle("is-loading", busy);
   workspace.setAttribute("aria-busy", String(busy));
   $("preview-loading-text").textContent = message;
   loading.hidden = !busy;
 }
-
-function setHidden(id, hidden) {
-  const element = $(id);
-  if (element) element.hidden = hidden;
-}
-
-function setHiddenClass(selector, hidden) {
-  const element = document.querySelector(selector);
-  if (element) element.hidden = hidden;
-}
-
-const WORKFLOW_TOUR = [
-  ["Connect", "Choose the page set already open in TD Snap."],
-  ["Build", "Add vocabulary, choose a layout, and arrange the grid."],
-  ["Review", "Confirm the verified edit before continuing."],
-];
-let workflowTourIndex = 0;
-
-const WELCOME_STEPS = [
-  ["How would you like to begin?", "Choose the experience that feels right. You can change this later."],
-  ["Would you like local AI suggestions?", "They run on this computer and stay completely private."],
-  ["How familiar is this workspace?", "We’ll match the amount of guidance to you."],
-];
-let welcomeStep = 0;
-
-function renderWelcomeStep(step, focus = true) {
-  welcomeStep = Math.max(0, Math.min(step, WELCOME_STEPS.length - 1));
-  document.querySelectorAll("[data-welcome-step]").forEach((question) => {
-    question.hidden = Number(question.dataset.welcomeStep) !== welcomeStep;
-  });
-  document.querySelectorAll(".welcome-progress li").forEach((marker, index) => {
-    marker.classList.toggle("current", index === welcomeStep);
-    marker.classList.toggle("complete", index < welcomeStep);
-  });
-  $("welcome-count").textContent = `${welcomeStep + 1} of ${WELCOME_STEPS.length}`;
-  $("welcome-heading").textContent = WELCOME_STEPS[welcomeStep][0];
-  $("welcome-sub").textContent = WELCOME_STEPS[welcomeStep][1];
-  $("welcome-back").hidden = welcomeStep === 0;
-  $("welcome-start").textContent =
-    welcomeStep === WELCOME_STEPS.length - 1 ? "Start editing" : "Continue";
-  if (focus) $("welcome-heading").focus({ preventScroll: true });
-}
-
-function syncWelcomeSelections() {
-  const aliases = { expert: "standard", power: "assist" };
-  document.querySelectorAll("#step-welcome [role='radiogroup']").forEach((group) => {
-    const radios = [...group.querySelectorAll("[role='radio']")];
-    const profile = radios[0].dataset.profile;
-    const value = aliases[state.profile[profile]] || state.profile[profile];
-    const selected = radios.find((radio) => radio.dataset.value === value) || radios[0];
-    radios.forEach((radio) => {
-      const checked = radio === selected;
-      radio.classList.toggle("selected", checked);
-      radio.setAttribute("aria-checked", checked);
-      radio.tabIndex = checked ? 0 : -1;
-    });
-  });
-}
-
-function renderWorkflowTour() {
-  const tour = $("workflow-tour");
-  if (!tour) return;
-  document.querySelectorAll(".workflow-item").forEach((item) => {
-    item.classList.toggle("tour-current", item.dataset.step === String(workflowTourIndex + 1));
-  });
-  $("workflow-tour-count").textContent = `${workflowTourIndex + 1} of ${WORKFLOW_TOUR.length}`;
-  $("workflow-tour-title").textContent = WORKFLOW_TOUR[workflowTourIndex][0];
-  $("workflow-tour-copy").textContent = WORKFLOW_TOUR[workflowTourIndex][1];
-  $("workflow-tour-next").textContent =
-    workflowTourIndex === WORKFLOW_TOUR.length - 1 ? "Done" : "Next";
-  tour.hidden = false;
-}
-
-function startWorkflowTour() {
-  workflowTourIndex = 0;
-  renderWorkflowTour();
-}
-
-function dismissWorkflowTour(focusEditor = false) {
-  const tour = $("workflow-tour");
-  if (tour) tour.hidden = true;
-  document.querySelectorAll(".workflow-item").forEach((item) => {
-    item.classList.remove("tour-current");
-  });
-  if (focusEditor && !$("step-load").hidden) $("live-connect-btn").focus();
-}
-
-function applyProfile() {
-  const profile = state.profile;
-  const guided = !profile.skipped && profile.aac === "guided";
-  const expert = !profile.skipped && profile.aac === "expert";
-
-  if (guided) {
-    setOperation("existing");
-    setPageStyle("words");
-  } else if (expert) {
-    setOperation("new");
-    setPageStyle("topic");
-  }
-  setHidden("operation-hint", expert);
-  setHidden("style-hint", expert);
-  setHiddenClass(".preview-help", expert);
-  setHidden("placement-advice", expert || (!guided && state.operation === "existing"));
-
-  const hideAi = !profile.skipped && profile.ai === "none";
-  const powerAi = profile.ai === "power";
-  setHidden("ai-suggest", hideAi);
-  setHiddenClass(".ai-body", hideAi);
-  setHiddenClass(".ai-ollama-setup", !powerAi);
-  setHiddenClass(".ai-settings", !powerAi);
-  const advanced = document.querySelector(".ai-advanced");
-  if (advanced) advanced.open = powerAi && !profile.skipped;
-  if (!hideAi && profile.ai === "assist") setHidden("ai-download-card", false);
-
-  document.body.classList.toggle(
-    "layout-familiar",
-    !profile.skipped && profile.layout === "familiar"
-  );
-  document.querySelectorAll(".workflow-item em").forEach((description) => {
-    description.hidden = !profile.skipped && profile.layout === "familiar";
-  });
-  setHiddenClass(
-    ".workflow-intro",
-    !profile.skipped && profile.layout === "familiar"
-  );
-  if (!profile.skipped && profile.layout === "new") startWorkflowTour();
-  else dismissWorkflowTour();
-}
-
-document.querySelectorAll("#step-welcome [data-profile]").forEach((option) => {
-  option.addEventListener("click", () => {
-    const group = option.closest('[role="radiogroup"]');
-    group.querySelectorAll('[role="radio"]').forEach((radio) => {
-      const selected = radio === option;
-      radio.classList.toggle("selected", selected);
-      radio.setAttribute("aria-checked", selected);
-      radio.tabIndex = selected ? 0 : -1;
-    });
-    state.profile[option.dataset.profile] = option.dataset.value;
-  });
-});
-
-let setupReturnStep = "load";
-
-function openWorkspaceSetup() {
-  setupReturnStep = $("step-build").hidden
-    ? $("step-result").hidden ? "load" : "result"
-    : "build";
-  syncWelcomeSelections();
-  renderWelcomeStep(0, false);
-  show("welcome");
-}
-
-function finishOnboarding(skipped) {
-  if (skipped) {
-    Object.assign(state.profile, {
-      aac: "standard", ai: "power", layout: "new", skipped: true,
-    });
-  }
-  state.profile.assessed = true;
-  applyProfile();
-  show(setupReturnStep);
-  const heading = $(`step-${setupReturnStep}`).querySelector("h2");
-  heading.tabIndex = -1;
-  heading.focus({ preventScroll: true });
-}
-
-$("welcome-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (welcomeStep < WELCOME_STEPS.length - 1) renderWelcomeStep(welcomeStep + 1);
-  else finishOnboarding(false);
-});
-$("welcome-back").addEventListener("click", () => renderWelcomeStep(welcomeStep - 1));
-$("welcome-skip").addEventListener("click", () => finishOnboarding(true));
-$("menu-btn").addEventListener("click", openWorkspaceSetup);
-$("settings-btn").addEventListener("click", openWorkspaceSetup);
-$("workflow-tour-dismiss").addEventListener("click", () => dismissWorkflowTour(true));
-$("workflow-tour-next").addEventListener("click", () => {
-  if (workflowTourIndex === WORKFLOW_TOUR.length - 1) dismissWorkflowTour(true);
-  else {
-    workflowTourIndex += 1;
-    renderWorkflowTour();
-  }
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("workflow-tour").hidden) dismissWorkflowTour(true);
-});
 
 /* ---------- step 1: connect to live TD Snap ---------- */
 
@@ -357,6 +240,10 @@ async function refreshDetectedPages() {
 $("live-connect-btn").addEventListener("click", async () => {
   const button = $("live-connect-btn");
   const status = $("live-status");
+  if (state.connected) {
+    show("operation");
+    return;
+  }
   status.classList.remove("error");
   status.textContent = "Checking TD Snap...";
   setActivity("Checking for TD Snap…");
@@ -377,6 +264,7 @@ $("live-connect-btn").addEventListener("click", async () => {
     if (!data.unlocked) throw new Error("Unlock Windows, then try again.");
 
     state.mode = "live";
+    state.connected = true;
     state.grid = data.grid;
     state.currentPage = data.page;
     rememberDetectedPages(data);
@@ -386,6 +274,8 @@ $("live-connect-btn").addEventListener("click", async () => {
     state.parentTouched = false;
     state.recommendedParent = data.page;
     state.edits = 0;
+    state.pendingEdit = null;
+    state.placementAdjusted = false;
 
     $("file-badge").textContent = "Connected to TD Snap";
     $("file-badge").hidden = false;
@@ -393,16 +283,15 @@ $("live-connect-btn").addEventListener("click", async () => {
       `Connected to “${data.page}” · ${data.grid.cols}×${data.grid.rows} grid · ` +
       `${state.pages.length} pages in this page set`;
     $("preview-live-text").textContent = `Live · ${data.page}`;
-    $("build-btn-label").textContent = "Update TD Snap";
+    $("build-btn-label").textContent = "Review changes";
     status.textContent = "";
+    button.querySelector(".btn-label").dataset.idleLabel = "Continue";
     renderParents("");
     setOperation("existing");
     setActivity("Reading the current TD Snap page…");
     await loadTargetLayout(data.page);
-    show("build");
+    show("operation");
     startLiveMonitor();
-    $("word-input").focus();
-    if (state.profile.ai !== "none") checkAi();
   } catch (error) {
     status.classList.add("error");
     status.textContent = `Couldn’t connect to TD Snap. ${error.message}`;
@@ -491,6 +380,7 @@ async function syncLivePreview() {
 
 function setOperation(operation) {
   state.operation = operation;
+  state.pendingEdit = null;
   const existing = operation === "existing";
   $("operation-existing").classList.toggle("selected", existing);
   $("operation-existing").setAttribute("aria-checked", existing);
@@ -499,24 +389,28 @@ function setOperation(operation) {
   $("operation-existing").tabIndex = existing ? 0 : -1;
   $("operation-new").tabIndex = existing ? -1 : 0;
   $("title-field").hidden = existing;
-  $("placement-advice").hidden = existing && state.profile.aac !== "guided";
-  if (existing && state.profile.aac === "guided") {
+  $("destination-heading").textContent = existing
+    ? "Which page would you like to change?"
+    : "Where should people find this page?";
+  $("placement-advice").hidden = false;
+  if (existing) {
     $("placement-title").textContent = "Start with a familiar page";
     $("placement-copy").textContent =
       "Choose the page where these words already belong. You can create a separate page later.";
     $("use-placement").hidden = true;
   }
-  $("target-label").textContent = existing ? "Destination page" : "Link from";
-  document.querySelector(".destination-help").textContent = existing
+  $("target-label").textContent = existing ? "Page to change" : "Find it from";
+  $("destination-intro").textContent = existing
     ? "The page open in TD Snap is selected. Choose another page if this vocabulary belongs elsewhere."
     : "Choose the existing page where the new page's link belongs.";
   $("operation-hint").textContent = existing
     ? "Start by choosing the page where this vocabulary belongs."
     : "Name the new page, then choose where its link belongs.";
-  $("preview-hint").textContent = "This shows how the content will appear in TD Snap.";
-  $("build-btn-label").textContent = existing ? "Update TD Snap" : "Create page in TD Snap";
+  $("preview-hint").textContent = "Drag buttons to move them, or use the arrow keys.";
+  $("build-btn-label").textContent = "Review changes";
   state.existingButtons = existing ? state.existingButtons : [];
   state.layoutFingerprint = existing ? state.layoutFingerprint : null;
+  updateProgress(state.wizardStep);
   renderWords();
 }
 
@@ -531,7 +425,91 @@ $("operation-existing").addEventListener("click", async () => {
 $("operation-new").addEventListener("click", () => {
   setOperation("new");
   updatePlacementRecommendation();
-  $("title-input").focus();
+});
+
+function clearStepError(step) {
+  const error = document.querySelector(`[data-error-for="${step}"]`);
+  if (!error) return;
+  error.textContent = "";
+  error.hidden = true;
+}
+
+function showStepError(step, message) {
+  const error = document.querySelector(`[data-error-for="${step}"]`);
+  if (!error) return;
+  error.textContent = message;
+  error.hidden = false;
+  error.focus({ preventScroll: true });
+}
+
+async function continueWizard() {
+  clearStepError(state.wizardStep);
+  if (state.wizardStep === "operation") {
+    if (state.operation === "new") {
+      show("title");
+      return;
+    }
+    if (!state.layoutFingerprint && state.parentId) {
+      try {
+        await loadTargetLayout(titleOf(state.parentId));
+      } catch (error) {
+        showStepError("operation", `We couldn't read that page. ${error.message}`);
+        return;
+      }
+    }
+    show("destination");
+    return;
+  }
+
+  if (state.wizardStep === "title") {
+    const title = $("title-input").value.trim();
+    if (!title) {
+      showStepError("title", "Enter a name for the new page.");
+      return;
+    }
+    updatePlacementRecommendation();
+    show("destination");
+    return;
+  }
+
+  if (state.wizardStep === "destination") {
+    if (!state.parentId) {
+      showStepError("destination", "Choose a page before continuing.");
+      return;
+    }
+    if (state.operation === "existing" && state.targetLoading) {
+      showStepError("destination", "Please wait while the page finishes loading.");
+      return;
+    }
+    if (state.operation === "existing" && !state.layoutFingerprint) {
+      try {
+        await loadTargetLayout(titleOf(state.parentId));
+      } catch (error) {
+        showStepError("destination", `We couldn't read that page. ${error.message}`);
+        return;
+      }
+    }
+    if (state.operation === "new" && state.parentFree === 0) {
+      showStepError("destination", "That page is full. Choose a page with an open space.");
+      return;
+    }
+    show("items");
+  }
+}
+
+function backWizard() {
+  clearStepError(state.wizardStep);
+  const previous = state.operation === "new"
+    ? { operation: "connect", title: "operation", destination: "title", items: "destination" }
+    : { operation: "connect", destination: "operation", items: "destination" };
+  show(previous[state.wizardStep] || "operation");
+}
+
+document.querySelectorAll(".wizard-next").forEach((button) => {
+  button.addEventListener("click", continueWizard);
+});
+document.querySelectorAll(".wizard-back").forEach((button) => {
+  button.addEventListener("click", backWizard);
 });
 
 /* ---------- step 2: page style + function palette ---------- */
@@ -578,13 +556,11 @@ function setActiveFn(fn, manual = true) {
 $("style-words").addEventListener("click", () => setPageStyle("words"));
 $("style-topic").addEventListener("click", () => {
   setPageStyle("topic");
-  if (state.operation === "new") {
-    updatePlacementRecommendation();
-    $("title-input").focus();
-  } else {
-    $("word-input").focus();
-  }
+  if (state.operation === "new") updatePlacementRecommendation();
+  if (state.wizardStep === "items") $("word-input").focus();
 });
+$("layout-options-btn").addEventListener("click", () => show("layout"));
+$("layout-back-btn").addEventListener("click", () => show("items"));
 $("auto-topic-layout").addEventListener("click", () => {
   state.autoTopicRows = true;
   autoFormatTopicRows();
@@ -652,6 +628,10 @@ wordInput.addEventListener("keydown", (event) => {
   }
 });
 wordInput.addEventListener("blur", takeWordInput);
+$("word-add-btn").addEventListener("click", () => {
+  takeWordInput();
+  wordInput.focus();
+});
 wordInput.addEventListener("paste", (event) => {
   const text = (event.clipboardData || window.clipboardData).getData("text");
   if (text && text.includes(",")) {
@@ -700,6 +680,8 @@ function autoFormatTopicRows() {
 }
 
 function addWords(raw, forcedFn = null) {
+  clearStepError("items");
+  state.pendingEdit = null;
   const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
   let duplicates = 0;
   let overflow = 0;
@@ -1177,12 +1159,18 @@ function movePreviewItem(index, targetSlot) {
     item.fn = functionForSlot(item.slot);
     if (occupant) occupant.fn = functionForSlot(occupant.slot);
   }
+  state.placementAdjusted = true;
+  state.pendingEdit = null;
   renderWords();
 }
 
 /* ---------- step 2: AI engines ---------- */
 
 let aiReady = false;
+
+$("ai-suggest").addEventListener("toggle", () => {
+  if ($("ai-suggest").open && !aiReady) checkAi();
+});
 
 async function checkAi() {
   const label = $("ai-engine-state");
@@ -1404,80 +1392,184 @@ function clearBuildError() {
 }
 
 const buildForm = $("build-form");
-buildForm.addEventListener("input", clearBuildError);
-buildForm.addEventListener("change", clearBuildError);
-
-buildForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+function handleAnswerChange() {
   clearBuildError();
+  clearStepError(state.wizardStep);
+  state.pendingEdit = null;
+}
+buildForm.addEventListener("input", handleAnswerChange);
+buildForm.addEventListener("change", handleAnswerChange);
+
+function freezePayload(payload) {
+  payload.items.forEach(Object.freeze);
+  Object.freeze(payload.items);
+  return Object.freeze(payload);
+}
+
+function prepareReview() {
+  const title = $("title-input").value.trim();
+  const parentTitle = titleOf(state.parentId);
+  const operation = state.operation;
+  const payload = freezePayload({
+    operation: operation === "existing" ? "add_to_existing_page" : "create_page",
+    title,
+    items: state.words.map((item) => ({
+      label: item.label,
+      message: item.message,
+      border_color: item.fn ? FUNCTIONS[item.fn].color : null,
+      slot: item.slot,
+      symbol: item.symbol !== false,
+    })),
+    parent: parentTitle,
+    page: parentTitle,
+    fingerprint: state.layoutFingerprint,
+  });
+  state.pendingEdit = Object.freeze({
+    operation,
+    path: operation === "existing" ? "/api/tdsnap/edit-plan" : "/api/tdsnap/page",
+    payload,
+    title,
+    parentTitle,
+    displayTitle: operation === "existing" ? parentTitle : title,
+  });
+
+  $("result-eyebrow").textContent = "Review";
+  $("result-heading").textContent = operation === "existing"
+    ? "Ready to update TD Snap?"
+    : "Ready to create this page?";
+  $("result-sub").textContent = "Check the details below. Nothing changes until you confirm.";
+  $("review-state").hidden = false;
+  $("success-state").hidden = true;
+  $("review-action").textContent = operation === "existing"
+    ? "Add buttons to an existing page"
+    : "Create a new page";
+  $("review-target").textContent = operation === "existing"
+    ? parentTitle
+    : `${title}, found from ${parentTitle}`;
+  $("review-count").textContent = `${payload.items.length} button${payload.items.length === 1 ? "" : "s"}`;
+  $("review-placement").textContent = state.placementAdjusted
+    ? "The positions you chose"
+    : "Automatic — the first open spaces";
+  $("confirm-update-label").textContent = operation === "existing"
+    ? "Update TD Snap"
+    : "Create page in TD Snap";
+  $("review-error").hidden = true;
+  $("review-error").innerHTML = "";
+
+  const list = $("review-items");
+  list.innerHTML = "";
+  payload.items.forEach((item) => {
+    const row = document.createElement("li");
+    const label = document.createElement("strong");
+    label.textContent = item.label;
+    row.append(label);
+    if (item.message) {
+      const message = document.createElement("span");
+      message.textContent = `Speaks: ${item.message}`;
+      row.append(message);
+    }
+    list.append(row);
+  });
+  show("review");
+}
+
+function showReviewError(message, details = []) {
+  const box = $("review-error");
+  box.innerHTML = "";
+  const lead = document.createElement("strong");
+  lead.textContent = message;
+  box.append(lead);
+  if (details.length) {
+    const list = document.createElement("ul");
+    details.forEach((detail) => {
+      const item = document.createElement("li");
+      item.textContent = detail;
+      list.append(item);
+    });
+    box.append(list);
+  }
+  box.hidden = false;
+  box.focus({ preventScroll: true });
+}
+
+buildForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (state.wizardStep !== "items") {
+    continueWizard();
+    return;
+  }
+  clearBuildError();
+  clearStepError("items");
 
   takeWordInput();
 
-  const title = $("title-input").value.trim();
-  const failures = [];
-  if (state.operation === "new" && !title) failures.push("Give the new page a title.");
-  if (!state.words.length) failures.push("Add at least one word.");
-  if (state.parentId == null) failures.push("Choose a target page.");
-  if (state.operation === "existing" && state.targetLoading) {
-    failures.push("Wait for the selected page layout to finish loading.");
-  }
-  if (state.operation === "existing" && !state.layoutFingerprint) {
-    failures.push("Reload the selected page layout before editing.");
-  }
-  if (state.operation === "new" && state.parentFree === 0) {
-    failures.push("The selected page is full; pick one with a free cell.");
-  }
-  if (failures.length) {
-    showBuildError("Almost there:", failures);
+  if (!state.words.length) {
+    showStepError("items", "Add at least one word or phrase before continuing.");
     return;
   }
 
-  const button = $("build-btn");
-  setBusy(button, true, state.operation === "existing"
+  prepareReview();
+});
+
+$("review-back-btn").addEventListener("click", () => {
+  state.pendingEdit = null;
+  show("items");
+});
+
+$("adjust-placement-btn").addEventListener("click", () => {
+  renderPreview();
+  show("placement");
+});
+
+$("placement-back-btn").addEventListener("click", () => {
+  prepareReview();
+});
+
+$("confirm-update-btn").addEventListener("click", async () => {
+  const pending = state.pendingEdit;
+  if (!pending) {
+    showReviewError("The review is out of date.", ["Go back, review your buttons again, then confirm."]);
+    return;
+  }
+
+  const button = $("confirm-update-btn");
+  $("review-error").hidden = true;
+  setBusy(button, true, pending.operation === "existing"
     ? "Updating and checking…"
     : "Creating and checking…");
-  buildForm.setAttribute("aria-busy", "true");
-  setActivity(state.operation === "existing"
-    ? "Updating TD Snap and verifying the edit…"
-    : "Creating the page in TD Snap and verifying it…");
+  $("step-result").setAttribute("aria-busy", "true");
+  setActivity(pending.operation === "existing"
+    ? "Updating TD Snap and checking the result…"
+    : "Creating the page in TD Snap and checking the result…");
   try {
-    const path = state.operation === "existing" ? "/api/tdsnap/edit-plan" : "/api/tdsnap/page";
-    const payload = {
-      operation: state.operation === "existing" ? "add_to_existing_page" : "create_page",
-      title,
-      items: state.words.map((item) => ({
-        label: item.label,
-        message: item.message,
-        border_color: item.fn ? FUNCTIONS[item.fn].color : null,
-        slot: item.slot,
-        symbol: item.symbol !== false,
-      })),
-      parent: titleOf(state.parentId),
-      page: titleOf(state.parentId),
-      fingerprint: state.layoutFingerprint,
-    };
-    const data = await api(path, {
+    const data = await api(pending.path, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-TDSnap-Editor": "1",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(pending.payload),
     });
     state.edits = data.edits || state.edits + 1;
     try {
       await refreshDetectedPages();
     } catch {
-      // The edit is already verified; a later reconnect can refresh the list.
+      // The requested edit is already verified. A later reconnect can refresh the list.
     }
-    renderResult(state.operation === "existing" ? titleOf(state.parentId) : title, data);
+    renderResult(
+      pending.displayTitle,
+      data,
+      pending.operation,
+      pending.parentTitle
+    );
+    state.pendingEdit = null;
     show("result");
   } catch (error) {
-    if (state.operation === "new" && title) {
+    if (pending.operation === "new" && pending.title) {
       try {
         await refreshDetectedPages();
         const created = state.pages.find(
-          (page) => page.title.toLocaleLowerCase() === title.toLocaleLowerCase()
+          (page) => page.title.toLocaleLowerCase() === pending.title.toLocaleLowerCase()
         );
         if (created) {
           setOperation("existing");
@@ -1494,29 +1586,31 @@ buildForm.addEventListener("submit", async (event) => {
             (item) => !present.has(item.label.trim().toLocaleLowerCase())
           );
           const alreadyAdded = before - state.words.length;
+          state.pendingEdit = null;
+          state.placementAdjusted = false;
           renderWords();
-          showBuildError("TD Snap created the page, but stopped before every button was added.", [
-            error.message,
-            alreadyAdded
-              ? `${alreadyAdded} button${alreadyAdded === 1 ? " is" : "s are"} already on the page.`
-              : "The empty page is ready to resume.",
-            state.words.length
-              ? `${state.words.length} button${state.words.length === 1 ? " remains" : "s remain"} ready. Review them, then select Update TD Snap.`
-              : "All requested buttons are already present.",
-          ]);
+          show("items");
+          showStepError(
+            "items",
+            `TD Snap created the page but stopped before every button was added. ` +
+            `${alreadyAdded} button${alreadyAdded === 1 ? " is" : "s are"} already there. ` +
+            (state.words.length
+              ? `${state.words.length} button${state.words.length === 1 ? " remains" : "s remain"}. Review and try the update again.`
+              : "All requested buttons are already there.")
+          );
           return;
         }
       } catch {
         // Keep the original error if TD Snap cannot be inspected for recovery.
       }
     }
-    showBuildError("TD Snap couldn’t complete the edit.", [
+    showReviewError("TD Snap couldn't complete the edit.", [
       error.message,
       ...(error.problems || []),
     ]);
   } finally {
     setActivity();
-    buildForm.setAttribute("aria-busy", "false");
+    $("step-result").setAttribute("aria-busy", "false");
     setBusy(button, false);
   }
 });
@@ -1542,15 +1636,15 @@ function showBuildError(message, details) {
 /* ---------- step 3: result ---------- */
 
 const CHECK_LABELS = {
-  sqlite_integrity: "Database integrity and foreign keys",
-  linkage_chains: "Every button, layout, link and sync record is complete",
-  roundtrip_diff: "Everything else in your page set is untouched, byte for byte",
-  td_snap_edit: "TD Snap saved the page in the open page set",
-  navigation: "The chosen folder button opens the new page",
-  target_page: "The requested existing page was edited",
+  sqlite_integrity: "The TD Snap page set is healthy",
+  linkage_chains: "Every new button and page link is complete",
+  roundtrip_diff: "Everything else stayed unchanged",
+  td_snap_edit: "TD Snap saved the change",
+  navigation: "The new page opens from the chosen page",
+  target_page: "The chosen page was updated",
   content: "Every requested speaking button is present",
-  positions: "Every new button is in its reviewed empty cell",
-  symbols: "Matching symbols were added to the buttons",
+  positions: "Every new button is in the reviewed space",
+  symbols: "Matching symbols were added when available",
   topic_format: "Topic-page row colors were applied in TD Snap",
 };
 
@@ -1559,16 +1653,17 @@ const CHECK_SVG =
   'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M20 6 9 17l-5-5"/></svg>';
 
-function renderResult(title, data) {
-  $("result-heading").childNodes[0].textContent = "TD Snap updated ";
+function renderResult(title, data, operation = state.operation, parentTitle = titleOf(state.parentId)) {
+  $("review-state").hidden = true;
+  $("success-state").hidden = false;
+  $("result-eyebrow").textContent = "Complete";
+  $("result-heading").textContent = "Done — TD Snap was updated";
   $("edit-count").textContent =
     state.edits > 1 ? `· ${state.edits} edits this session` : "";
-  $("another-btn").textContent = state.operation === "existing"
-    ? "Add more buttons"
-    : "Create another page";
-  $("result-sub").textContent = state.operation === "existing"
+  $("another-btn").textContent = "Make another edit";
+  $("result-sub").textContent = operation === "existing"
     ? `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to “${title}” without moving its existing vocabulary.`
-    : `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, and “${titleOf(state.parentId)}” now links to it.`;
+    : `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, and “${parentTitle}” now links to it.`;
 
   const checks = $("checks");
   checks.innerHTML = "";
@@ -1606,52 +1701,41 @@ function renderResult(title, data) {
 
 }
 
-$("another-btn").addEventListener("click", async () => {
-  const button = $("another-btn");
-  const previousParent = state.parentId;
+$("another-btn").addEventListener("click", () => {
   state.words = [];
-  state.parentId = previousParent || state.currentPage;
+  state.parentId = state.currentPage;
   state.parentFree = 1;
-  state.parentTouched = state.operation === "existing";
+  state.parentTouched = false;
   state.existingButtons = [];
   state.layoutFingerprint = null;
+  state.pendingEdit = null;
+  state.placementAdjusted = false;
   $("title-input").value = "";
-  $("parent-capacity").textContent =
-    `The link will use the first free cell on “${titleOf(state.parentId)}”.`;
+  $("parent-capacity").textContent = "";
   $("chip-note").textContent = "";
   parentFilter.value = "";
+  setOperation("existing");
+  setPageStyle("words");
   renderParents("");
   renderWords();
-  if (state.operation === "new") updatePlacementRecommendation();
   $("build-error").hidden = true;
   $("result-warnings").hidden = true;
-  show("build");
-  if (state.operation === "existing") {
-    setBusy(button, true, "Refreshing…");
-    setActivity("Refreshing the TD Snap page before the next edit…");
-    try {
-      await loadTargetLayout(titleOf(state.parentId));
-      $("word-input").focus();
-    } catch (error) {
-      showBuildError("Couldn’t refresh the selected TD Snap page.", [error.message]);
-    } finally {
-      setActivity();
-      setBusy(button, false);
-    }
-  } else {
-    $("title-input").focus();
-  }
+  show("operation");
 });
 
 function resetConnection() {
   clearInterval(liveMonitor);
   state.mode = "live";
+  state.connected = false;
   state.words = [];
   state.parentId = null;
   state.parentFree = null;
+  state.pendingEdit = null;
+  state.placementAdjusted = false;
   $("file-badge").hidden = true;
   $("title-input").value = "";
   $("live-status").textContent = "";
+  $("live-connect-btn").querySelector(".btn-label").textContent = "Connect to TD Snap";
   $("parent-capacity").textContent = "";
   $("chip-note").textContent = "";
   $("build-error").hidden = true;
