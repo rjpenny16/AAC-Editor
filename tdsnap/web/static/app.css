@@ -1,4 +1,4 @@
-/* TD Snap Page Builder — Apple-style design language.
+/* AAC Editor — Apple-style design language.
    SF system stack, layered #f5f5f7/white surfaces, hairline separators,
    system-blue pill buttons, iOS segmented controls, frosted-glass chrome,
    and full light/dark support. */
@@ -129,18 +129,18 @@ body {
   gap: 0.75rem;
 }
 
-/* Wordmark drawn as a miniature macOS app icon. */
 .wordmark {
   width: 1.85rem;
   height: 1.85rem;
   flex: none;
   display: grid;
   place-items: center;
-  color: #fff;
-  border-radius: 26.5%;
-  background: linear-gradient(180deg, #3d9bff 0%, #0071e3 100%);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.4),
-              0 1px 3px rgba(0, 113, 227, 0.35);
+}
+
+.wordmark img {
+  width: 2.65rem;
+  height: 2.65rem;
+  max-width: none;
 }
 
 .topbar h1 {
@@ -1136,9 +1136,9 @@ body {
 .wordmark {
   width: 2.15rem;
   height: 2.15rem;
-  border-radius: 9px;
-  background: var(--accent);
-  box-shadow: 0 4px 12px rgba(20, 99, 223, 0.22);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .brand-lockup { display: grid; gap: 0.03rem; }
@@ -2198,7 +2198,7 @@ button, input, select, textarea { font: inherit; }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.wordmark { display: none; }
+.wordmark { display: grid; }
 .brand-lockup h1 {
   color: var(--ink);
   font-size: 1.55rem;
@@ -2799,7 +2799,17 @@ input:focus, select:focus {
 
 @media (max-width: 68rem) {
   .brand-lockup h1 { font-size: 1.2rem; }
-  .workflow-rail { width: 29rem; }
+  .workflow-rail {
+    position: sticky;
+    top: 4.625rem;
+    left: auto;
+    width: 100%;
+    height: 3.75rem;
+    padding: 0 1rem;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.98);
+    transform: none;
+  }
   .workflow-rail ol { gap: 1.25rem; }
   .workflow-item { min-width: 6.4rem; }
   .workflow-item:not(:last-child)::after { width: 1rem; }
@@ -3142,4 +3152,109 @@ body[data-step="welcome"] .shell { min-height: calc(100vh - 4.625rem); }
 @media (prefers-reduced-motion: reduce) {
   .welcome-question:not([hidden]), .welcome-choice-art img { animation: none; }
   .welcome-choice, .welcome-choice-art, .welcome-choice-summary, .welcome-choice-context { transition: none; }
+}
+
+/* ---------- premium feedback states ---------- */
+
+.btn.loading {
+  color: inherit !important;
+  opacity: 1;
+  cursor: progress;
+}
+.btn-primary.loading { color: #fff !important; }
+.btn-secondary.loading, .btn-ghost.loading { color: var(--accent-ink) !important; }
+.btn.loading .btn-label { visibility: visible; }
+.btn.loading::after {
+  position: static;
+  order: -1;
+  flex: none;
+}
+
+.app-activity {
+  min-height: 3rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  animation: activity-in 180ms var(--ease-out) both;
+}
+.app-activity::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #72b4ff, transparent);
+  transform: translateX(-100%);
+  animation: activity-progress 1.35s ease-in-out infinite;
+}
+
+.status-line.error,
+.status-line.success {
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.72rem 0.85rem;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 7%, #fff);
+  box-shadow: 0 4px 14px rgba(11, 27, 66, 0.05);
+  font-weight: 600;
+  line-height: 1.45;
+}
+.status-line.error::before,
+.status-line.success::before {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  margin-top: 0.05rem;
+  border-radius: 50%;
+  color: #fff;
+  background: currentColor;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.status-line.error::before { content: "!"; background: var(--danger); }
+.status-line.success { color: #137a39; }
+.status-line.success::before { content: "✓"; background: #137a39; }
+
+.alert {
+  position: relative;
+  padding: 0.9rem 1rem 0.9rem 3rem;
+  box-shadow: 0 6px 18px rgba(215, 0, 21, 0.07);
+}
+.alert::before {
+  content: "!";
+  position: absolute;
+  top: 0.85rem;
+  left: 0.9rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--danger);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.alert.warning { box-shadow: 0 6px 18px rgba(154, 82, 0, 0.07); }
+.alert.warning::before { background: #9a5200; }
+
+@keyframes activity-in {
+  from { opacity: 0; transform: translate(-50%, -8px) scale(0.98); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes activity-progress {
+  50%, 100% { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-activity, .app-activity::after { animation: none; }
 }

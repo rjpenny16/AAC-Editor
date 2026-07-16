@@ -1,0 +1,14 @@
+T  hyperframes preview
+[?25l|
+o  Studio running
+[?25h
+
+  Project   td-snap-page-builder-product-promo
+  Studio    http://localhost:3017
+
+  Edit with your AI agent — it has HyperFrames skills installed.
+  Changes reload automatically in the studio.
+
+  Press Ctrl+C to stop
+
+[BrowserManager] Browser launched (HeadlessChrome/152.0.7928.2, screenshot, gl=--use-gl=angle --use-angle=swiftshader, headlessShell=true, platform=win32)

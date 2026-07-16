@@ -1,0 +1,304 @@
+<template>
+  <div data-hf-id="hf-iinp" id="root" data-composition-id="01-time-for-communication" data-width="1920" data-height="1080" data-duration="5.9">
+    <style>
+      @font-face {
+        font-family: "Archivo";
+        src: url("assets/fonts/Archivo.ttf") format("truetype");
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: block;
+      }
+
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        container-type: size;
+        color: #1d1d1f;
+        font-family: "Archivo", sans-serif;
+      }
+
+      .clip {
+        position: absolute;
+        inset: 0;
+        box-sizing: border-box;
+      }
+
+      .f01-ground {
+        background: #ffffff;
+      }
+
+      .f01-stage {
+        height: 900px;
+        overflow: hidden;
+      }
+
+      .f01-diagonal {
+        position: absolute;
+        inset: 0 0 0 auto;
+        width: 730px;
+        background: rgba(0, 113, 227, 0.08);
+        clip-path: polygon(29% 0, 100% 0, 100% 100%, 0 100%);
+      }
+
+      .f01-type-stage {
+        position: absolute;
+        z-index: 3;
+        top: 148px;
+        left: 96px;
+        width: 1100px;
+        height: 570px;
+      }
+
+      .f01-accent-line {
+        width: 60px;
+        height: 4px;
+        margin-bottom: 52px;
+        border-radius: 2px;
+        background: #0071e3;
+      }
+
+      .f01-beat {
+        position: absolute;
+        top: 56px;
+        left: 0;
+        width: 1100px;
+        min-height: 290px;
+        margin: 0;
+        letter-spacing: -0.045em;
+        line-height: 1.02;
+      }
+
+      .f01-beat-one {
+        display: flex;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 0 0.25em;
+        max-width: 1080px;
+        font-size: 106px;
+        font-weight: 700;
+      }
+
+      .f01-reveal-word,
+      .f01-word {
+        display: inline-block;
+        transform-origin: 50% 55%;
+        will-change: transform, opacity, text-shadow;
+      }
+
+      .f01-beat-two {
+        max-width: 1060px;
+        min-width: 1060px;
+        font-size: 102px;
+        font-weight: 650;
+        opacity: 0;
+      }
+
+      .f01-beat-three {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        opacity: 0;
+      }
+
+      .f01-from {
+        color: #55555a;
+        font-size: 48px;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+      }
+
+      .f01-keyword {
+        color: #1d1d1f;
+        font-size: 98px;
+        font-weight: 750;
+        letter-spacing: -0.05em;
+      }
+
+      .f01-workspace {
+        position: absolute;
+        z-index: 2;
+        top: 172px;
+        right: -330px;
+        width: 980px;
+        height: 613px;
+        overflow: hidden;
+        border: 1.5px solid rgba(0, 113, 227, 0.2);
+        border-radius: 14px;
+        background: rgba(0, 113, 227, 0.04);
+        filter: url(#f01-workspace-streak);
+        will-change: transform, filter, opacity;
+      }
+
+      .f01-workspace img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .f01-progress {
+        top: 892px;
+        right: auto;
+        bottom: auto;
+        width: 320px;
+        height: 3px;
+        background: #0071e3;
+      }
+    </style>
+
+    <div data-hf-id="hf-mn3u" class="clip f01-ground" data-start="0" data-duration="5.9" data-track-index="0" aria-hidden="true"></div>
+
+    <div data-hf-id="hf-ortf" class="clip f01-stage" data-start="0" data-duration="5.9" data-track-index="1">
+      <div data-hf-id="hf-t2jg" class="f01-diagonal" aria-hidden="true"></div>
+
+      <svg data-hf-id="hf-p3r6" width="0" height="0" aria-hidden="true" style="position: absolute">
+        <defs data-hf-id="hf-mh0t">
+          <filter data-hf-id="hf-fc96" id="f01-workspace-streak" x="-50%" y="-50%" width="200%" height="200%">
+            <fegaussianblur data-hf-id="hf-rjwg" id="f01-workspace-blur" in="SourceGraphic" stdDeviation="20 0" />
+          </filter>
+        </defs>
+      </svg>
+
+      <div data-hf-id="hf-cxz9" class="f01-type-stage" aria-label="Editing AAC pages. Should not take time away. From communicating.">
+        <div data-hf-id="hf-yute" class="f01-accent-line" aria-hidden="true"></div>
+
+        <div data-hf-id="hf-ag5r" id="f01-beat-1" class="f01-beat f01-beat-one">
+          <span data-hf-id="hf-9bpe" id="f01-word-editing" class="f01-reveal-word">Editing</span>
+          <span data-hf-id="hf-y7bq" id="f01-word-aac" class="f01-reveal-word">AAC</span>
+          <span data-hf-id="hf-v52q" id="f01-word-pages" class="f01-reveal-word">pages</span>
+        </div>
+
+        <div data-hf-id="hf-139w" id="f01-beat-2" class="f01-beat f01-beat-two" aria-live="off"></div>
+
+        <div data-hf-id="hf-ttel" id="f01-beat-3" class="f01-beat f01-beat-three">
+          <span data-hf-id="hf-231v" class="f01-word f01-from" data-word="from">from</span>
+          <span data-hf-id="hf-8vau" class="f01-word f01-keyword" data-word="communicating">communicating</span>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-n9jc" id="f01-workspace" class="f01-workspace">
+        <img data-hf-id="hf-rpkv" src="assets/editor-workspace.png" alt="TD Snap Page Builder workspace">
+      </div>
+    </div>
+
+    <div data-hf-id="hf-nuww" class="clip f01-progress" data-start="0" data-duration="5.9" data-track-index="2" aria-hidden="true"></div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      const WORDS = [
+        { id: "#f01-word-editing", text: "Editing", speedFactor: 1, hold: 0.02 },
+        { id: "#f01-word-aac", text: "AAC", speedFactor: 1, hold: 0.02 },
+        { id: "#f01-word-pages", text: "pages", speedFactor: 1, hold: 0.02 },
+      ];
+      let wordCursor = 0.02;
+      const WORD_TIMELINE = WORDS.map((entry) => {
+        const duration = 0.24 + entry.text.length * 0.025 / entry.speedFactor + entry.hold;
+        const start = wordCursor;
+        wordCursor += 0.05 + entry.text.length * 0.012;
+        return { ...entry, start, duration };
+      });
+
+      WORD_TIMELINE.forEach((entry) => {
+        tl.fromTo(
+          entry.id,
+          { y: 42, opacity: 0, filter: "blur(10px)" },
+          { y: 0, opacity: 1, filter: "blur(0px)", duration: entry.duration, ease: "power3.out" },
+          entry.start,
+        );
+      });
+
+      tl.set("#f01-beat-1", { opacity: 0 }, 1.2);
+      tl.set("#f01-beat-2", { opacity: 1 }, 1.2);
+      tl.set("#f01-beat-2", { opacity: 0 }, 3.3);
+      tl.set("#f01-beat-3", { opacity: 1 }, 3.3);
+
+      const TEXT_STATES = [
+        { t: 0, text: "" },
+        { t: 1.2, text: "should not take time" },
+        { t: 2.15, text: "away" },
+      ];
+      const textAt = (time) => {
+        for (let i = TEXT_STATES.length - 1; i >= 0; i -= 1) {
+          if (time >= TEXT_STATES[i].t) return TEXT_STATES[i].text;
+        }
+        return "";
+      };
+
+      const TIMINGS = {
+        from: { start: 3.3, end: 3.56 },
+        communicating: { start: 3.62, end: 4.05 },
+      };
+      const ATTACK = 0.14;
+      const RELEASE = 0.3;
+      const REST_LEVEL = 0.16;
+      const envelope = (time, start, end) => {
+        if (time < start) return 0;
+        if (time < end) return Math.min((time - start) / ATTACK, 1);
+        if (time < end + RELEASE) {
+          return 1 - ((time - end) / RELEASE) * (1 - REST_LEVEL);
+        }
+        return REST_LEVEL;
+      };
+      const lerp = (a, b, amount) => Math.round(a + (b - a) * amount);
+
+      const beatTwo = document.getElementById("f01-beat-2");
+      const glowWords = document.querySelectorAll(".f01-word");
+      let lastText = null;
+      const driver = { t: 0 };
+      tl.to(
+        driver,
+        {
+          t: 5.5,
+          duration: 5.5,
+          ease: "none",
+          onUpdate: () => {
+            const nextText = textAt(driver.t);
+            if (nextText !== lastText) {
+              beatTwo.textContent = nextText;
+              lastText = nextText;
+            }
+
+            glowWords.forEach((word) => {
+              const timing = TIMINGS[word.dataset.word];
+              const env = envelope(driver.t, timing.start, timing.end);
+              const isKeyword = word.dataset.word === "communicating";
+              const colorAmount = isKeyword
+                ? Math.min(Math.max((driver.t - timing.start) / ATTACK, 0), 1)
+                : env;
+              const rest = isKeyword ? [29, 29, 31] : [85, 85, 90];
+              const active = isKeyword ? [0, 113, 227] : [29, 29, 31];
+              word.style.color = `rgb(${lerp(rest[0], active[0], colorAmount)}, ${lerp(rest[1], active[1], colorAmount)}, ${lerp(rest[2], active[2], colorAmount)})`;
+              word.style.textShadow = `0 0 ${18 * env}px rgba(0, 113, 227, ${0.04 + 0.18 * env})`;
+              word.style.transform = `scale(${1 + 0.04 * env})`;
+            });
+          },
+        },
+        0,
+      );
+
+      const blurNode = document.getElementById("f01-workspace-blur");
+      const blurProxy = { value: 20 };
+      const writeBlur = () => blurNode.setAttribute("stdDeviation", `${blurProxy.value} 0`);
+      writeBlur();
+
+      tl.fromTo(
+        "#f01-workspace",
+        { x: 420, opacity: 0 },
+        { x: 0, opacity: 0.96, duration: 0.5, ease: "power4.out" },
+        3.38,
+      );
+      tl.to(
+        blurProxy,
+        { value: 0, duration: 0.5, ease: "power4.out", onUpdate: writeBlur },
+        3.38,
+      );
+
+      window.__timelines["01-time-for-communication"] = tl;
+    </script>
+  </div>
+</template>

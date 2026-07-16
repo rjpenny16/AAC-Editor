@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-echo Starting TD Snap Page Builder...
+echo Starting AAC Editor...
 echo.
 
 REM Check if Python is installed

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>TD Snap Page Builder - Product Promo</title>
+    <script src="assets/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0a0a0f;
+        font-family: Arial, "Segoe UI", sans-serif;
+      }
+
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .caption-text-wrapper {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 54px;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+      }
+
+      .caption-line {
+        max-width: 1420px;
+        padding: 18px 34px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 100px;
+        background: rgba(10, 10, 15, 0.9);
+        color: #ffffff;
+        font-size: 42px;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        text-align: center;
+        box-shadow: 0 18px 46px rgba(0, 0, 0, 0.32);
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-u6xb" id="root" data-composition-id="main" data-start="0" data-duration="38" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-wgo0" id="scene-1" class="scene clip" data-composition-id="scene1-logo-intro" data-composition-src="compositions/scene1-logo-intro.html" data-start="0" data-duration="3" data-track-index="1" data-width="1920" data-height="1080" data-hidden=""></div>
+
+      <div data-hf-id="hf-1xrv" id="scene-2-4" class="scene clip" data-composition-id="scene2-4-canvas" data-composition-src="compositions/scene2-4-canvas.html" data-start="3" data-duration="29" data-track-index="1" data-width="1920" data-height="1080" data-hidden=""></div>
+
+      <div data-hf-id="hf-mxw2" id="scene-5" class="scene clip" data-composition-id="scene5-logo-outro" data-composition-src="compositions/scene5-logo-outro.html" data-start="32" data-duration="6" data-track-index="1" data-width="1920" data-height="1080" data-hidden=""></div>
+
+      <audio data-hf-id="hf-4f5v" id="voice-intro" class="clip" src=".media/audio/voice/voice-intro.mp3" data-start="0.25" data-duration="3.994" data-track-index="3" data-volume="0.92"></audio>
+      <audio data-hf-id="hf-9wni" id="voice-connect" class="clip" src=".media/audio/voice/voice-connect.mp3" data-start="4.6" data-duration="6.362" data-track-index="3" data-volume="0.92"></audio>
+      <audio data-hf-id="hf-kytd" id="voice-build" class="clip" src=".media/audio/voice/voice-build.mp3" data-start="13.2" data-duration="3.715" data-track-index="3" data-volume="0.92"></audio>
+      <audio data-hf-id="hf-j9oa" id="voice-review" class="clip" src=".media/audio/voice/voice-review.mp3" data-start="22.25" data-duration="6.13" data-track-index="3" data-volume="0.92"></audio>
+      <audio data-hf-id="hf-rq07" id="voice-outro" class="clip" src=".media/audio/voice/voice-outro.mp3" data-start="32.55" data-duration="4.133" data-track-index="3" data-volume="0.92"></audio>
+
+      <div data-hf-id="hf-9hcg" id="captions-comp" class="clip" data-composition-id="captions" data-start="3" data-duration="29" data-track-index="2" data-width="1920" data-height="1080">
+        <div data-hf-id="hf-yd6g" class="caption-text-wrapper">
+          <div data-hf-id="hf-69n6" id="caption-text" class="caption-line">Open the page set already in TD Snap.</div>
+        </div>
+
+        <script>
+          (function () {
+            const tl = gsap.timeline({ paused: true });
+            const text = document.querySelector("#caption-text");
+
+            tl.fromTo(
+              text,
+              { opacity: 0, y: 44 },
+              { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" },
+              0.5,
+            );
+            tl.to(text, { opacity: 0, y: -28, duration: 0.35, ease: "power3.in" }, 8.5);
+            tl.set(text, { innerText: "Add the words you need - all at once.", y: 44 }, 9.1);
+            tl.to(text, { opacity: 1, y: 0, duration: 0.65, ease: "power3.out" }, 9.1);
+            tl.to(text, { opacity: 0, y: -28, duration: 0.35, ease: "power3.in" }, 18.1);
+            tl.set(text, { innerText: "Review every change before it runs.", y: 44 }, 18.7);
+            tl.to(text, { opacity: 1, y: 0, duration: 0.65, ease: "power3.out" }, 18.7);
+            tl.to(text, { opacity: 0, y: -28, duration: 0.4, ease: "power3.in" }, 27.8);
+
+            window.__timelines = window.__timelines || {};
+            window.__timelines["captions"] = tl;
+          })();
+        </script>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const mainTl = gsap.timeline({ paused: true });
+
+      mainTl.set("#scene-2-4", { scale: 1, opacity: 1 }, 3);
+      mainTl.to(
+        "#scene-2-4",
+        { scale: 0.94, opacity: 0, duration: 0.55, ease: "power3.in" },
+        31.45,
+      );
+
+      window.__timelines["main"] = mainTl;
+    </script>
+  </body>
+</html>

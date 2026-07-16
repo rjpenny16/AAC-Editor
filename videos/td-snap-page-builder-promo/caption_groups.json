@@ -1,0 +1,880 @@
+{
+  "total_duration_s": 45,
+  "width": 1920,
+  "height": 1080,
+  "groups": [
+    {
+      "id": "caption-group-0",
+      "frame": 1,
+      "start": 0.12,
+      "end": 1.408,
+      "text": "Editing AAC pages",
+      "words": [
+        {
+          "id": "caption-word-0-0",
+          "text": "Editing",
+          "start": 0.12,
+          "end": 0.672
+        },
+        {
+          "id": "caption-word-0-1",
+          "text": "AAC",
+          "start": 0.707,
+          "end": 0.944
+        },
+        {
+          "id": "caption-word-0-2",
+          "text": "pages",
+          "start": 0.979,
+          "end": 1.373
+        }
+      ]
+    },
+    {
+      "id": "caption-group-1",
+      "frame": 1,
+      "start": 1.408,
+      "end": 2.539,
+      "text": "should not take",
+      "words": [
+        {
+          "id": "caption-word-1-0",
+          "text": "should",
+          "start": 1.408,
+          "end": 1.882
+        },
+        {
+          "id": "caption-word-1-1",
+          "text": "not",
+          "start": 1.917,
+          "end": 2.153
+        },
+        {
+          "id": "caption-word-1-2",
+          "text": "take",
+          "start": 2.188,
+          "end": 2.504
+        }
+      ]
+    },
+    {
+      "id": "caption-group-2",
+      "frame": 1,
+      "start": 2.539,
+      "end": 3.59,
+      "text": "time away from",
+      "words": [
+        {
+          "id": "caption-word-2-0",
+          "text": "time",
+          "start": 2.539,
+          "end": 2.854
+        },
+        {
+          "id": "caption-word-2-1",
+          "text": "away",
+          "start": 2.889,
+          "end": 3.205
+        },
+        {
+          "id": "caption-word-2-2",
+          "text": "from",
+          "start": 3.24,
+          "end": 3.555
+        }
+      ]
+    },
+    {
+      "id": "caption-group-3",
+      "frame": 1,
+      "start": 3.59,
+      "end": 4.736,
+      "text": "communicating.",
+      "words": [
+        {
+          "id": "caption-word-3-0",
+          "text": "communicating.",
+          "start": 3.59,
+          "end": 4.616
+        }
+      ]
+    },
+    {
+      "id": "caption-group-4",
+      "frame": 2,
+      "start": 5.62,
+      "end": 6.196,
+      "text": "TD Snap",
+      "words": [
+        {
+          "id": "caption-word-4-0",
+          "text": "TD",
+          "start": 5.62,
+          "end": 5.789
+        },
+        {
+          "id": "caption-word-4-1",
+          "text": "Snap",
+          "start": 5.824,
+          "end": 6.161
+        }
+      ]
+    },
+    {
+      "id": "caption-group-5",
+      "frame": 2,
+      "start": 6.196,
+      "end": 7.904,
+      "text": "Page Builder connects",
+      "words": [
+        {
+          "id": "caption-word-5-0",
+          "text": "Page",
+          "start": 6.196,
+          "end": 6.534
+        },
+        {
+          "id": "caption-word-5-1",
+          "text": "Builder",
+          "start": 6.569,
+          "end": 7.159
+        },
+        {
+          "id": "caption-word-5-2",
+          "text": "connects",
+          "start": 7.194,
+          "end": 7.869
+        }
+      ]
+    },
+    {
+      "id": "caption-group-6",
+      "frame": 2,
+      "start": 7.904,
+      "end": 8.396,
+      "text": "to the",
+      "words": [
+        {
+          "id": "caption-word-6-0",
+          "text": "to",
+          "start": 7.904,
+          "end": 8.073
+        },
+        {
+          "id": "caption-word-6-1",
+          "text": "the",
+          "start": 8.108,
+          "end": 8.361
+        }
+      ]
+    },
+    {
+      "id": "caption-group-7",
+      "frame": 2,
+      "start": 8.396,
+      "end": 9.682,
+      "text": "page set already",
+      "words": [
+        {
+          "id": "caption-word-7-0",
+          "text": "page",
+          "start": 8.396,
+          "end": 8.733
+        },
+        {
+          "id": "caption-word-7-1",
+          "text": "set",
+          "start": 8.768,
+          "end": 9.021
+        },
+        {
+          "id": "caption-word-7-2",
+          "text": "already",
+          "start": 9.056,
+          "end": 9.647
+        }
+      ]
+    },
+    {
+      "id": "caption-group-8",
+      "frame": 2,
+      "start": 9.682,
+      "end": 10.258,
+      "text": "open in",
+      "words": [
+        {
+          "id": "caption-word-8-0",
+          "text": "open",
+          "start": 9.682,
+          "end": 10.019
+        },
+        {
+          "id": "caption-word-8-1",
+          "text": "in",
+          "start": 10.054,
+          "end": 10.223
+        }
+      ]
+    },
+    {
+      "id": "caption-group-9",
+      "frame": 2,
+      "start": 10.258,
+      "end": 10.919,
+      "text": "TD Snap.",
+      "words": [
+        {
+          "id": "caption-word-9-0",
+          "text": "TD",
+          "start": 10.258,
+          "end": 10.427
+        },
+        {
+          "id": "caption-word-9-1",
+          "text": "Snap.",
+          "start": 10.462,
+          "end": 10.799
+        }
+      ]
+    },
+    {
+      "id": "caption-group-10",
+      "frame": 3,
+      "start": 11.62,
+      "end": 12.696,
+      "text": "Add many words",
+      "words": [
+        {
+          "id": "caption-word-10-0",
+          "text": "Add",
+          "start": 11.62,
+          "end": 11.863
+        },
+        {
+          "id": "caption-word-10-1",
+          "text": "many",
+          "start": 11.898,
+          "end": 12.221
+        },
+        {
+          "id": "caption-word-10-2",
+          "text": "words",
+          "start": 12.256,
+          "end": 12.661
+        }
+      ]
+    },
+    {
+      "id": "caption-group-11",
+      "frame": 3,
+      "start": 12.696,
+      "end": 13.771,
+      "text": "to an existing",
+      "words": [
+        {
+          "id": "caption-word-11-0",
+          "text": "to",
+          "start": 12.696,
+          "end": 12.858
+        },
+        {
+          "id": "caption-word-11-1",
+          "text": "an",
+          "start": 12.893,
+          "end": 13.054
+        },
+        {
+          "id": "caption-word-11-2",
+          "text": "existing",
+          "start": 13.089,
+          "end": 13.736
+        }
+      ]
+    },
+    {
+      "id": "caption-group-12",
+      "frame": 3,
+      "start": 13.771,
+      "end": 14.13,
+      "text": "page,",
+      "words": [
+        {
+          "id": "caption-word-12-0",
+          "text": "page,",
+          "start": 13.771,
+          "end": 14.095
+        }
+      ]
+    },
+    {
+      "id": "caption-group-13",
+      "frame": 3,
+      "start": 14.13,
+      "end": 14.766,
+      "text": "or build",
+      "words": [
+        {
+          "id": "caption-word-13-0",
+          "text": "or",
+          "start": 14.13,
+          "end": 14.292
+        },
+        {
+          "id": "caption-word-13-1",
+          "text": "build",
+          "start": 14.327,
+          "end": 14.731
+        }
+      ]
+    },
+    {
+      "id": "caption-group-14",
+      "frame": 3,
+      "start": 14.766,
+      "end": 15.16,
+      "text": "a new",
+      "words": [
+        {
+          "id": "caption-word-14-0",
+          "text": "a",
+          "start": 14.766,
+          "end": 14.847
+        },
+        {
+          "id": "caption-word-14-1",
+          "text": "new",
+          "start": 14.882,
+          "end": 15.125
+        }
+      ]
+    },
+    {
+      "id": "caption-group-15",
+      "frame": 3,
+      "start": 15.16,
+      "end": 15.958,
+      "text": "topic page,",
+      "words": [
+        {
+          "id": "caption-word-15-0",
+          "text": "topic",
+          "start": 15.16,
+          "end": 15.564
+        },
+        {
+          "id": "caption-word-15-1",
+          "text": "page,",
+          "start": 15.599,
+          "end": 15.923
+        }
+      ]
+    },
+    {
+      "id": "caption-group-16",
+      "frame": 3,
+      "start": 15.958,
+      "end": 16.876,
+      "text": "all at once.",
+      "words": [
+        {
+          "id": "caption-word-16-0",
+          "text": "all",
+          "start": 15.958,
+          "end": 16.201
+        },
+        {
+          "id": "caption-word-16-1",
+          "text": "at",
+          "start": 16.236,
+          "end": 16.397
+        },
+        {
+          "id": "caption-word-16-2",
+          "text": "once.",
+          "start": 16.432,
+          "end": 16.756
+        }
+      ]
+    },
+    {
+      "id": "caption-group-17",
+      "frame": 4,
+      "start": 18.62,
+      "end": 19.801,
+      "text": "See every button",
+      "words": [
+        {
+          "id": "caption-word-17-0",
+          "text": "See",
+          "start": 18.62,
+          "end": 18.851
+        },
+        {
+          "id": "caption-word-17-1",
+          "text": "every",
+          "start": 18.886,
+          "end": 19.27
+        },
+        {
+          "id": "caption-word-17-2",
+          "text": "button",
+          "start": 19.305,
+          "end": 19.766
+        }
+      ]
+    },
+    {
+      "id": "caption-group-18",
+      "frame": 4,
+      "start": 19.801,
+      "end": 21.52,
+      "text": "before anything changes.",
+      "words": [
+        {
+          "id": "caption-word-18-0",
+          "text": "before",
+          "start": 19.801,
+          "end": 20.262
+        },
+        {
+          "id": "caption-word-18-1",
+          "text": "anything",
+          "start": 20.297,
+          "end": 20.912
+        },
+        {
+          "id": "caption-word-18-2",
+          "text": "changes.",
+          "start": 20.947,
+          "end": 21.485
+        }
+      ]
+    },
+    {
+      "id": "caption-group-19",
+      "frame": 4,
+      "start": 21.52,
+      "end": 23.889,
+      "text": "Existing vocabulary stays locked,",
+      "words": [
+        {
+          "id": "caption-word-19-0",
+          "text": "Existing",
+          "start": 21.52,
+          "end": 22.135
+        },
+        {
+          "id": "caption-word-19-1",
+          "text": "vocabulary",
+          "start": 22.17,
+          "end": 22.939
+        },
+        {
+          "id": "caption-word-19-2",
+          "text": "stays",
+          "start": 22.974,
+          "end": 23.358
+        },
+        {
+          "id": "caption-word-19-3",
+          "text": "locked,",
+          "start": 23.393,
+          "end": 23.854
+        }
+      ]
+    },
+    {
+      "id": "caption-group-20",
+      "frame": 4,
+      "start": 23.889,
+      "end": 25.301,
+      "text": "and exact placement",
+      "words": [
+        {
+          "id": "caption-word-20-0",
+          "text": "and",
+          "start": 23.889,
+          "end": 24.12
+        },
+        {
+          "id": "caption-word-20-1",
+          "text": "exact",
+          "start": 24.155,
+          "end": 24.539
+        },
+        {
+          "id": "caption-word-20-2",
+          "text": "placement",
+          "start": 24.574,
+          "end": 25.266
+        }
+      ]
+    },
+    {
+      "id": "caption-group-21",
+      "frame": 4,
+      "start": 25.301,
+      "end": 25.909,
+      "text": "stays in",
+      "words": [
+        {
+          "id": "caption-word-21-0",
+          "text": "stays",
+          "start": 25.301,
+          "end": 25.685
+        },
+        {
+          "id": "caption-word-21-1",
+          "text": "in",
+          "start": 25.72,
+          "end": 25.874
+        }
+      ]
+    },
+    {
+      "id": "caption-group-22",
+      "frame": 4,
+      "start": 25.909,
+      "end": 26.756,
+      "text": "your hands.",
+      "words": [
+        {
+          "id": "caption-word-22-0",
+          "text": "your",
+          "start": 25.909,
+          "end": 26.217
+        },
+        {
+          "id": "caption-word-22-1",
+          "text": "hands.",
+          "start": 26.252,
+          "end": 26.636
+        }
+      ]
+    },
+    {
+      "id": "caption-group-23",
+      "frame": 5,
+      "start": 27.62,
+      "end": 28.358,
+      "text": "Duplicate,",
+      "words": [
+        {
+          "id": "caption-word-23-0",
+          "text": "Duplicate,",
+          "start": 27.62,
+          "end": 28.323
+        }
+      ]
+    },
+    {
+      "id": "caption-group-24",
+      "frame": 5,
+      "start": 28.358,
+      "end": 29.018,
+      "text": "capacity,",
+      "words": [
+        {
+          "id": "caption-word-24-0",
+          "text": "capacity,",
+          "start": 28.358,
+          "end": 28.983
+        }
+      ]
+    },
+    {
+      "id": "caption-group-25",
+      "frame": 5,
+      "start": 29.018,
+      "end": 30.372,
+      "text": "and linkage checks",
+      "words": [
+        {
+          "id": "caption-word-25-0",
+          "text": "and",
+          "start": 29.018,
+          "end": 29.252
+        },
+        {
+          "id": "caption-word-25-1",
+          "text": "linkage",
+          "start": 29.287,
+          "end": 29.834
+        },
+        {
+          "id": "caption-word-25-2",
+          "text": "checks",
+          "start": 29.869,
+          "end": 30.337
+        }
+      ]
+    },
+    {
+      "id": "caption-group-26",
+      "frame": 5,
+      "start": 30.372,
+      "end": 31.926,
+      "text": "happen automatically.",
+      "words": [
+        {
+          "id": "caption-word-26-0",
+          "text": "happen",
+          "start": 30.372,
+          "end": 30.841
+        },
+        {
+          "id": "caption-word-26-1",
+          "text": "automatically.",
+          "start": 30.876,
+          "end": 31.891
+        }
+      ]
+    },
+    {
+      "id": "caption-group-27",
+      "frame": 5,
+      "start": 31.926,
+      "end": 33.125,
+      "text": "Optional AI runs",
+      "words": [
+        {
+          "id": "caption-word-27-0",
+          "text": "Optional",
+          "start": 31.926,
+          "end": 32.551
+        },
+        {
+          "id": "caption-word-27-1",
+          "text": "AI",
+          "start": 32.586,
+          "end": 32.742
+        },
+        {
+          "id": "caption-word-27-2",
+          "text": "runs",
+          "start": 32.777,
+          "end": 33.09
+        }
+      ]
+    },
+    {
+      "id": "caption-group-28",
+      "frame": 5,
+      "start": 33.125,
+      "end": 33.706,
+      "text": "locally.",
+      "words": [
+        {
+          "id": "caption-word-28-0",
+          "text": "locally.",
+          "start": 33.125,
+          "end": 33.671
+        }
+      ]
+    },
+    {
+      "id": "caption-group-29",
+      "frame": 5,
+      "start": 33.706,
+      "end": 35.884,
+      "text": "Nothing leaves this computer.",
+      "words": [
+        {
+          "id": "caption-word-29-0",
+          "text": "Nothing",
+          "start": 33.706,
+          "end": 34.253
+        },
+        {
+          "id": "caption-word-29-1",
+          "text": "leaves",
+          "start": 34.288,
+          "end": 34.757
+        },
+        {
+          "id": "caption-word-29-2",
+          "text": "this",
+          "start": 34.792,
+          "end": 35.104
+        },
+        {
+          "id": "caption-word-29-3",
+          "text": "computer.",
+          "start": 35.139,
+          "end": 35.764
+        }
+      ]
+    },
+    {
+      "id": "caption-group-30",
+      "frame": 6,
+      "start": 36.62,
+      "end": 37.641,
+      "text": "Update TD Snap,",
+      "words": [
+        {
+          "id": "caption-word-30-0",
+          "text": "Update",
+          "start": 36.62,
+          "end": 37.078
+        },
+        {
+          "id": "caption-word-30-1",
+          "text": "TD",
+          "start": 37.113,
+          "end": 37.266
+        },
+        {
+          "id": "caption-word-30-2",
+          "text": "Snap,",
+          "start": 37.301,
+          "end": 37.606
+        }
+      ]
+    },
+    {
+      "id": "caption-group-31",
+      "frame": 6,
+      "start": 37.641,
+      "end": 38.892,
+      "text": "review the result,",
+      "words": [
+        {
+          "id": "caption-word-31-0",
+          "text": "review",
+          "start": 37.641,
+          "end": 38.1
+        },
+        {
+          "id": "caption-word-31-1",
+          "text": "the",
+          "start": 38.135,
+          "end": 38.364
+        },
+        {
+          "id": "caption-word-31-2",
+          "text": "result,",
+          "start": 38.399,
+          "end": 38.857
+        }
+      ]
+    },
+    {
+      "id": "caption-group-32",
+      "frame": 6,
+      "start": 38.892,
+      "end": 39.42,
+      "text": "and get",
+      "words": [
+        {
+          "id": "caption-word-32-0",
+          "text": "and",
+          "start": 38.892,
+          "end": 39.121
+        },
+        {
+          "id": "caption-word-32-1",
+          "text": "get",
+          "start": 39.156,
+          "end": 39.385
+        }
+      ]
+    },
+    {
+      "id": "caption-group-33",
+      "frame": 6,
+      "start": 39.42,
+      "end": 39.949,
+      "text": "back to",
+      "words": [
+        {
+          "id": "caption-word-33-0",
+          "text": "back",
+          "start": 39.42,
+          "end": 39.726
+        },
+        {
+          "id": "caption-word-33-1",
+          "text": "to",
+          "start": 39.761,
+          "end": 39.914
+        }
+      ]
+    },
+    {
+      "id": "caption-group-34",
+      "frame": 6,
+      "start": 39.949,
+      "end": 40.859,
+      "text": "what matters:",
+      "words": [
+        {
+          "id": "caption-word-34-0",
+          "text": "what",
+          "start": 39.949,
+          "end": 40.254
+        },
+        {
+          "id": "caption-word-34-1",
+          "text": "matters:",
+          "start": 40.289,
+          "end": 40.824
+        }
+      ]
+    },
+    {
+      "id": "caption-group-35",
+      "frame": 6,
+      "start": 40.859,
+      "end": 42.109,
+      "text": "less time editing,",
+      "words": [
+        {
+          "id": "caption-word-35-0",
+          "text": "less",
+          "start": 40.859,
+          "end": 41.164
+        },
+        {
+          "id": "caption-word-35-1",
+          "text": "time",
+          "start": 41.199,
+          "end": 41.505
+        },
+        {
+          "id": "caption-word-35-2",
+          "text": "editing,",
+          "start": 41.54,
+          "end": 42.074
+        }
+      ]
+    },
+    {
+      "id": "caption-group-36",
+      "frame": 6,
+      "start": 42.109,
+      "end": 43.903,
+      "text": "more time communicating.",
+      "words": [
+        {
+          "id": "caption-word-36-0",
+          "text": "more",
+          "start": 42.109,
+          "end": 42.415
+        },
+        {
+          "id": "caption-word-36-1",
+          "text": "time",
+          "start": 42.45,
+          "end": 42.755
+        },
+        {
+          "id": "caption-word-36-2",
+          "text": "communicating.",
+          "start": 42.79,
+          "end": 43.783
+        }
+      ]
+    }
+  ]
+}

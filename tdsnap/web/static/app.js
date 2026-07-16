@@ -1,4 +1,4 @@
-/* TD Snap Page Builder frontend. Plain JS, no build step.
+/* AAC Editor frontend. Plain JS, no build step.
    State machine: load → build → result (result keeps the session so more
    pages can be added before downloading). */
 
@@ -81,7 +81,9 @@ async function api(path, options) {
     options.headers,
     state.apiToken ? { "X-TDSnap-Token": state.apiToken } : {}
   );
-  const response = await fetch(path, options);
+  const response = await fetch(path, options).catch(() => {
+    throw new Error("The local editor isn’t responding. Try again; if it continues, restart the app.");
+  });
   let data = null;
   try {
     data = await response.json();
@@ -117,7 +119,14 @@ function show(step) {
   }
 }
 
-function setBusy(button, busy) {
+function setBusy(button, busy, busyLabel = "") {
+  const label = button.querySelector(".btn-label") || button;
+  if (busy && !label.dataset.idleLabel) label.dataset.idleLabel = label.textContent;
+  if (busy && busyLabel) label.textContent = busyLabel;
+  if (!busy && label.dataset.idleLabel) {
+    label.textContent = label.dataset.idleLabel;
+    delete label.dataset.idleLabel;
+  }
   button.classList.toggle("loading", busy);
   button.disabled = busy;
   button.setAttribute("aria-busy", String(busy));
@@ -127,6 +136,7 @@ function setActivity(message = "") {
   const activity = $("app-activity");
   $("app-activity-text").textContent = message;
   activity.hidden = !message;
+  document.body.setAttribute("aria-busy", String(Boolean(message)));
 }
 
 function setPreviewBusy(busy, message = "Loading the page layout…") {
@@ -327,13 +337,30 @@ document.addEventListener("keydown", (event) => {
 
 /* ---------- step 1: connect to live TD Snap ---------- */
 
+function rememberDetectedPages(data) {
+  const detected = Array.isArray(data.pages) && data.pages.length
+    ? data.pages
+    : [data.page, "Topics Menu Page"];
+  state.pages = [...new Set(detected.filter(Boolean))].map((title) => ({
+    id: title,
+    title,
+  }));
+}
+
+async function refreshDetectedPages() {
+  const data = await api("/api/tdsnap/status");
+  rememberDetectedPages(data);
+  renderParents(parentFilter.value);
+  return data;
+}
+
 $("live-connect-btn").addEventListener("click", async () => {
   const button = $("live-connect-btn");
   const status = $("live-status");
   status.classList.remove("error");
   status.textContent = "Checking TD Snap...";
   setActivity("Checking for TD Snap…");
-  setBusy(button, true);
+  setBusy(button, true, "Connecting…");
   try {
     let data = await api("/api/tdsnap/status");
     if (!data.available) throw new Error("Direct editing is available on Windows only.");
@@ -352,13 +379,7 @@ $("live-connect-btn").addEventListener("click", async () => {
     state.mode = "live";
     state.grid = data.grid;
     state.currentPage = data.page;
-    const detected = Array.isArray(data.pages) && data.pages.length
-      ? data.pages
-      : [data.page, "Topics Menu Page"];
-    state.pages = [...new Set(detected.filter(Boolean))].map((title) => ({
-      id: title,
-      title,
-    }));
+    rememberDetectedPages(data);
     state.words = [];
     state.parentId = data.page;
     state.parentFree = 1;
@@ -384,7 +405,7 @@ $("live-connect-btn").addEventListener("click", async () => {
     if (state.profile.ai !== "none") checkAi();
   } catch (error) {
     status.classList.add("error");
-    status.textContent = error.message;
+    status.textContent = `Couldn’t connect to TD Snap. ${error.message}`;
   } finally {
     setActivity();
     setBusy(button, false);
@@ -411,7 +432,7 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     state.parentFree = data.free_slots.length;
     const occupied = new Set(state.existingButtons.map((button) => button.slot));
     state.words.forEach((item) => {
-      if (occupied.has(item.slot)) item.slot = firstAvailableSlot();
+      if (occupied.has(item.slot)) item.slot = firstAvailableSlot(item.fn);
     });
     $("parent-capacity").classList.remove("error");
     $("parent-capacity").textContent =
@@ -441,13 +462,15 @@ async function syncLivePreview() {
   // Only mirror TD Snap while editing an existing page. In new-page mode the
   // builder owns the grid, parent, and word layout — following the live page
   // would overwrite the design (e.g. collapse a topic page onto a smaller grid).
-  if (liveSyncing || state.mode !== "live" ||
+  if (liveSyncing || state.targetLoading || state.mode !== "live" ||
       state.operation !== "existing" || $("step-build").hidden) return;
   liveSyncing = true;
   try {
+    const selectedPage = state.parentId;
     const status = await api("/api/tdsnap/status", {
       headers: { "X-TDSnap-Brief": "1" },
     });
+    if (state.targetLoading || state.parentId !== selectedPage) return;
     if (!status.running || !status.page || status.page === state.currentPage) return;
     const layout = await loadTargetLayout("", true);
     state.currentPage = layout.page;
@@ -491,7 +514,7 @@ function setOperation(operation) {
     ? "Start by choosing the page where this vocabulary belongs."
     : "Name the new page, then choose where its link belongs.";
   $("preview-hint").textContent = "This shows how the content will appear in TD Snap.";
-  $("build-btn-label").textContent = "Update TD Snap";
+  $("build-btn-label").textContent = existing ? "Update TD Snap" : "Create page in TD Snap";
   state.existingButtons = existing ? state.existingButtons : [];
   state.layoutFingerprint = existing ? state.layoutFingerprint : null;
   renderWords();
@@ -554,10 +577,13 @@ function setActiveFn(fn, manual = true) {
 
 $("style-words").addEventListener("click", () => setPageStyle("words"));
 $("style-topic").addEventListener("click", () => {
-  setOperation("new");
   setPageStyle("topic");
-  updatePlacementRecommendation();
-  $("title-input").focus();
+  if (state.operation === "new") {
+    updatePlacementRecommendation();
+    $("title-input").focus();
+  } else {
+    $("word-input").focus();
+  }
 });
 $("auto-topic-layout").addEventListener("click", () => {
   state.autoTopicRows = true;
@@ -982,8 +1008,12 @@ $("use-placement").addEventListener("click", () => {
 function renderParents(filter) {
   const query = filter.trim().toLowerCase();
   parentSelect.innerHTML = "";
-  state.pages
-    .filter((page) => !query || page.title.toLowerCase().includes(query))
+  const matches = state.pages.filter(
+    (page) => !query || page.title.toLowerCase().includes(query)
+  );
+  const selected = state.pages.find((page) => page.id === state.parentId);
+  if (selected && !matches.includes(selected)) matches.unshift(selected);
+  matches
     .forEach((page) => {
       const option = document.createElement("option");
       option.value = page.id;
@@ -996,11 +1026,6 @@ function renderParents(filter) {
     option.disabled = true;
     option.textContent = "No pages match";
     parentSelect.append(option);
-  } else if (query && parentSelect.options.length === 1 &&
-             parentSelect.options[0].value !== String(state.parentId)) {
-    // Filter narrowed to a single page: select it without an extra click.
-    parentSelect.options[0].selected = true;
-    parentSelect.dispatchEvent(new Event("change"));
   }
 }
 
@@ -1217,7 +1242,7 @@ async function checkAiWithFeedback() {
   const button = $("ai-check-btn");
   $("ai-engine-state").textContent = "Checking the Ollama connection…";
   setActivity("Checking your AI connection…");
-  setBusy(button, true);
+  setBusy(button, true, "Checking…");
   try {
     await checkAi();
   } finally {
@@ -1235,8 +1260,8 @@ $("ai-model").addEventListener("input", () => {
 $("ai-download-btn").addEventListener("click", async () => {
   const button = $("ai-download-btn");
   const status = $("ai-download-status");
-  status.classList.remove("error");
-  setBusy(button, true);
+  status.classList.remove("error", "success");
+  setBusy(button, true, "Starting download…");
   setActivity("Starting the model download…");
   try {
     await api("/api/ai/download", { method: "POST" });
@@ -1244,7 +1269,7 @@ $("ai-download-btn").addEventListener("click", async () => {
   } catch (error) {
     setBusy(button, false);
     status.classList.add("error");
-    status.textContent = error.message;
+    status.textContent = `The model download couldn’t start. ${error.message}`;
   } finally {
     setActivity();
   }
@@ -1258,7 +1283,7 @@ function trackDownload() {
   const bar = $("ai-progress");
   const fill = $("ai-progress-fill");
   const status = $("ai-download-status");
-  setBusy(button, true);
+  setBusy(button, true, "Downloading…");
   bar.hidden = false;
 
   downloadTimer = setInterval(async () => {
@@ -1282,9 +1307,11 @@ function trackDownload() {
       setBusy(button, false);
       if (dl.status === "ready") {
         fill.style.width = "100%";
+        status.classList.add("success");
         status.textContent = "Done — suggestions are ready.";
         checkAi();
       } else if (dl.status === "error") {
+        status.classList.remove("success");
         status.classList.add("error");
         status.textContent = `Download failed: ${dl.error}. Click to retry.`;
         bar.hidden = true;
@@ -1301,7 +1328,7 @@ $("ai-go").addEventListener("click", async () => {
   const category = state.operation === "existing"
     ? titleOf(state.parentId)
     : $("title-input").value.trim();
-  status.classList.remove("error");
+  status.classList.remove("error", "success");
   if (!category) {
     status.classList.add("error");
     status.textContent = state.operation === "existing"
@@ -1315,7 +1342,7 @@ $("ai-go").addEventListener("click", async () => {
       ? `${FUNCTIONS[state.activeFn].name.toLowerCase()} phrases`
       : "phrases"
     : "words";
-  setBusy(button, true);
+  setBusy(button, true, "Generating…");
   setActivity(`Generating ${what} for “${category}”…`);
   status.textContent = `Asking ${$("ai-model").value} for ${$("ai-count").value} “${category}” ${what}…`;
   try {
@@ -1357,10 +1384,11 @@ $("ai-go").addEventListener("click", async () => {
       }
     });
     renderWords();
+    status.classList.add("success");
     status.textContent = `Added ${added} suggestions — remove any you don't want.`;
   } catch (error) {
     status.classList.add("error");
-    status.textContent = error.message;
+    status.textContent = `Suggestions couldn’t be generated. ${error.message}`;
   } finally {
     setActivity();
     setBusy(button, false);
@@ -1405,7 +1433,9 @@ buildForm.addEventListener("submit", async (event) => {
   }
 
   const button = $("build-btn");
-  setBusy(button, true);
+  setBusy(button, true, state.operation === "existing"
+    ? "Updating and checking…"
+    : "Creating and checking…");
   buildForm.setAttribute("aria-busy", "true");
   setActivity(state.operation === "existing"
     ? "Updating TD Snap and verifying the edit…"
@@ -1435,10 +1465,55 @@ buildForm.addEventListener("submit", async (event) => {
       body: JSON.stringify(payload),
     });
     state.edits = data.edits || state.edits + 1;
+    try {
+      await refreshDetectedPages();
+    } catch {
+      // The edit is already verified; a later reconnect can refresh the list.
+    }
     renderResult(state.operation === "existing" ? titleOf(state.parentId) : title, data);
     show("result");
   } catch (error) {
-    showBuildError(error.message, error.problems || []);
+    if (state.operation === "new" && title) {
+      try {
+        await refreshDetectedPages();
+        const created = state.pages.find(
+          (page) => page.title.toLocaleLowerCase() === title.toLocaleLowerCase()
+        );
+        if (created) {
+          setOperation("existing");
+          state.parentId = created.id;
+          state.parentTouched = true;
+          parentFilter.value = "";
+          renderParents("");
+          const layout = await loadTargetLayout(created.title);
+          const present = new Set(
+            layout.buttons.map((item) => item.label.trim().toLocaleLowerCase())
+          );
+          const before = state.words.length;
+          state.words = state.words.filter(
+            (item) => !present.has(item.label.trim().toLocaleLowerCase())
+          );
+          const alreadyAdded = before - state.words.length;
+          renderWords();
+          showBuildError("TD Snap created the page, but stopped before every button was added.", [
+            error.message,
+            alreadyAdded
+              ? `${alreadyAdded} button${alreadyAdded === 1 ? " is" : "s are"} already on the page.`
+              : "The empty page is ready to resume.",
+            state.words.length
+              ? `${state.words.length} button${state.words.length === 1 ? " remains" : "s remain"} ready. Review them, then select Update TD Snap.`
+              : "All requested buttons are already present.",
+          ]);
+          return;
+        }
+      } catch {
+        // Keep the original error if TD Snap cannot be inspected for recovery.
+      }
+    }
+    showBuildError("TD Snap couldn’t complete the edit.", [
+      error.message,
+      ...(error.problems || []),
+    ]);
   } finally {
     setActivity();
     buildForm.setAttribute("aria-busy", "false");
@@ -1552,7 +1627,7 @@ $("another-btn").addEventListener("click", async () => {
   $("result-warnings").hidden = true;
   show("build");
   if (state.operation === "existing") {
-    setBusy(button, true);
+    setBusy(button, true, "Refreshing…");
     setActivity("Refreshing the TD Snap page before the next edit…");
     try {
       await loadTargetLayout(titleOf(state.parentId));
@@ -1590,8 +1665,8 @@ $("file-badge").addEventListener("click", resetConnection);
 /* ---------- quit (browser mode) ---------- */
 
 $("quit-btn").addEventListener("click", async () => {
-  if (!window.confirm("Quit TD Snap Page Builder?")) return;
-  setBusy($("quit-btn"), true);
+  if (!window.confirm("Quit AAC Editor?")) return;
+  setBusy($("quit-btn"), true, "Closing…");
   setActivity("Closing the local editor…");
   try {
     await api("/api/quit", { method: "POST" });

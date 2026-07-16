@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Review, then update</title>
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: "Segoe UI Variable Text";
+          src: url("assets/fonts/Segoe_UI_Variable_Text.ttf") format("truetype");
+          font-style: normal;
+          font-weight: 100 900;
+          font-display: block;
+        }
+
+        #root {
+          position: relative;
+          width: 1920px;
+          height: 1080px;
+          overflow: hidden;
+          color: #0b1b42;
+          font-family: "Segoe UI Variable Text";
+          container-type: size;
+        }
+
+        .f05-review-ground {
+          position: absolute;
+          inset: 0;
+          width: 1920px;
+          height: 1080px;
+          background: transparent;
+          z-index: 0;
+        }
+
+        .f05-review-overlay {
+          position: absolute;
+          inset: 0;
+          width: 1920px;
+          height: 1080px;
+          overflow: hidden;
+          z-index: 2002;
+          pointer-events: none;
+        }
+
+        .f05-review-eyebrow {
+          position: absolute;
+          left: 245px;
+          top: 26px;
+          color: #0b61df;
+          font-size: 18px;
+          font-weight: 650;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .f05-review-rule {
+          position: absolute;
+          left: 365px;
+          top: 39px;
+          width: 190px;
+          height: 3px;
+          border-radius: 6px;
+          background: #0b1b42;
+          transform-origin: 0 50%;
+        }
+
+        .f05-review-video-frame,
+        .f05-review-review-stage,
+        .f05-review-update-stage {
+          position: absolute;
+          left: 245px;
+          top: 88px;
+          width: 1610px;
+          height: 792px;
+          overflow: hidden;
+          border-radius: 14px;
+          box-sizing: border-box;
+        }
+
+        .f05-review-video-frame {
+          z-index: 8;
+          border: 1.5px solid rgba(11, 97, 223, 0.2);
+        }
+
+        .f05-review-review-stage {
+          z-index: 2;
+        }
+
+        .f05-review-update-stage {
+          z-index: 4;
+        }
+
+        .f05-review-review-world,
+        .f05-review-zoom-outer,
+        .f05-review-zoom-inner {
+          position: absolute;
+          inset: 0;
+          width: 1610px;
+          height: 792px;
+          will-change: transform;
+        }
+
+        .f05-review-zoom-outer {
+          transform-origin: 50% 50%;
+        }
+
+        .f05-review-surface {
+          display: block;
+          width: 1610px;
+          height: 792px;
+          object-fit: cover;
+        }
+
+        .f05-review-spotlight {
+          position: absolute;
+          left: 682px;
+          top: 278px;
+          width: 330px;
+          height: 118px;
+          border: 4px solid #0b61df;
+          border-radius: 12px;
+          background: rgba(11, 97, 223, 0.08);
+          box-sizing: border-box;
+          transform-origin: 0 50%;
+          z-index: 6;
+        }
+
+        .f05-review-cursor {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 50px;
+          height: 50px;
+          display: grid;
+          place-items: center;
+          border: 1.5px solid rgba(11, 97, 223, 0.2);
+          border-radius: 50%;
+          background: #ffffff;
+          z-index: 20;
+          will-change: transform;
+        }
+
+        .f05-review-cursor svg {
+          display: block;
+          width: 27px;
+          height: 27px;
+        }
+
+        .f05-review-update-target {
+          position: absolute;
+          left: 578px;
+          top: 676px;
+          width: 184px;
+          height: 62px;
+          border: 3px solid #0b61df;
+          border-radius: 12px;
+          background: rgba(11, 97, 223, 0.08);
+          box-sizing: border-box;
+          transform-origin: 50% 50%;
+          z-index: 12;
+          will-change: transform;
+        }
+
+        .f05-review-ripple {
+          position: absolute;
+          left: 1027px;
+          top: 461px;
+          width: 46px;
+          height: 46px;
+          border: 2px solid #0b61df;
+          border-radius: 50%;
+          box-sizing: border-box;
+          z-index: 11;
+          pointer-events: none;
+        }
+
+        .f05-review-state {
+          position: absolute;
+          left: 245px;
+          top: 24px;
+          display: flex;
+          align-items: center;
+          gap: 18px;
+          color: #0b1b42;
+          font-size: 28px;
+          font-weight: 680;
+          letter-spacing: -0.02em;
+        }
+
+        .f05-review-state-mark {
+          display: inline-block;
+          color: #0b61df;
+          font-size: 30px;
+          font-weight: 750;
+        }
+
+        .f05-review-progress-track {
+          position: absolute;
+          left: 0;
+          top: 890px;
+          width: 1920px;
+          height: 3px;
+          overflow: hidden;
+          background: rgba(11, 97, 223, 0.08);
+        }
+
+        .f05-review-progress-fill {
+          width: 1920px;
+          height: 3px;
+          background: #0b61df;
+          transform-origin: 0 50%;
+          will-change: transform;
+        }
+      </style>
+
+      <div data-hf-id="hf-vel5" id="root" data-composition-id="05-review" data-width="1920" data-height="1080" data-duration="6.4" data-fps="30">
+        <div data-hf-id="hf-85go" id="f05-review-ground" class="clip f05-review-ground" data-start="0" data-duration="6.4" data-track-index="0"></div>
+
+        <!-- approved frame video hoisted by assemble-index -->
+
+        <div data-hf-id="hf-87cy" id="f05-review-overlay" class="clip f05-review-overlay" data-start="0" data-duration="6.4" data-track-index="2">
+          <div data-hf-id="hf-2xh6" id="f05-review-eyebrow" class="f05-review-eyebrow">Review</div>
+          <div data-hf-id="hf-ikzg" id="f05-review-rule" class="f05-review-rule"></div>
+
+          <div data-hf-id="hf-rary" id="f05-review-review-stage" class="f05-review-review-stage">
+            <div data-hf-id="hf-avw1" id="f05-review-review-world" class="f05-review-review-world" data-layout-allow-overflow="">
+              <img data-hf-id="hf-otdf" id="f05-review-review-proof" class="f05-review-surface" src="assets/review-proof.png" alt="Page Builder review with all phrase groups visible before update">
+            </div>
+          </div>
+
+          <div data-hf-id="hf-a8s4" id="f05-review-update-stage" class="f05-review-update-stage">
+            <div data-hf-id="hf-pa8l" id="f05-review-zoom-outer" class="f05-review-zoom-outer" data-layout-allow-overflow="">
+              <div data-hf-id="hf-zvxw" id="f05-review-zoom-inner" class="f05-review-zoom-inner">
+                <img data-hf-id="hf-lumn" id="f05-review-update-proof" class="f05-review-surface" src="assets/update-proof.png" alt="The real Update TD Snap action on the Page Builder">
+                <div data-hf-id="hf-22vy" id="f05-review-update-target" class="f05-review-update-target"></div>
+              </div>
+            </div>
+          </div>
+
+          <div data-hf-id="hf-4iia" id="f05-review-video-frame" class="f05-review-video-frame"></div>
+          <div data-hf-id="hf-y2he" id="f05-review-spotlight" class="f05-review-spotlight"></div>
+
+          <div data-hf-id="hf-db9n" id="f05-review-ripple-one" class="f05-review-ripple"></div>
+          <div data-hf-id="hf-bsvt" id="f05-review-ripple-two" class="f05-review-ripple"></div>
+          <div data-hf-id="hf-ult7" id="f05-review-ripple-three" class="f05-review-ripple"></div>
+
+          <div data-hf-id="hf-8qj5" id="f05-review-cursor" class="f05-review-cursor" aria-hidden="true">
+            <svg data-hf-id="hf-mqc6" viewBox="0 0 28 28" role="presentation">
+              <path data-hf-id="hf-oopq" d="M5 3L22 14L14.2 15.2L10.5 23L5 3Z" fill="#0b61df" stroke="#0b1b42" stroke-width="1.2" />
+            </svg>
+          </div>
+
+          <div data-hf-id="hf-9n9m" id="f05-review-state" class="f05-review-state">
+            <span data-hf-id="hf-cnd0">REVIEWED</span>
+            <span data-hf-id="hf-s4f9" class="f05-review-state-mark">→</span>
+            <span data-hf-id="hf-eisg">UPDATE</span>
+          </div>
+
+          <div data-hf-id="hf-vsua" class="f05-review-progress-track">
+            <div data-hf-id="hf-2xnm" id="f05-review-progress-fill" class="f05-review-progress-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <script src="assets/gsap.min.js"></script>
+      <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+
+        const eyebrow = document.getElementById("f05-review-eyebrow");
+        const rule = document.getElementById("f05-review-rule");
+        const reviewStage = document.getElementById("f05-review-review-stage");
+        const reviewWorld = document.getElementById("f05-review-review-world");
+        const updateStage = document.getElementById("f05-review-update-stage");
+        const zoomOuter = document.getElementById("f05-review-zoom-outer");
+        const zoomInner = document.getElementById("f05-review-zoom-inner");
+        const frame = document.getElementById("f05-review-video-frame");
+        const spotlight = document.getElementById("f05-review-spotlight");
+        const cursor = document.getElementById("f05-review-cursor");
+        const target = document.getElementById("f05-review-update-target");
+        const ripples = [
+          document.getElementById("f05-review-ripple-one"),
+          document.getElementById("f05-review-ripple-two"),
+          document.getElementById("f05-review-ripple-three"),
+        ];
+        const state = document.getElementById("f05-review-state");
+        const progress = document.getElementById("f05-review-progress-fill");
+
+        tl.set([reviewStage, updateStage, spotlight, cursor, target, state, ...ripples], { opacity: 0 }, 0);
+
+        tl.fromTo(
+          frame,
+          { opacity: 0, scale: 0.992 },
+          { opacity: 1, scale: 1, duration: 0.48, ease: "power3.out", immediateRender: false },
+          0,
+        );
+        tl.fromTo(
+          eyebrow,
+          { opacity: 0, x: -18 },
+          { opacity: 1, x: 0, duration: 0.38, ease: "power3.out", immediateRender: false },
+          0.12,
+        );
+        tl.fromTo(
+          rule,
+          { opacity: 0, scaleX: 0 },
+          { opacity: 1, scaleX: 1, duration: 0.58, ease: "power3.out", immediateRender: false },
+          0.28,
+        );
+
+        tl.fromTo(
+          reviewStage,
+          { opacity: 0 },
+          { opacity: 1, duration: 0.16, ease: "power2.out", immediateRender: false },
+          1.24,
+        );
+        tl.fromTo(
+          spotlight,
+          { opacity: 0, scaleX: 0.12, y: 0 },
+          { opacity: 1, scaleX: 1, y: 0, duration: 0.5, ease: "power3.out", immediateRender: false },
+          1.4,
+        );
+        tl.fromTo(
+          cursor,
+          { opacity: 0, x: 965, y: 292, scale: 0.88 },
+          { opacity: 1, x: 933, y: 330, scale: 1, duration: 0.46, ease: "power3.out", immediateRender: false },
+          1.42,
+        );
+        tl.to(spotlight, { y: 314, duration: 1.55, ease: "power3.inOut" }, 1.96);
+        tl.to(cursor, { x: 930, y: 646, duration: 1.55, ease: "power3.inOut" }, 1.96);
+        tl.to(reviewWorld, { y: -38, duration: 1.55, ease: "power3.inOut" }, 1.96);
+
+        tl.fromTo(
+          updateStage,
+          { opacity: 0 },
+          { opacity: 1, duration: 0.18, ease: "power2.out", immediateRender: false },
+          3.58,
+        );
+        tl.to(spotlight, { opacity: 0, duration: 0.18, ease: "power2.out" }, 3.58);
+        tl.to(zoomOuter, { scale: 1.25, duration: 0.74, ease: "power3.inOut" }, 3.7);
+        tl.to(zoomInner, { x: 135, y: -312, duration: 0.74, ease: "power3.inOut" }, 3.7);
+        tl.to(cursor, { x: 1046, y: 484, duration: 0.65, ease: "power3.inOut" }, 3.78);
+        tl.fromTo(
+          target,
+          { opacity: 0, scale: 1.08 },
+          { opacity: 1, scale: 1, duration: 0.32, ease: "power3.out", immediateRender: false },
+          4.1,
+        );
+
+        tl.to(cursor, { scale: 0.84, duration: 0.1, ease: "power1.in" }, 4.52);
+        tl.to(target, { scale: 0.95, duration: 0.1, ease: "power1.in" }, 4.52);
+        tl.to(cursor, { scale: 1, duration: 0.42, ease: "back.out(1.45)" }, 4.62);
+        tl.to(target, { scale: 1, duration: 0.42, ease: "back.out(1.45)" }, 4.62);
+        tl.set(ripples, { opacity: 0.8, scale: 0.25 }, 4.54);
+        tl.to(
+          ripples,
+          {
+            opacity: 0,
+            scale: 4.2,
+            duration: 0.68,
+            ease: "power3.out",
+            stagger: 0.08,
+            immediateRender: false,
+          },
+          4.54,
+        );
+
+        tl.to(zoomOuter, { scale: 1, duration: 0.38, ease: "power3.inOut" }, 5.12);
+        tl.to(zoomInner, { x: 0, y: 0, duration: 0.38, ease: "power3.inOut" }, 5.12);
+        tl.to(cursor, { opacity: 0, duration: 0.2, ease: "power2.out" }, 5.12);
+        tl.to(target, { opacity: 0, duration: 0.2, ease: "power2.out" }, 5.12);
+        tl.fromTo(
+          state,
+          { opacity: 0, x: -18 },
+          { opacity: 1, x: 0, duration: 0.48, ease: "power3.out", immediateRender: false },
+          5.3,
+        );
+        tl.to([eyebrow, rule], { opacity: 0, duration: 0.2, ease: "power2.out" }, 5.3);
+
+        tl.fromTo(
+          progress,
+          { scaleX: 0.57 },
+          { scaleX: 0.71, duration: 6, ease: "none", immediateRender: false },
+          0,
+        );
+
+        window.__timelines["05-review"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

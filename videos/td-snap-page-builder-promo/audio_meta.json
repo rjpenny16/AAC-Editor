@@ -1,0 +1,588 @@
+{
+  "bgm": null,
+  "voices": [
+    {
+      "frame": 1,
+      "path": "assets/voice/01.wav",
+      "duration_s": 5.5,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Editing",
+          "start": 0.12,
+          "end": 0.672
+        },
+        {
+          "id": "w1",
+          "text": "AAC",
+          "start": 0.707,
+          "end": 0.944
+        },
+        {
+          "id": "w2",
+          "text": "pages",
+          "start": 0.979,
+          "end": 1.373
+        },
+        {
+          "id": "w3",
+          "text": "should",
+          "start": 1.408,
+          "end": 1.882
+        },
+        {
+          "id": "w4",
+          "text": "not",
+          "start": 1.917,
+          "end": 2.153
+        },
+        {
+          "id": "w5",
+          "text": "take",
+          "start": 2.188,
+          "end": 2.504
+        },
+        {
+          "id": "w6",
+          "text": "time",
+          "start": 2.539,
+          "end": 2.854
+        },
+        {
+          "id": "w7",
+          "text": "away",
+          "start": 2.889,
+          "end": 3.205
+        },
+        {
+          "id": "w8",
+          "text": "from",
+          "start": 3.24,
+          "end": 3.555
+        },
+        {
+          "id": "w9",
+          "text": "communicating.",
+          "start": 3.59,
+          "end": 4.616
+        }
+      ]
+    },
+    {
+      "frame": 2,
+      "path": "assets/voice/02.wav",
+      "duration_s": 6,
+      "words": [
+        {
+          "id": "w0",
+          "text": "TD",
+          "start": 0.12,
+          "end": 0.289
+        },
+        {
+          "id": "w1",
+          "text": "Snap",
+          "start": 0.324,
+          "end": 0.661
+        },
+        {
+          "id": "w2",
+          "text": "Page",
+          "start": 0.696,
+          "end": 1.034
+        },
+        {
+          "id": "w3",
+          "text": "Builder",
+          "start": 1.069,
+          "end": 1.659
+        },
+        {
+          "id": "w4",
+          "text": "connects",
+          "start": 1.694,
+          "end": 2.369
+        },
+        {
+          "id": "w5",
+          "text": "to",
+          "start": 2.404,
+          "end": 2.573
+        },
+        {
+          "id": "w6",
+          "text": "the",
+          "start": 2.608,
+          "end": 2.861
+        },
+        {
+          "id": "w7",
+          "text": "page",
+          "start": 2.896,
+          "end": 3.233
+        },
+        {
+          "id": "w8",
+          "text": "set",
+          "start": 3.268,
+          "end": 3.521
+        },
+        {
+          "id": "w9",
+          "text": "already",
+          "start": 3.556,
+          "end": 4.147
+        },
+        {
+          "id": "w10",
+          "text": "open",
+          "start": 4.182,
+          "end": 4.519
+        },
+        {
+          "id": "w11",
+          "text": "in",
+          "start": 4.554,
+          "end": 4.723
+        },
+        {
+          "id": "w12",
+          "text": "TD",
+          "start": 4.758,
+          "end": 4.927
+        },
+        {
+          "id": "w13",
+          "text": "Snap.",
+          "start": 4.962,
+          "end": 5.299
+        }
+      ]
+    },
+    {
+      "frame": 3,
+      "path": "assets/voice/03.wav",
+      "duration_s": 7,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Add",
+          "start": 0.12,
+          "end": 0.363
+        },
+        {
+          "id": "w1",
+          "text": "many",
+          "start": 0.398,
+          "end": 0.721
+        },
+        {
+          "id": "w2",
+          "text": "words",
+          "start": 0.756,
+          "end": 1.161
+        },
+        {
+          "id": "w3",
+          "text": "to",
+          "start": 1.196,
+          "end": 1.358
+        },
+        {
+          "id": "w4",
+          "text": "an",
+          "start": 1.393,
+          "end": 1.554
+        },
+        {
+          "id": "w5",
+          "text": "existing",
+          "start": 1.589,
+          "end": 2.236
+        },
+        {
+          "id": "w6",
+          "text": "page,",
+          "start": 2.271,
+          "end": 2.595
+        },
+        {
+          "id": "w7",
+          "text": "or",
+          "start": 2.63,
+          "end": 2.792
+        },
+        {
+          "id": "w8",
+          "text": "build",
+          "start": 2.827,
+          "end": 3.231
+        },
+        {
+          "id": "w9",
+          "text": "a",
+          "start": 3.266,
+          "end": 3.347
+        },
+        {
+          "id": "w10",
+          "text": "new",
+          "start": 3.382,
+          "end": 3.625
+        },
+        {
+          "id": "w11",
+          "text": "topic",
+          "start": 3.66,
+          "end": 4.064
+        },
+        {
+          "id": "w12",
+          "text": "page,",
+          "start": 4.099,
+          "end": 4.423
+        },
+        {
+          "id": "w13",
+          "text": "all",
+          "start": 4.458,
+          "end": 4.701
+        },
+        {
+          "id": "w14",
+          "text": "at",
+          "start": 4.736,
+          "end": 4.897
+        },
+        {
+          "id": "w15",
+          "text": "once.",
+          "start": 4.932,
+          "end": 5.256
+        }
+      ]
+    },
+    {
+      "frame": 4,
+      "path": "assets/voice/04.wav",
+      "duration_s": 9,
+      "words": [
+        {
+          "id": "w0",
+          "text": "See",
+          "start": 0.12,
+          "end": 0.351
+        },
+        {
+          "id": "w1",
+          "text": "every",
+          "start": 0.386,
+          "end": 0.77
+        },
+        {
+          "id": "w2",
+          "text": "button",
+          "start": 0.805,
+          "end": 1.266
+        },
+        {
+          "id": "w3",
+          "text": "before",
+          "start": 1.301,
+          "end": 1.762
+        },
+        {
+          "id": "w4",
+          "text": "anything",
+          "start": 1.797,
+          "end": 2.412
+        },
+        {
+          "id": "w5",
+          "text": "changes.",
+          "start": 2.447,
+          "end": 2.985
+        },
+        {
+          "id": "w6",
+          "text": "Existing",
+          "start": 3.02,
+          "end": 3.635
+        },
+        {
+          "id": "w7",
+          "text": "vocabulary",
+          "start": 3.67,
+          "end": 4.439
+        },
+        {
+          "id": "w8",
+          "text": "stays",
+          "start": 4.474,
+          "end": 4.858
+        },
+        {
+          "id": "w9",
+          "text": "locked,",
+          "start": 4.893,
+          "end": 5.354
+        },
+        {
+          "id": "w10",
+          "text": "and",
+          "start": 5.389,
+          "end": 5.62
+        },
+        {
+          "id": "w11",
+          "text": "exact",
+          "start": 5.655,
+          "end": 6.039
+        },
+        {
+          "id": "w12",
+          "text": "placement",
+          "start": 6.074,
+          "end": 6.766
+        },
+        {
+          "id": "w13",
+          "text": "stays",
+          "start": 6.801,
+          "end": 7.185
+        },
+        {
+          "id": "w14",
+          "text": "in",
+          "start": 7.22,
+          "end": 7.374
+        },
+        {
+          "id": "w15",
+          "text": "your",
+          "start": 7.409,
+          "end": 7.717
+        },
+        {
+          "id": "w16",
+          "text": "hands.",
+          "start": 7.752,
+          "end": 8.136
+        }
+      ]
+    },
+    {
+      "frame": 5,
+      "path": "assets/voice/05.wav",
+      "duration_s": 9,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Duplicate,",
+          "start": 0.12,
+          "end": 0.823
+        },
+        {
+          "id": "w1",
+          "text": "capacity,",
+          "start": 0.858,
+          "end": 1.483
+        },
+        {
+          "id": "w2",
+          "text": "and",
+          "start": 1.518,
+          "end": 1.752
+        },
+        {
+          "id": "w3",
+          "text": "linkage",
+          "start": 1.787,
+          "end": 2.334
+        },
+        {
+          "id": "w4",
+          "text": "checks",
+          "start": 2.369,
+          "end": 2.837
+        },
+        {
+          "id": "w5",
+          "text": "happen",
+          "start": 2.872,
+          "end": 3.341
+        },
+        {
+          "id": "w6",
+          "text": "automatically.",
+          "start": 3.376,
+          "end": 4.391
+        },
+        {
+          "id": "w7",
+          "text": "Optional",
+          "start": 4.426,
+          "end": 5.051
+        },
+        {
+          "id": "w8",
+          "text": "AI",
+          "start": 5.086,
+          "end": 5.242
+        },
+        {
+          "id": "w9",
+          "text": "runs",
+          "start": 5.277,
+          "end": 5.59
+        },
+        {
+          "id": "w10",
+          "text": "locally.",
+          "start": 5.625,
+          "end": 6.171
+        },
+        {
+          "id": "w11",
+          "text": "Nothing",
+          "start": 6.206,
+          "end": 6.753
+        },
+        {
+          "id": "w12",
+          "text": "leaves",
+          "start": 6.788,
+          "end": 7.257
+        },
+        {
+          "id": "w13",
+          "text": "this",
+          "start": 7.292,
+          "end": 7.604
+        },
+        {
+          "id": "w14",
+          "text": "computer.",
+          "start": 7.639,
+          "end": 8.264
+        }
+      ]
+    },
+    {
+      "frame": 6,
+      "path": "assets/voice/06.wav",
+      "duration_s": 8.5,
+      "words": [
+        {
+          "id": "w0",
+          "text": "Update",
+          "start": 0.12,
+          "end": 0.578
+        },
+        {
+          "id": "w1",
+          "text": "TD",
+          "start": 0.613,
+          "end": 0.766
+        },
+        {
+          "id": "w2",
+          "text": "Snap,",
+          "start": 0.801,
+          "end": 1.106
+        },
+        {
+          "id": "w3",
+          "text": "review",
+          "start": 1.141,
+          "end": 1.6
+        },
+        {
+          "id": "w4",
+          "text": "the",
+          "start": 1.635,
+          "end": 1.864
+        },
+        {
+          "id": "w5",
+          "text": "result,",
+          "start": 1.899,
+          "end": 2.357
+        },
+        {
+          "id": "w6",
+          "text": "and",
+          "start": 2.392,
+          "end": 2.621
+        },
+        {
+          "id": "w7",
+          "text": "get",
+          "start": 2.656,
+          "end": 2.885
+        },
+        {
+          "id": "w8",
+          "text": "back",
+          "start": 2.92,
+          "end": 3.226
+        },
+        {
+          "id": "w9",
+          "text": "to",
+          "start": 3.261,
+          "end": 3.414
+        },
+        {
+          "id": "w10",
+          "text": "what",
+          "start": 3.449,
+          "end": 3.754
+        },
+        {
+          "id": "w11",
+          "text": "matters:",
+          "start": 3.789,
+          "end": 4.324
+        },
+        {
+          "id": "w12",
+          "text": "less",
+          "start": 4.359,
+          "end": 4.664
+        },
+        {
+          "id": "w13",
+          "text": "time",
+          "start": 4.699,
+          "end": 5.005
+        },
+        {
+          "id": "w14",
+          "text": "editing,",
+          "start": 5.04,
+          "end": 5.574
+        },
+        {
+          "id": "w15",
+          "text": "more",
+          "start": 5.609,
+          "end": 5.915
+        },
+        {
+          "id": "w16",
+          "text": "time",
+          "start": 5.95,
+          "end": 6.255
+        },
+        {
+          "id": "w17",
+          "text": "communicating.",
+          "start": 6.29,
+          "end": 7.283
+        }
+      ]
+    }
+  ],
+  "sfx": []
+}

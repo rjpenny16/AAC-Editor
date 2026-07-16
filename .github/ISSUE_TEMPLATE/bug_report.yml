@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve TD Snap Page Builder. Do not upload a real page set, Playwright trace, access token, or personal vocabulary.
+        Thanks for helping improve AAC Editor. Do not upload a real page set, Playwright trace, access token, or personal vocabulary.
   - type: input
     id: version
     attributes:

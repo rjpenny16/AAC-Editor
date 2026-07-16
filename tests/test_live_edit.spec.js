@@ -175,6 +175,7 @@ test('live editor recommends placement, reorders topic rows, and sends a live-on
   await page.locator('#live-connect-btn').click();
   await expect(page.locator('#step-build')).toBeVisible();
 
+  await page.locator('#operation-new').click();
   await page.locator('#style-topic').click();
   await expect(page.locator('#operation-new')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#title-input')).toBeFocused();
@@ -212,7 +213,7 @@ test('live editor recommends placement, reorders topic rows, and sends a live-on
   });
 });
 
-test('detected page filter can always be cleared', async ({ page }) => {
+test('page filtering never changes the committed destination', async ({ page }) => {
   await page.route('**/api/tdsnap/status', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -234,12 +235,65 @@ test('detected page filter can always be cleared', async ({ page }) => {
   await page.locator('#live-connect-btn').click();
   await page.locator('#operation-new').click();
   await page.locator('#parent-filter').fill('Eating');
-  await expect(page.locator('#parent-select option')).toHaveCount(1);
-  await page.locator('#title-input').fill('Games');
+  await expect(page.locator('#parent-select option')).toHaveCount(2);
+  await expect(page.locator('#parent-select')).toHaveValue('Topics Menu Page');
+  await expect(page.locator('#parent-capacity')).toContainText('Topics Menu Page');
+  await page.locator('#parent-select').selectOption('Eating');
   await expect(page.locator('#parent-capacity')).toContainText('Eating');
   await page.locator('#parent-filter-clear').click();
   await expect(page.locator('#parent-select option')).toHaveCount(3);
   await expect(page.locator('#parent-filter')).toHaveValue('');
+});
+
+test('a partial create refreshes the page list and resumes without a duplicate', async ({ page }) => {
+  let created = false;
+  await page.route('**/api/tdsnap/status', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true, available: true, running: true, unlocked: true,
+      page: created ? 'World Cup Final' : 'Topics Menu Page',
+      grid: { cols: 3, rows: 2 },
+      pages: created
+        ? ['Topics Menu Page', 'World Cup Final']
+        : ['Topics Menu Page'],
+    }),
+  }));
+  await page.route('**/api/tdsnap/page-layout*', (route) => {
+    const requested = new URL(route.request().url()).searchParams.get('page');
+    const resumed = requested === 'World Cup Final';
+    return route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true, page: requested || 'World Cup Final', grid: { cols: 3, rows: 2 },
+        buttons: resumed ? [{ slot: 0, label: 'Roar' }] : [],
+        free_slots: resumed ? [1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5],
+        fingerprint: resumed ? 'world-cup-v1' : 'topics-v1',
+      }),
+    });
+  });
+  await page.route('**/api/tdsnap/page', (route) => {
+    created = true;
+    return route.fulfill({
+      status: 400, contentType: 'application/json',
+      body: JSON.stringify({ ok: false, error: 'TD Snap stopped after creating the page.' }),
+    });
+  });
+
+  await openEditor(page);
+  await page.locator('#live-connect-btn').click();
+  await page.locator('#operation-new').click();
+  await page.locator('#title-input').fill('World Cup Final');
+  await page.locator('#word-input').fill('Roar, Cheer');
+  await page.locator('#word-input').press('Enter');
+  await page.locator('#build-btn').click();
+
+  await expect(page.locator('#operation-existing')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#parent-select')).toHaveValue('World Cup Final');
+  await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+  await expect(page.locator('#chipbox .chip')).toContainText('Cheer');
+  await expect(page.locator('#build-error')).toContainText('created the page');
+  await expect(page.locator('#build-error')).toContainText('1 button is already on the page');
+  await expect(page.locator('#build-error')).toContainText('1 button remains ready');
 });
 
 test('live preview follows TD Snap page changes and keeps the full page list', async ({ page }) => {
@@ -306,6 +360,7 @@ test('a new topic page is not corrupted by the live monitor following another pa
   await openEditor(page);
   await page.locator('#live-connect-btn').click();
   await expect(page.locator('#step-build')).toBeVisible();
+  await page.locator('#operation-new').click();
   await page.locator('#style-topic').click();
   await page.locator('#title-input').fill('Dinosaurs');
   await page.locator('#parent-select').selectOption('Topics Menu Page');
@@ -320,6 +375,31 @@ test('a new topic page is not corrupted by the live monitor following another pa
   await expect(page.locator('#preview .cell.used')).toHaveCount(6);
   await expect(page.locator('#parent-select')).toHaveValue('Topics Menu Page');
   expect(errors).toEqual([]);
+});
+
+test('topic styling does not change an existing-page update into a create', async ({ page }) => {
+  await page.route('**/api/tdsnap/status', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true, available: true, running: true, unlocked: true,
+      page: 'World Cup Final', grid: { cols: 7, rows: 7 }, pages: ['World Cup Final'],
+    }),
+  }));
+  await page.route('**/api/tdsnap/page-layout*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true, page: 'World Cup Final', grid: { cols: 7, rows: 7 }, buttons: [],
+      free_slots: Array.from({ length: 49 }, (_, index) => index), fingerprint: 'world-cup-v1',
+    }),
+  }));
+
+  await openEditor(page);
+  await page.locator('#live-connect-btn').click();
+  await page.locator('#style-topic').click();
+
+  await expect(page.locator('#operation-existing')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#title-field')).toBeHidden();
+  await expect(page.locator('#build-btn-label')).toHaveText('Update TD Snap');
 });
 
 test('adds words to exact empty cells on an existing page without creating a page', async ({ page }) => {
@@ -458,6 +538,7 @@ test('AI topic phrases use meaning-matched colors and rows', async ({ page }) =>
 
   await openEditor(page);
   await page.locator('#live-connect-btn').click();
+  await page.locator('#operation-new').click();
   await page.locator('#style-topic').click();
   await page.locator('#title-input').fill('Harry Potter');
   await page.locator('#ai-suggest > summary').click();

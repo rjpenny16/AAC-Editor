@@ -28,7 +28,7 @@ from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import grounding, localai, ollama
 
-APP_ID = "tdsnap-page-builder"
+APP_ID = "aac-editor"
 DEFAULT_PORT = 8765
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # page sets with media can be large
 SESSION_MAX_AGE = 24 * 60 * 60  # leftover session dirs older than this are removed
@@ -37,6 +37,8 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 
 API_TOKEN = secrets.token_urlsafe(32)
+# ponytail: TD Snap exposes one UI; one lock prevents concurrent automation.
+_LIVE_LOCK = threading.Lock()
 
 _SESSION_ROOT = os.path.join(tempfile.gettempdir(), "tdsnap-editor")
 _sessions = {}
@@ -258,18 +260,21 @@ def index():
 
 @app.get("/api/tdsnap/status")
 def live_status():
-    status = live.status(False) if request.headers.get("X-TDSnap-Brief") == "1" else live.status()
+    with _LIVE_LOCK:
+        status = live.status(False) if request.headers.get("X-TDSnap-Brief") == "1" else live.status()
     return jsonify({"ok": True, **status})
 
 
 @app.post("/api/tdsnap/launch")
 def live_launch():
-    return jsonify({"ok": True, **live.launch()})
+    with _LIVE_LOCK:
+        return jsonify({"ok": True, **live.launch()})
 
 
 @app.get("/api/tdsnap/page-layout")
 def live_page_layout():
-    return jsonify({"ok": True, **live.inspect_page(request.args.get("page"))})
+    with _LIVE_LOCK:
+        return jsonify({"ok": True, **live.inspect_page(request.args.get("page"))})
 
 
 @app.post("/api/tdsnap/edit-plan")
@@ -282,9 +287,10 @@ def live_execute_plan():
     items = payload.get("items", [])
     if not isinstance(items, list):
         raise PagesetError("'items' must be a list of words.")
-    report = live.add_to_existing_page(
-        payload.get("page", ""), items, payload.get("fingerprint")
-    )
+    with _LIVE_LOCK:
+        report = live.add_to_existing_page(
+            payload.get("page", ""), items, payload.get("fingerprint")
+        )
     return jsonify({"ok": True, **report})
 
 
@@ -298,11 +304,12 @@ def live_add_page():
     items = payload.get("items", [])
     if not isinstance(items, list):
         raise PagesetError("'items' must be a list of words.")
-    report = live.add_topic_page(
-        payload.get("title", ""),
-        items,
-        payload.get("parent", live.DEFAULT_PARENT),
-    )
+    with _LIVE_LOCK:
+        report = live.add_topic_page(
+            payload.get("title", ""),
+            items,
+            payload.get("parent", live.DEFAULT_PARENT),
+        )
     report["warnings"] = [warning for warning in report["warnings"] if warning]
     return jsonify({"ok": True, **report})
 
@@ -564,14 +571,14 @@ def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
     url = f"http://127.0.0.1:{port}"
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    print(f"TD Snap Page Builder running at {url} (press Ctrl+C to stop)")
+    print(f"AAC Editor running at {url} (press Ctrl+C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         server.server_close()
-    print("TD Snap Page Builder stopped.")
+    print("AAC Editor stopped.")
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -228,6 +228,48 @@ def test_page_name_prefers_the_top_title(monkeypatch):
     assert live._page_name(object(), group) == "Topic: Shopping"
 
 
+def test_grid_uses_saved_dimensions_for_a_completely_blank_page(tmp_path, monkeypatch):
+    pageset = tmp_path / "active.sps"
+    with sqlite3.connect(pageset) as connection:
+        connection.execute("CREATE TABLE Page (Id INTEGER, Title TEXT, GridDimension TEXT)")
+        connection.execute(
+            "CREATE TABLE PageLayout (Id INTEGER, PageLayoutSetting TEXT, PageId INTEGER)"
+        )
+        connection.execute("INSERT INTO Page VALUES (1, 'World Cup Final', NULL)")
+        connection.execute("INSERT INTO PageLayout VALUES (1, '7,7,True,0', 1)")
+    monkeypatch.setattr(live, "_active_pageset_path", lambda: str(pageset))
+    group = SimpleNamespace(
+        Name="World Cup Final",
+        BoundingRectangle=SimpleNamespace(left=0, top=0, right=700, bottom=700),
+        GetChildren=lambda: [],
+    )
+
+    grid = live._grid(group)
+
+    assert (len(grid.xs), len(grid.ys), grid.xs[0], grid.ys[0]) == (7, 7, 50, 50)
+
+
+def test_activate_retries_while_td_snap_is_busy(monkeypatch):
+    class BusyError(Exception):
+        hresult = -2147220992
+
+    class Pattern:
+        calls = 0
+
+        def Invoke(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise BusyError
+
+    pattern = Pattern()
+    control = SimpleNamespace(GetInvokePattern=lambda: pattern)
+    monkeypatch.setattr(live.time, "sleep", lambda _seconds: None)
+
+    live._activate(control)
+
+    assert pattern.calls == 2
+
+
 def test_open_page_accepts_td_snap_internal_page_name(monkeypatch):
     state = {"name": "Topics Menu Page"}
 

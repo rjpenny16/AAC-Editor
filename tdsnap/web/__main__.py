@@ -1,7 +1,7 @@
 import argparse
 
 parser = argparse.ArgumentParser(prog="tdsnap.web",
-                                 description="TD Snap Page Builder web UI")
+                                 description="AAC Editor web UI")
 parser.add_argument("--port", type=int, default=8765)
 parser.add_argument("--no-browser", action="store_true",
                     help="don't open a browser tab automatically")

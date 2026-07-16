@@ -21,7 +21,7 @@ import urllib.request
 from ..errors import PagesetError
 from . import server
 
-WINDOW_TITLE = "TD Snap Page Builder"
+WINDOW_TITLE = "AAC Editor"
 FILE_TYPES = ("TD Snap page sets (*.sps;*.spb)", "All files (*.*)")
 
 

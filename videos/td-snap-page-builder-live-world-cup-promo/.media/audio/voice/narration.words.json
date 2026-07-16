@@ -1,0 +1,492 @@
+[
+  {
+    "id": "w0",
+    "text": "Build",
+    "start": 0,
+    "end": 0.488,
+    "frame": 1
+  },
+  {
+    "id": "w1",
+    "text": "a",
+    "start": 0.534,
+    "end": 0.557,
+    "frame": 1
+  },
+  {
+    "id": "w2",
+    "text": "complete",
+    "start": 0.604,
+    "end": 1.08,
+    "frame": 1
+  },
+  {
+    "id": "w3",
+    "text": "TD",
+    "start": 1.138,
+    "end": 1.474,
+    "frame": 1
+  },
+  {
+    "id": "w4",
+    "text": "Snap",
+    "start": 1.637,
+    "end": 2.032,
+    "frame": 1
+  },
+  {
+    "id": "w5",
+    "text": "topic",
+    "start": 2.113,
+    "end": 2.473,
+    "frame": 1
+  },
+  {
+    "id": "w6",
+    "text": "page—without",
+    "start": 2.531,
+    "end": 3.576,
+    "frame": 1
+  },
+  {
+    "id": "w7",
+    "text": "editing",
+    "start": 3.634,
+    "end": 3.994,
+    "frame": 1
+  },
+  {
+    "id": "w8",
+    "text": "every",
+    "start": 4.098,
+    "end": 4.423,
+    "frame": 1
+  },
+  {
+    "id": "w9",
+    "text": "button",
+    "start": 4.47,
+    "end": 4.725,
+    "frame": 1
+  },
+  {
+    "id": "w10",
+    "text": "by",
+    "start": 4.783,
+    "end": 4.934,
+    "frame": 1
+  },
+  {
+    "id": "w11",
+    "text": "hand.",
+    "start": 5.016,
+    "end": 5.584,
+    "frame": 1
+  },
+  {
+    "id": "w0",
+    "text": "Connect",
+    "start": 0.08,
+    "end": 0.428,
+    "frame": 2
+  },
+  {
+    "id": "w1",
+    "text": "Page",
+    "start": 0.486,
+    "end": 0.788,
+    "frame": 2
+  },
+  {
+    "id": "w2",
+    "text": "Builder",
+    "start": 0.823,
+    "end": 1.159,
+    "frame": 2
+  },
+  {
+    "id": "w3",
+    "text": "to",
+    "start": 1.217,
+    "end": 1.287,
+    "frame": 2
+  },
+  {
+    "id": "w4",
+    "text": "the",
+    "start": 1.345,
+    "end": 1.415,
+    "frame": 2
+  },
+  {
+    "id": "w5",
+    "text": "page",
+    "start": 1.45,
+    "end": 1.763,
+    "frame": 2
+  },
+  {
+    "id": "w6",
+    "text": "set",
+    "start": 1.798,
+    "end": 2.007,
+    "frame": 2
+  },
+  {
+    "id": "w7",
+    "text": "already",
+    "start": 2.088,
+    "end": 2.529,
+    "frame": 2
+  },
+  {
+    "id": "w8",
+    "text": "open",
+    "start": 2.611,
+    "end": 2.947,
+    "frame": 2
+  },
+  {
+    "id": "w9",
+    "text": "on",
+    "start": 3.029,
+    "end": 3.098,
+    "frame": 2
+  },
+  {
+    "id": "w10",
+    "text": "your",
+    "start": 3.145,
+    "end": 3.261,
+    "frame": 2
+  },
+  {
+    "id": "w11",
+    "text": "computer.",
+    "start": 3.307,
+    "end": 4.108,
+    "frame": 2
+  },
+  {
+    "id": "w0",
+    "text": "Create",
+    "start": 0.08,
+    "end": 0.498,
+    "frame": 3
+  },
+  {
+    "id": "w1",
+    "text": "a",
+    "start": 0.522,
+    "end": 0.545,
+    "frame": 3
+  },
+  {
+    "id": "w2",
+    "text": "World",
+    "start": 0.603,
+    "end": 0.858,
+    "frame": 3
+  },
+  {
+    "id": "w3",
+    "text": "Cup",
+    "start": 0.905,
+    "end": 1.102,
+    "frame": 3
+  },
+  {
+    "id": "w4",
+    "text": "Final",
+    "start": 1.183,
+    "end": 1.508,
+    "frame": 3
+  },
+  {
+    "id": "w5",
+    "text": "topic",
+    "start": 1.555,
+    "end": 1.973,
+    "frame": 3
+  },
+  {
+    "id": "w6",
+    "text": "for",
+    "start": 2.031,
+    "end": 2.147,
+    "frame": 3
+  },
+  {
+    "id": "w7",
+    "text": "Spain",
+    "start": 2.205,
+    "end": 2.507,
+    "frame": 3
+  },
+  {
+    "id": "w8",
+    "text": "versus",
+    "start": 2.6,
+    "end": 2.925,
+    "frame": 3
+  },
+  {
+    "id": "w9",
+    "text": "Argentina.",
+    "start": 3.006,
+    "end": 3.993,
+    "frame": 3
+  },
+  {
+    "id": "w0",
+    "text": "Add",
+    "start": 0.08,
+    "end": 0.37,
+    "frame": 4
+  },
+  {
+    "id": "w1",
+    "text": "ready-to-say",
+    "start": 0.452,
+    "end": 1.009,
+    "frame": 4
+  },
+  {
+    "id": "w2",
+    "text": "phrases,",
+    "start": 1.067,
+    "end": 1.694,
+    "frame": 4
+  },
+  {
+    "id": "w3",
+    "text": "then",
+    "start": 1.729,
+    "end": 1.926,
+    "frame": 4
+  },
+  {
+    "id": "w4",
+    "text": "arrange",
+    "start": 1.972,
+    "end": 2.321,
+    "frame": 4
+  },
+  {
+    "id": "w5",
+    "text": "them",
+    "start": 2.356,
+    "end": 2.507,
+    "frame": 4
+  },
+  {
+    "id": "w6",
+    "text": "in",
+    "start": 2.565,
+    "end": 2.634,
+    "frame": 4
+  },
+  {
+    "id": "w7",
+    "text": "a",
+    "start": 2.692,
+    "end": 2.716,
+    "frame": 4
+  },
+  {
+    "id": "w8",
+    "text": "live,",
+    "start": 2.797,
+    "end": 3.192,
+    "frame": 4
+  },
+  {
+    "id": "w9",
+    "text": "color-coded",
+    "start": 3.226,
+    "end": 3.969,
+    "frame": 4
+  },
+  {
+    "id": "w10",
+    "text": "preview.",
+    "start": 4.027,
+    "end": 4.782,
+    "frame": 4
+  },
+  {
+    "id": "w0",
+    "text": "Review",
+    "start": 0.08,
+    "end": 0.452,
+    "frame": 5
+  },
+  {
+    "id": "w1",
+    "text": "every",
+    "start": 0.58,
+    "end": 0.963,
+    "frame": 5
+  },
+  {
+    "id": "w2",
+    "text": "change,",
+    "start": 1.044,
+    "end": 1.636,
+    "frame": 5
+  },
+  {
+    "id": "w3",
+    "text": "then",
+    "start": 1.868,
+    "end": 2.101,
+    "frame": 5
+  },
+  {
+    "id": "w4",
+    "text": "update",
+    "start": 2.228,
+    "end": 2.751,
+    "frame": 5
+  },
+  {
+    "id": "w5",
+    "text": "TD",
+    "start": 2.786,
+    "end": 3.099,
+    "frame": 5
+  },
+  {
+    "id": "w6",
+    "text": "Snap.",
+    "start": 3.227,
+    "end": 3.865,
+    "frame": 5
+  },
+  {
+    "id": "w0",
+    "text": "The",
+    "start": 0.08,
+    "end": 0.185,
+    "frame": 6
+  },
+  {
+    "id": "w1",
+    "text": "finished",
+    "start": 0.231,
+    "end": 0.521,
+    "frame": 6
+  },
+  {
+    "id": "w2",
+    "text": "page",
+    "start": 0.556,
+    "end": 0.823,
+    "frame": 6
+  },
+  {
+    "id": "w3",
+    "text": "appears",
+    "start": 0.846,
+    "end": 1.218,
+    "frame": 6
+  },
+  {
+    "id": "w4",
+    "text": "in",
+    "start": 1.276,
+    "end": 1.346,
+    "frame": 6
+  },
+  {
+    "id": "w5",
+    "text": "the",
+    "start": 1.392,
+    "end": 1.462,
+    "frame": 6
+  },
+  {
+    "id": "w6",
+    "text": "same",
+    "start": 1.508,
+    "end": 1.74,
+    "frame": 6
+  },
+  {
+    "id": "w7",
+    "text": "page",
+    "start": 1.775,
+    "end": 2.077,
+    "frame": 6
+  },
+  {
+    "id": "w8",
+    "text": "set—ready",
+    "start": 2.112,
+    "end": 3.075,
+    "frame": 6
+  },
+  {
+    "id": "w9",
+    "text": "to",
+    "start": 3.134,
+    "end": 3.203,
+    "frame": 6
+  },
+  {
+    "id": "w10",
+    "text": "use,",
+    "start": 3.308,
+    "end": 3.83,
+    "frame": 6
+  },
+  {
+    "id": "w11",
+    "text": "share,",
+    "start": 3.958,
+    "end": 4.48,
+    "frame": 6
+  },
+  {
+    "id": "w12",
+    "text": "and",
+    "start": 4.527,
+    "end": 4.701,
+    "frame": 6
+  },
+  {
+    "id": "w13",
+    "text": "sync.",
+    "start": 4.782,
+    "end": 5.339,
+    "frame": 6
+  },
+  {
+    "id": "w0",
+    "text": "Less",
+    "start": 0.08,
+    "end": 0.347,
+    "frame": 7
+  },
+  {
+    "id": "w1",
+    "text": "editing.",
+    "start": 0.406,
+    "end": 0.963,
+    "frame": 7
+  },
+  {
+    "id": "w2",
+    "text": "More",
+    "start": 1.149,
+    "end": 1.392,
+    "frame": 7
+  },
+  {
+    "id": "w3",
+    "text": "communicating.",
+    "start": 1.439,
+    "end": 2.577,
+    "frame": 7
+  }
+]

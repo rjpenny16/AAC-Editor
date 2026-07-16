@@ -1,6 +1,6 @@
 # PyInstaller spec for the packaged desktop app.
 # Build:  pyinstaller packaging/tdsnap.spec
-# Output: dist/TDSnapPageBuilder/ (one-dir build: starts fast, easy to zip)
+# Output: dist/AACEditor/ (one-dir build: starts fast, easy to zip)
 
 import os
 
@@ -50,7 +50,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="TD Snap Page Builder",
+    name="AAC Editor",
     console=False,
     icon=os.path.join(here, "icon.ico"),
 )
@@ -60,5 +60,5 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name="TDSnapPageBuilder",
+    name="AACEditor",
 )

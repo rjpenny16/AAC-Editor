@@ -1,0 +1,404 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Archivo";
+      src: url("assets/fonts/Archivo.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 100 900;
+    }
+
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: "Archivo";
+      color: #1d1d1f;
+    }
+
+    .clip {
+      position: absolute;
+      box-sizing: border-box;
+    }
+
+    .ground,
+    .scene-one,
+    .scene-two,
+    .scene-three {
+      inset: 0;
+    }
+
+    .ground {
+      background:
+        radial-gradient(circle at 50% 38%, rgba(0, 113, 227, 0.055), transparent 38%),
+        #ffffff;
+    }
+
+    .scene-one {
+      display: grid;
+      place-items: center;
+    }
+
+    .button-stage {
+      position: relative;
+      width: 625px;
+      height: 160px;
+      display: block;
+    }
+
+    .button-burst {
+      position: absolute;
+      z-index: 1;
+      inset: 18px 30px;
+      border-radius: 100px;
+      background: radial-gradient(ellipse, rgba(0, 82, 190, 0.42), rgba(0, 113, 227, 0));
+      pointer-events: none;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .button-crop {
+      position: absolute;
+      z-index: 2;
+      inset: 0;
+      width: 625px;
+      height: 160px;
+      overflow: hidden;
+      border: 1.5px solid rgba(0, 113, 227, 0.2);
+      border-radius: 100px;
+      background: #ffffff;
+      opacity: 0;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .button-crop img {
+      position: absolute;
+      left: -3062px;
+      top: -1892px;
+      width: 3744px;
+      height: auto;
+      display: block;
+      max-width: none;
+      pointer-events: none;
+    }
+
+    .type-stage {
+      position: absolute;
+      left: 5cqw;
+      top: 15cqh;
+      width: 90cqw;
+      height: 48cqh;
+    }
+
+    .swap-line {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      margin: 0;
+      text-align: center;
+      letter-spacing: -0.02em;
+      line-height: 1.06;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .less-line {
+      z-index: 1;
+      font-size: 4.2cqw;
+      font-weight: 600;
+      color: #1d1d1f;
+    }
+
+    .more-line {
+      z-index: 2;
+      max-width: 86cqw;
+      margin-inline: auto;
+      font-size: 5.2cqw;
+      font-weight: 700;
+      color: #1d1d1f;
+    }
+
+    .emphasis {
+      color: #0071e3;
+    }
+
+    .rings {
+      position: absolute;
+      z-index: 0;
+      left: 18.75cqw;
+      top: 5.1cqh;
+      width: 62.5cqw;
+      height: 70.4cqh;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .ring {
+      position: absolute;
+      border: 1.5px solid rgba(0, 113, 227, 0.15);
+      border-radius: 50%;
+    }
+
+    .ring-one {
+      inset: 0;
+    }
+
+    .ring-two {
+      inset: 8cqh 7cqw;
+      border-color: rgba(0, 113, 227, 0.19);
+    }
+
+    .ring-three {
+      inset: 16cqh 14cqw;
+      border-color: rgba(0, 113, 227, 0.24);
+    }
+
+    .final-lockup {
+      position: absolute;
+      z-index: 1;
+      left: 5cqw;
+      top: 22.5cqh;
+      width: 90cqw;
+      height: 42cqh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3.4cqh;
+      text-align: center;
+      will-change: opacity;
+    }
+
+    .accent-line {
+      width: 60px;
+      height: 4px;
+      flex: 0 0 4px;
+      border-radius: 2px;
+      background: #0071e3;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .product-name {
+      width: 100%;
+      min-height: 1.1em;
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 0.28em;
+      margin: 0;
+      font-size: 4.5cqw;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.08;
+      color: #1d1d1f;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .brand-part,
+    .proof-item {
+      display: block;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .proof-row {
+      min-height: 1.6em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55em;
+      font-size: 1.65cqw;
+      font-weight: 500;
+      line-height: 1.3;
+      color: #55555a;
+    }
+
+    .proof-dot {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 6px;
+      border-radius: 50%;
+      background: #0071e3;
+    }
+
+    .progress {
+      left: 5cqw;
+      top: 81.67cqh;
+      width: 90cqw;
+      height: 3px;
+      overflow: hidden;
+      border-radius: 6px;
+      background: rgba(0, 113, 227, 0.08);
+      will-change: opacity;
+    }
+
+    .progress-fill {
+      width: 100%;
+      height: 100%;
+      display: block;
+      border-radius: 6px;
+      background: #0071e3;
+      transform-origin: 0 50%;
+      will-change: transform;
+    }
+  </style>
+
+  <div data-hf-id="hf-fb7c" id="root" data-composition-id="06-back-to-what-matters" data-duration="8.5" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-r0iw" class="clip ground" data-start="0" data-duration="8.5" data-track-index="0"></div>
+
+    <section data-hf-id="hf-jgha" class="clip scene-one" data-start="0" data-duration="2" data-track-index="1">
+      <div data-hf-id="hf-jar9" class="button-stage">
+        <div data-hf-id="hf-kenj" class="button-burst" id="f06-button-burst"></div>
+        <div data-hf-id="hf-bxnn" class="button-crop" id="f06-button-crop">
+          <img data-hf-id="hf-uhdv" src="assets/editor-workspace.png" alt="" aria-hidden="true">
+        </div>
+      </div>
+    </section>
+
+    <section data-hf-id="hf-ing8" class="clip scene-two" data-start="2" data-duration="3.6" data-track-index="2">
+      <div data-hf-id="hf-4hb5" class="type-stage">
+        <p data-hf-id="hf-6fkg" class="swap-line less-line" id="f06-less-line">less time <span data-hf-id="hf-7b6h" class="emphasis">editing</span></p>
+        <p data-hf-id="hf-b6qw" class="swap-line more-line" id="f06-more-line">more time <span data-hf-id="hf-spbf" class="emphasis">communicating</span></p>
+      </div>
+    </section>
+
+    <section data-hf-id="hf-man8" class="clip scene-three" data-start="5.6" data-duration="2.9" data-track-index="3">
+      <div data-hf-id="hf-civ2" class="rings" id="f06-rings" aria-hidden="true">
+        <div data-hf-id="hf-ua03" class="ring ring-one"></div>
+        <div data-hf-id="hf-cgm9" class="ring ring-two"></div>
+        <div data-hf-id="hf-0vyr" class="ring ring-three"></div>
+      </div>
+      <div data-hf-id="hf-512b" class="final-lockup" id="f06-final-lockup">
+        <div data-hf-id="hf-ma0j" class="accent-line" id="f06-accent-line"></div>
+        <h1 data-hf-id="hf-aspd" class="product-name" id="f06-product-name">
+          <span data-hf-id="hf-ndbv" class="brand-part" id="f06-brand-primary">TD Snap</span>
+          <span data-hf-id="hf-xndi" class="brand-part" id="f06-brand-builder">Page Builder</span>
+        </h1>
+        <div data-hf-id="hf-vit0" class="proof-row" aria-label="Private. Reviewable. Local.">
+          <span data-hf-id="hf-yusj" class="proof-item" id="f06-proof-private">Private.</span>
+          <span data-hf-id="hf-kj7i" class="proof-dot" aria-hidden="true"></span>
+          <span data-hf-id="hf-em6b" class="proof-item" id="f06-proof-reviewable">Reviewable.</span>
+          <span data-hf-id="hf-5yqq" class="proof-dot" aria-hidden="true"></span>
+          <span data-hf-id="hf-mcnj" class="proof-item" id="f06-proof-local">Local.</span>
+        </div>
+      </div>
+    </section>
+
+    <div data-hf-id="hf-ixaq" class="clip progress" id="f06-progress" data-start="0" data-duration="8.5" data-track-index="4">
+      <span data-hf-id="hf-grwy" class="progress-fill" id="f06-progress-fill"></span>
+    </div>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+
+    tl.fromTo(
+      "#f06-button-crop",
+      { opacity: 0.35, y: 18, scale: 0.92 },
+      { opacity: 1, y: 0, scale: 1, duration: 0.46, ease: "power3.out" },
+      0,
+    );
+    tl.to("#f06-button-crop", { scale: 0.93, duration: 0.16, ease: "power1.in" }, 0.76);
+    tl.to("#f06-button-crop", { scale: 1, duration: 0.48, ease: "power3.out" }, 0.92);
+    tl.fromTo(
+      "#f06-button-burst",
+      { scale: 1, opacity: 0 },
+      { scale: 5, opacity: 0.36, duration: 0.42, ease: "power2.out" },
+      0.92,
+    );
+    tl.to("#f06-button-burst", { opacity: 0, duration: 0.22, ease: "power2.in" }, 1.34);
+
+    tl.to("#f06-button-crop", { x: 230, duration: 0.3, ease: "power4.in" }, 1.7);
+    tl.to("#f06-button-crop", { opacity: 0, duration: 0.28, ease: "power1.in" }, 1.7);
+    tl.set("#f06-button-crop", { opacity: 0 }, 2);
+    tl.fromTo(
+      "#f06-less-line",
+      { x: -230, opacity: 0.35 },
+      { x: 0, opacity: 1, duration: 0.42, ease: "power4.out", immediateRender: true },
+      2,
+    );
+
+    tl.to(
+      "#f06-less-line",
+      { scale: 0.7, opacity: 0, duration: 0.38, ease: "power2.in" },
+      3.72,
+    );
+    tl.fromTo(
+      "#f06-more-line",
+      { scale: 0.7, opacity: 0 },
+      { scale: 1, opacity: 1, duration: 0.62, ease: "power3.out", immediateRender: true },
+      3.92,
+    );
+
+    tl.to("#f06-more-line", { x: -230, duration: 0.3, ease: "power4.in" }, 5.3);
+    tl.to("#f06-more-line", { opacity: 0, duration: 0.28, ease: "power1.in" }, 5.3);
+    tl.set("#f06-more-line", { opacity: 0 }, 5.6);
+    tl.fromTo(
+      "#f06-product-name",
+      { x: 230, opacity: 0.35 },
+      { x: 0, opacity: 1, duration: 0.36, ease: "power4.out", immediateRender: true },
+      5.6,
+    );
+    tl.fromTo(
+      "#f06-rings",
+      { scale: 0.82, opacity: 0 },
+      { scale: 1, opacity: 1, duration: 1.4, ease: "power3.out", immediateRender: true },
+      5.6,
+    );
+    tl.fromTo(
+      "#f06-accent-line",
+      { scaleX: 0, opacity: 0 },
+      { scaleX: 1, opacity: 1, duration: 0.5, ease: "power3.out", immediateRender: true },
+      5.6,
+    );
+
+    const CONTENT = [
+      { selector: "#f06-brand-primary", text: "TD Snap", speedFactor: 1, hold: 0.04 },
+      { selector: "#f06-brand-builder", text: "Page Builder", speedFactor: 1, hold: 0.05 },
+      { selector: "#f06-proof-private", text: "Private.", speedFactor: 1, hold: 0.04 },
+      { selector: "#f06-proof-reviewable", text: "Reviewable.", speedFactor: 1, hold: 0.04 },
+      { selector: "#f06-proof-local", text: "Local.", speedFactor: 1, hold: 0.3 },
+    ];
+    const BASE_DURATION = 0.11;
+    const SEC_PER_CHAR = 0.012;
+    let cumulative = 0;
+    const SEQUENCE = CONTENT.map((entry) => {
+      const duration = (BASE_DURATION + entry.text.length * SEC_PER_CHAR + entry.hold) / entry.speedFactor;
+      const start = cumulative;
+      cumulative += duration;
+      return { ...entry, start, end: cumulative };
+    });
+
+    SEQUENCE.forEach((entry) => {
+      tl.fromTo(
+        entry.selector,
+        { y: 26, scale: 0.94, opacity: 0 },
+        { y: 0, scale: 1, opacity: 1, duration: 0.42, ease: "power3.out", immediateRender: true },
+        5.62 + entry.start,
+      );
+    });
+
+    tl.fromTo(
+      "#f06-progress-fill",
+      { scaleX: 0.82 },
+      { scaleX: 1, duration: 8.5, ease: "none" },
+      0,
+    );
+
+    tl.to(
+      "#f06-final-lockup, #f06-rings, #f06-progress",
+      { opacity: 0, duration: 0.38, ease: "power1.inOut" },
+      8.12,
+    );
+
+    window.__timelines["06-back-to-what-matters"] = tl;
+  </script>
+</template>

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>AAC Editor — Private by Design</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Nunito";
+        src: url("assets/fonts/Nunito-Black.ttf") format("truetype");
+        font-style: normal;
+        font-weight: 900;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #fff; }
+      body { font-family: "Nunito", sans-serif; color: #102149; }
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+      .clip { position: absolute; inset: 0; overflow: hidden; }
+      .base { background: #fff; }
+      .scene { display: grid; place-items: center; }
+      .blue-field { background: #0057ff; }
+      .white-field { background: #fff; }
+      .dot, .pill { position: absolute; z-index: 1; }
+      .dot { width: 48px; height: 48px; border-radius: 50%; }
+      .pill { width: 142px; height: 42px; border-radius: 999px; }
+      .pink { background: #ff2d8a; }
+      .lime { background: #7fff00; }
+      .yellow { background: #ffe500; }
+      .blue { background: #0057ff; }
+
+      #private-hook { position: relative; z-index: 5; width: 1450px; padding: 50px 62px; border: 11px solid #fff; border-radius: 40px; background: #0057ff; color: #fff; font-size: 145px; line-height: .88; text-align: center; text-transform: uppercase; box-shadow: 18px 20px 0 #ffe500; }
+      #private-hook::after { content: ""; position: absolute; left: 240px; right: 240px; bottom: -46px; height: 50px; border-radius: 999px; background: #ff2d8a; }
+
+      #private-core { position: absolute; left: 500px; top: 190px; z-index: 4; width: 920px; height: 575px; overflow: hidden; border: 10px solid #0057ff; border-radius: 34px; background: #fff; box-shadow: 18px 20px 0 #ff2d8a; will-change: transform; }
+      #private-core img { display: block; width: 100%; height: 100%; object-fit: cover; }
+      .burst-wrap { position: absolute; inset: 0; z-index: 7; }
+      .trust-card { position: absolute; left: 50%; top: 50%; z-index: 8; width: 520px; min-height: 150px; display: grid; place-items: center; padding: 22px 30px; border: 8px solid #0057ff; border-radius: 28px; background: #fff; color: #0057ff; font-size: 42px; line-height: .96; text-align: center; text-transform: uppercase; box-shadow: 12px 13px 0 #ffe500; will-change: transform; }
+      #trust-checks { box-shadow: 12px 13px 0 #ff2d8a; }
+      #trust-ai { box-shadow: 12px 13px 0 #7fff00; }
+      #trust-upload { box-shadow: 12px 13px 0 #ffe500; }
+      .privacy-kicker { position: absolute; left: 90px; top: 56px; z-index: 9; padding: 14px 26px; border-radius: 999px; background: #ff2d8a; color: #fff; font-size: 28px; }
+
+      #private-powered-stage { position: relative; width: 1500px; height: 800px; }
+      #private-glow { position: absolute; left: 365px; top: 110px; z-index: 1; width: 780px; height: 620px; border-radius: 50%; background: #7fff00; filter: blur(78px); opacity: 0; will-change: transform, opacity; }
+      #private-powered-window { position: absolute; left: 300px; top: 100px; z-index: 3; width: 900px; height: 570px; overflow: hidden; border: 10px solid #fff; border-radius: 36px; background: #fff; box-shadow: 18px 20px 0 #ffe500; }
+      #private-powered-window { background: #fff url("assets/editor-workspace.png") center / cover no-repeat; }
+      #private-local-strip { position: absolute; left: 475px; top: 620px; z-index: 6; padding: 22px 40px; border: 8px solid #fff; border-radius: 20px; background: #ff2d8a; color: #fff; font-size: 48px; text-transform: uppercase; box-shadow: 12px 13px 0 #102149; }
+
+      #private-final { width: 1560px; text-align: left; }
+      #private-final .word { display: inline-block; margin-right: 18px; padding: 22px 34px; border-radius: 24px; font-size: 102px; line-height: .9; text-transform: uppercase; }
+      #private-final-local { border: 9px solid #0057ff; background: #fff; color: #0057ff; box-shadow: 12px 14px 0 #ffe500; }
+      #private-final-reviewable { border: 9px solid #fff; background: #ff2d8a; color: #fff; box-shadow: 12px 14px 0 #0057ff; }
+      #private-final-yours { border: 9px solid #102149; background: #7fff00; color: #102149; box-shadow: 12px 14px 0 #ff2d8a; }
+      #private-final-brand { position: absolute; left: 180px; top: 720px; color: #102149; font-size: 58px; }
+      #private-final-sub { position: absolute; left: 180px; top: 805px; padding: 14px 24px; border-radius: 14px; background: #0057ff; color: #fff; font-size: 30px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="aac-private" data-start="0" data-duration="15" data-width="1920" data-height="1080">
+      <div id="private-base" class="clip base" data-start="0" data-duration="15" data-track-index="0"></div>
+
+      <section id="private-scene-hook" class="clip scene white-field" data-start="0" data-duration="3" data-track-index="1">
+        <span class="dot pink" style="left:180px;top:150px"></span>
+        <span class="pill lime" style="right:190px;top:170px"></span>
+        <span class="dot yellow" style="right:280px;bottom:170px"></span>
+        <div id="private-hook">Private by design</div>
+      </section>
+
+      <section id="private-scene-proof" class="clip scene white-field" data-start="3" data-duration="5.8" data-track-index="2">
+        <div class="privacy-kicker">Trust built into every edit</div>
+        <div id="private-core"><img src="assets/editor-workspace.png" alt="TD Snap Page Builder local editor" /></div>
+        <div class="burst-wrap">
+          <div id="trust-checks" class="trust-card" data-target-x="-600" data-target-y="-285">Checked automatically</div>
+          <div id="trust-ai" class="trust-card" data-target-x="600" data-target-y="-285">Local AI optional</div>
+          <div id="trust-upload" class="trust-card" data-target-x="0" data-target-y="300">Nothing uploaded</div>
+        </div>
+      </section>
+
+      <section id="private-scene-local" class="clip scene blue-field" data-start="8.8" data-duration="3" data-track-index="3">
+        <div id="private-powered-stage">
+          <div id="private-glow"></div>
+          <div id="private-powered-window" aria-label="Local AAC editor workspace"></div>
+          <div id="private-local-strip">On this computer</div>
+        </div>
+      </section>
+
+      <section id="private-scene-outcome" class="clip scene white-field" data-start="11.8" data-duration="3.2" data-track-index="4">
+        <span class="dot yellow" style="left:90px;top:150px"></span>
+        <span class="pill blue" style="right:120px;top:150px"></span>
+        <span class="dot pink" style="right:230px;bottom:180px"></span>
+        <div id="private-final">
+          <span id="private-final-local" class="word">Local.</span>
+          <span id="private-final-reviewable" class="word">Reviewable.</span>
+          <span id="private-final-yours" class="word">Yours.</span>
+        </div>
+        <div id="private-final-brand">TD Snap Page Builder</div>
+        <div id="private-final-sub">Less time editing. More time communicating.</div>
+      </section>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#private-hook", { scale: 0, opacity: 0, rotation: -7 }, { scale: 1, opacity: 1, rotation: -2, duration: .66, ease: "back.out(1.7)" }, .18);
+
+      tl.fromTo("#private-core", { scale: .72, opacity: 0, rotation: 7 }, { scale: 1, opacity: 1, rotation: -1.5, duration: .82, ease: "power3.out" }, 3.12);
+      const trustCards = gsap.utils.toArray(".trust-card");
+      trustCards.forEach((card, i) => {
+        const targetX = Number(card.dataset.targetX);
+        const targetY = Number(card.dataset.targetY);
+        tl.fromTo(card, { xPercent: -50, yPercent: -50, x: 0, y: 0, scale: .45, opacity: 0, rotation: i === 1 ? 8 : -8 }, { x: targetX, y: targetY, scale: 1, opacity: 1, rotation: i === 1 ? 3 : -3, duration: 1.05, ease: "power3.out" }, 4.25 + i * .72);
+      });
+
+      tl.fromTo("#private-powered-window", { scale: .82, opacity: 0, rotation: -7 }, { scale: 1, opacity: 1, rotation: 1.5, duration: .7, ease: "power3.out" }, 8.92);
+      tl.fromTo("#private-glow", { scale: .82, opacity: 0 }, { scale: 1, opacity: .32, duration: .9, ease: "power2.out" }, 8.92);
+      tl.fromTo("#private-local-strip", { scale: 0, opacity: 0, rotation: 8 }, { scale: 1, opacity: 1, rotation: -2, duration: .52, ease: "back.out(1.65)" }, 10.0);
+
+      tl.fromTo("#private-final-local", { scale: 0, opacity: 0, rotation: -8 }, { scale: 1, opacity: 1, rotation: -2, duration: .48, ease: "back.out(1.6)" }, 11.98);
+      tl.fromTo("#private-final-reviewable", { scale: 0, opacity: 0, rotation: 7 }, { scale: 1, opacity: 1, rotation: 1, duration: .52, ease: "back.out(1.55)" }, 12.48);
+      tl.fromTo("#private-final-yours", { scale: 0, opacity: 0, rotation: -7 }, { scale: 1, opacity: 1, rotation: -1, duration: .48, ease: "back.out(1.6)" }, 12.98);
+      tl.fromTo("#private-final-brand", { x: -180, opacity: 0 }, { x: 0, opacity: 1, duration: .5, ease: "power3.out" }, 13.45);
+      tl.fromTo("#private-final-sub", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: .42, ease: "power3.out" }, 13.8);
+
+      window.__timelines["aac-private"] = tl;
+    </script>
+  </body>
+</html>

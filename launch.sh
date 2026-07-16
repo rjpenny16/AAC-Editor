@@ -2,7 +2,7 @@
 
 cd -- "$(dirname -- "$0")" || exit 1
 
-echo "Starting TD Snap Page Builder..."
+echo "Starting AAC Editor..."
 echo ""
 
 if ! command -v python3 &> /dev/null; then

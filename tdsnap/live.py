@@ -163,8 +163,18 @@ def _activate(control):
     getter = getattr(control, "GetInvokePattern", None)
     pattern = getter() if getter else None
     if pattern:
-        pattern.Invoke()
-        return
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                pattern.Invoke()
+                return
+            except Exception as exc:
+                # UIA_E_ELEMENTNOTENABLED is transient while TD Snap processes images.
+                if getattr(exc, "hresult", None) != -2147220992:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise PagesetError("TD Snap stayed busy while activating a control.") from exc
+                time.sleep(0.15)
     getter = getattr(control, "GetSelectionItemPattern", None)
     pattern = getter() if getter else None
     if pattern:
@@ -351,9 +361,7 @@ def _clusters(values, tolerance=8):
 
 
 def _stored_sparse_grid(group, buttons, width, height):
-    """Use TD Snap's saved placements when too few controls expose the grid."""
-    if len(buttons) > 12:
-        return None
+    """Use saved placements when visible buttons do not expose the whole grid."""
     pageset_path = _active_pageset_path()
     title = (getattr(group, "Name", "") or "").strip()
     if not pageset_path or not title:
@@ -433,6 +441,46 @@ def _stored_sparse_grid(group, buttons, width, height):
     )
 
 
+def _stored_empty_grid(group):
+    """Infer clickable cell centers for a new page with no UIA buttons yet."""
+    pageset_path = _active_pageset_path()
+    title = (getattr(group, "Name", "") or "").strip()
+    if not pageset_path or not title:
+        return None
+    try:
+        with closing(sqlite3.connect(
+            f"file:{pageset_path}?mode=ro", uri=True, timeout=1
+        )) as connection:
+            settings = connection.execute(
+                """
+                SELECT COALESCE(p.GridDimension, pl.PageLayoutSetting)
+                FROM Page p JOIN PageLayout pl ON pl.PageId = p.Id
+                WHERE p.Title = ?
+                """,
+                (title,),
+            ).fetchall()
+        dimensions = {
+            tuple(int(value) for value in setting.split(",")[:2])
+            for setting, in settings if setting
+        }
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        return None
+    if len(dimensions) != 1:
+        return None
+    cols, rows = dimensions.pop()
+    if cols < 1 or rows < 1:
+        return None
+    bounds = group.BoundingRectangle
+    x_step = (bounds.right - bounds.left) / cols
+    y_step = (bounds.bottom - bounds.top) / rows
+    return Grid(
+        tuple(round(bounds.left + (index + 0.5) * x_step) for index in range(cols)),
+        tuple(round(bounds.top + (index + 0.5) * y_step) for index in range(rows)),
+        round(x_step),
+        round(y_step),
+    )
+
+
 def _grid(group):
     buttons = [
         child for child in group.GetChildren()
@@ -440,6 +488,9 @@ def _grid(group):
         and child.BoundingRectangle.right > child.BoundingRectangle.left
     ]
     if not buttons:
+        stored = _stored_empty_grid(group)
+        if stored:
+            return stored
         raise PagesetError("TD Snap's button grid could not be measured.")
     rects = [button.BoundingRectangle for button in buttons]
     widths = [rect.right - rect.left for rect in rects]
@@ -936,7 +987,7 @@ def _choose_symbol(window, label):
         _wait_for(
             lambda: _find(window, automation_id="PrimaryButton",
                           control_type="ButtonControl") is None,
-            "TD Snap did not close symbol search.",
+            "TD Snap did not close symbol search.", timeout=60,
         )
         return True
     except PagesetError:
@@ -1247,26 +1298,16 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     parent_cell = _empty_cell(window, grid)
     _create_page_link(auto, window, title, parent_cell)
 
-    # Capacity belongs to the new page's own grid, not the parent's: the words
-    # land on the page we just created, while the parent only needed one free
-    # cell for the folder link. Checking the parent (e.g. a small "Personal"
-    # menu page) wrongly rejected word sets that fit the new page fine.
     _collapse_editor(window)
-    try:
-        new_grid = _grid(_page_group(window))
-    except PagesetError:
-        # ponytail: fresh page has no measurable buttons yet; skip the fast-fail
-        # and let placement raise if the words really overflow the new grid.
-        new_grid = None
-    if new_grid is not None and len(normalized) > len(new_grid.xs) * len(new_grid.ys):
+    new_grid = _grid(_page_group(window))
+    if len(normalized) > len(new_grid.xs) * len(new_grid.ys):
         raise PagesetError("The words do not fit on one TD Snap grid screen.")
     symbols = 0
     styled = 0
     used_slots = set()
-    page_grid = None
     for item in normalized:
         _collapse_editor(window)
-        active_grid = page_grid or grid
+        active_grid = _grid(_page_group(window))
         requested = item.get("slot")
         cell = _cell_at(active_grid, requested)
         if cell is None or requested in used_slots:
@@ -1277,12 +1318,6 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
             auto, window, cell, item["label"], item["message"],
             item["border_color"], item.get("symbol", True),
         )
-        if page_grid is None and requested is not None:
-            button = _find(
-                _page_group(window), name=item["label"],
-                control_type="ButtonControl",
-            )
-            page_grid = _anchored_grid(grid, button, requested)
         symbols += int(result["symbol"])
         styled += int(result["border"] and item["border_color"] is not None)
 

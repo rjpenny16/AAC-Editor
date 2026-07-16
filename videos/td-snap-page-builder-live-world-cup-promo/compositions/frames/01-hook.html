@@ -1,0 +1,432 @@
+<template id="f01-hook-template" data-composition-id="01-hook" data-width="1920" data-height="1080">
+  <script src="assets/gsap.min.js"></script>
+
+  <style>
+    @font-face {
+      font-family: "Segoe UI Variable Text";
+      src: url("assets/fonts/Segoe_UI_Variable_Text.ttf") format("truetype");
+      font-weight: 100 900;
+      font-display: block;
+    }
+
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: "Segoe UI Variable Text";
+      color: #0b1b42;
+    }
+
+    #root *,
+    #root *::before,
+    #root *::after {
+      box-sizing: border-box;
+    }
+
+    [class~="01-hook-bg"],
+    [class~="01-hook-scene"] {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+    }
+
+    [class~="01-hook-bg"] {
+      background: #ffffff;
+    }
+
+    [class~="01-hook-diagonal"] {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 760px;
+      height: 896px;
+      background: rgba(11, 97, 223, 0.04);
+      clip-path: polygon(34% 0, 100% 0, 100% 100%, 0 100%);
+    }
+
+    [class~="01-hook-dot-grid"] {
+      position: absolute;
+      top: 74px;
+      right: 72px;
+      display: grid;
+      grid-template-columns: repeat(3, 5px);
+      gap: 16px;
+      opacity: 0.34;
+    }
+
+    [class~="01-hook-dot-grid"] span {
+      display: block;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #0b61df;
+    }
+
+    [class~="01-hook-copy"] {
+      position: absolute;
+      top: 112px;
+      left: 96px;
+      width: 500px;
+      z-index: 3;
+    }
+
+    [class~="01-hook-eyebrow"] {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 22px;
+      color: #0b61df;
+      font-size: 17px;
+      font-weight: 650;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    [class~="01-hook-accent-line"] {
+      display: block;
+      width: 60px;
+      height: 4px;
+      border-radius: 2px;
+      background: #0b61df;
+    }
+
+    [class~="01-hook-title"] {
+      width: 500px;
+      color: #0b1b42;
+      font-size: 80px;
+      font-weight: 720;
+      line-height: 0.98;
+      letter-spacing: -0.02em;
+    }
+
+    [class~="01-hook-title-line"] {
+      display: block;
+      white-space: nowrap;
+    }
+
+    [class~="01-hook-word"] {
+      display: inline-block;
+    }
+
+    [class~="01-hook-rail"] {
+      display: flex;
+      align-items: center;
+      width: 500px;
+      min-height: 84px;
+      margin-top: 44px;
+      padding: 18px 26px;
+      border: 1.5px solid rgba(11, 97, 223, 0.2);
+      border-radius: 14px;
+      background: rgba(11, 97, 223, 0.04);
+    }
+
+    [class~="01-hook-variable"] {
+      display: block;
+      min-width: 440px;
+      color: #0b61df;
+      font-size: 38px;
+      font-weight: 700;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+    }
+
+    [class~="01-hook-lockup"] {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 34px;
+      color: #0b1b42;
+      font-size: 22px;
+      font-weight: 650;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+
+    [class~="01-hook-lockup-dot"] {
+      display: block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #0b61df;
+    }
+
+    [class~="01-hook-product"] {
+      position: absolute;
+      top: 166px;
+      left: 668px;
+      display: flex;
+      gap: 10px;
+      width: 1154px;
+      height: 644px;
+      z-index: 2;
+    }
+
+    [class~="01-hook-panel"] {
+      position: relative;
+      display: block;
+      width: 572px;
+      height: 644px;
+      overflow: hidden;
+      border: 1.5px solid rgba(11, 97, 223, 0.2);
+      border-radius: 14px;
+      background: #ffffff;
+    }
+
+    [class~="01-hook-panel"] img {
+      position: absolute;
+      top: 0;
+      display: block;
+      width: 572px;
+      height: 644px;
+      max-width: none;
+      object-fit: cover;
+    }
+
+    [class~="01-hook-panel-left"] img {
+      left: 0;
+    }
+
+    [class~="01-hook-panel-right"] img {
+      left: 0;
+    }
+
+    [class~="01-hook-marker"] {
+      position: absolute;
+      top: 176px;
+      left: 1219px;
+      width: 72px;
+      height: 624px;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    [class~="01-hook-marker-line"] {
+      position: absolute;
+      display: block;
+      background: #0b61df;
+    }
+
+    [class~="01-hook-marker-top"],
+    [class~="01-hook-marker-bottom"] {
+      left: 0;
+      width: 72px;
+      height: 4px;
+      border-radius: 2px;
+    }
+
+    [class~="01-hook-marker-top"] {
+      top: 0;
+    }
+
+    [class~="01-hook-marker-bottom"] {
+      bottom: 0;
+    }
+
+    [class~="01-hook-marker-left"],
+    [class~="01-hook-marker-right"] {
+      top: 0;
+      width: 4px;
+      height: 624px;
+      border-radius: 2px;
+    }
+
+    [class~="01-hook-marker-left"] {
+      left: 0;
+    }
+
+    [class~="01-hook-marker-right"] {
+      right: 0;
+    }
+
+    [class~="01-hook-progress"] {
+      position: absolute;
+      top: 890px;
+      left: 96px;
+      width: 274px;
+      height: 3px;
+      background: #0b61df;
+      z-index: 5;
+    }
+  </style>
+
+  <div data-hf-id="hf-t8oc" id="root" data-composition-id="01-hook" data-start="0" data-duration="6.4" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-r7ek" id="f01-hook-background-clip" class="clip 01-hook-bg" data-start="0" data-duration="6.4" data-track-index="0">
+      <div data-hf-id="hf-2lpk" class="01-hook-diagonal" aria-hidden="true"></div>
+      <div data-hf-id="hf-4nzv" class="01-hook-dot-grid" aria-hidden="true">
+        <span data-hf-id="hf-uckh"></span><span data-hf-id="hf-l73p"></span><span data-hf-id="hf-me0s"></span>
+        <span data-hf-id="hf-lzpr"></span><span data-hf-id="hf-n6mu"></span><span data-hf-id="hf-msbt"></span>
+        <span data-hf-id="hf-nz8w"></span><span data-hf-id="hf-nkxv"></span><span data-hf-id="hf-ieyi"></span>
+      </div>
+    </div>
+
+    <div data-hf-id="hf-zghu" id="f01-hook-scene-clip" class="clip 01-hook-scene" data-start="0" data-duration="6.4" data-track-index="1">
+      <div data-hf-id="hf-dy73" class="01-hook-copy">
+        <div data-hf-id="hf-xcus" id="f01-hook-eyebrow" class="01-hook-eyebrow">
+          <span data-hf-id="hf-b5my" class="01-hook-accent-line"></span>
+          <span data-hf-id="hf-qvv9">Live AAC workflow</span>
+        </div>
+
+        <div data-hf-id="hf-1suq" class="01-hook-title" aria-label="Complete topic page">
+          <span data-hf-id="hf-k4z4" class="01-hook-title-line">
+            <span data-hf-id="hf-kuwi" class="01-hook-word">COMPLETE</span>
+          </span>
+          <span data-hf-id="hf-lds8" class="01-hook-title-line">
+            <span data-hf-id="hf-v1pw" class="01-hook-word">TOPIC</span>
+            <span data-hf-id="hf-70w6" class="01-hook-word">PAGE</span>
+          </span>
+        </div>
+
+        <div data-hf-id="hf-qims" id="f01-hook-rail" class="01-hook-rail">
+          <span data-hf-id="hf-t6xn" id="f01-hook-variable" class="01-hook-variable">ONE BUTTON</span>
+        </div>
+
+        <div data-hf-id="hf-mhzs" id="f01-hook-lockup" class="01-hook-lockup">
+          <span data-hf-id="hf-tkim" class="01-hook-lockup-dot" aria-hidden="true"></span>
+          <span data-hf-id="hf-p741">TD SNAP PAGE BUILDER</span>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-2ad0" class="01-hook-product" aria-label="Page Builder connected to TD Snap">
+        <div data-hf-id="hf-nfyk" id="f01-hook-left-panel" class="01-hook-panel 01-hook-panel-left">
+          <img data-hf-id="hf-z28l" src="assets/builder-proof.png" alt="Authentic TD Snap Page Builder interface">
+        </div>
+        <div data-hf-id="hf-uaku" id="f01-hook-right-panel" class="01-hook-panel 01-hook-panel-right">
+          <img data-hf-id="hf-n63w" src="assets/tdsnap-proof.png" alt="Authentic TD Snap interface">
+        </div>
+      </div>
+
+      <div data-hf-id="hf-iuuv" class="01-hook-marker" aria-hidden="true">
+        <span data-hf-id="hf-7xsi" id="f01-hook-marker-top" class="01-hook-marker-line 01-hook-marker-top"></span>
+        <span data-hf-id="hf-k1zk" id="f01-hook-marker-right" class="01-hook-marker-line 01-hook-marker-right"></span>
+        <span data-hf-id="hf-08au" id="f01-hook-marker-bottom" class="01-hook-marker-line 01-hook-marker-bottom"></span>
+        <span data-hf-id="hf-p7ne" id="f01-hook-marker-left" class="01-hook-marker-line 01-hook-marker-left"></span>
+      </div>
+
+      <div data-hf-id="hf-4u1c" class="01-hook-progress" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <script>
+    window.__timelines = window.__timelines || {};
+
+    const tl = gsap.timeline({ paused: true });
+    const eyebrow = document.getElementById("f01-hook-eyebrow");
+    const leftPanel = document.getElementById("f01-hook-left-panel");
+    const rightPanel = document.getElementById("f01-hook-right-panel");
+    const rail = document.getElementById("f01-hook-rail");
+    const variable = document.getElementById("f01-hook-variable");
+    const lockup = document.getElementById("f01-hook-lockup");
+    const words = Array.from(document.querySelectorAll('[class~="01-hook-word"]'));
+
+    tl.fromTo(
+      eyebrow,
+      { opacity: 0, y: 14 },
+      { opacity: 1, y: 0, duration: 0.34, ease: "power3.out" },
+      0.05,
+    );
+
+    let wordCursor = 0.14;
+    words.forEach((word) => {
+      const duration = 0.18 + word.textContent.length * 0.025;
+      tl.fromTo(
+        word,
+        { opacity: 0, y: 26 },
+        { opacity: 1, y: 0, duration, ease: "power3.out" },
+        wordCursor,
+      );
+      wordCursor += duration + 0.03;
+    });
+
+    tl.fromTo(
+      leftPanel,
+      { opacity: 0, y: 26, scale: 0.985 },
+      { opacity: 1, y: -6, scale: 1, duration: 0.42, ease: "power3.out" },
+      0.04,
+    );
+    tl.fromTo(
+      rightPanel,
+      { opacity: 0, y: -24, scale: 0.985 },
+      { opacity: 1, y: 6, scale: 1, duration: 0.42, ease: "power3.out" },
+      0.08,
+    );
+
+    tl.fromTo(
+      rail,
+      { opacity: 0, y: 18 },
+      { opacity: 1, y: 0, duration: 0.36, ease: "power3.out" },
+      1.42,
+    );
+
+    const variableStates = [
+      { t: 0, text: "ONE BUTTON" },
+      { t: 2.72, text: "ONE REVIEWED UPDATE" },
+    ];
+    const stateAt = (time) => {
+      for (let i = variableStates.length - 1; i >= 0; i -= 1) {
+        if (time >= variableStates[i].t) return variableStates[i];
+      }
+      return variableStates[0];
+    };
+    const variableDriver = { t: 0 };
+    let lastVariable = "ONE BUTTON";
+    tl.to(
+      variableDriver,
+      {
+        t: 6,
+        duration: 6,
+        ease: "none",
+        onUpdate: () => {
+          const next = stateAt(variableDriver.t).text;
+          if (next !== lastVariable) {
+            variable.textContent = next;
+            lastVariable = next;
+          }
+        },
+      },
+      0,
+    );
+
+    tl.fromTo(
+      document.getElementById("f01-hook-marker-top"),
+      { scaleX: 0 },
+      { scaleX: 1, transformOrigin: "left center", duration: 0.24, ease: "power2.out" },
+      1.7,
+    );
+    tl.fromTo(
+      document.getElementById("f01-hook-marker-right"),
+      { scaleY: 0 },
+      { scaleY: 1, transformOrigin: "top center", duration: 0.46, ease: "power2.out" },
+      1.88,
+    );
+    tl.fromTo(
+      document.getElementById("f01-hook-marker-bottom"),
+      { scaleX: 0 },
+      { scaleX: 1, transformOrigin: "right center", duration: 0.24, ease: "power2.out" },
+      2.28,
+    );
+    tl.fromTo(
+      document.getElementById("f01-hook-marker-left"),
+      { scaleY: 0 },
+      { scaleY: 1, transformOrigin: "bottom center", duration: 0.46, ease: "power2.out" },
+      2.46,
+    );
+
+    tl.to(leftPanel, { y: 0, duration: 0.52, ease: "power3.out" }, 4.58);
+    tl.to(rightPanel, { y: 0, duration: 0.52, ease: "power3.out" }, 4.58);
+    tl.fromTo(
+      lockup,
+      { opacity: 0, y: 14 },
+      { opacity: 1, y: 0, duration: 0.44, ease: "power3.out" },
+      4.66,
+    );
+
+    window.__timelines["01-hook"] = tl;
+  </script>
+</template>

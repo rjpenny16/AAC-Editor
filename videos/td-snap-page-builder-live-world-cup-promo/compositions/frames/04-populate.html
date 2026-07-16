@@ -1,0 +1,371 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Segoe UI Variable Text";
+      src: url("assets/fonts/Segoe_UI_Variable_Text.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: block;
+    }
+
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: "Segoe UI Variable Text", sans-serif;
+      color: #0b1b42;
+    }
+
+    [class~="04-populate-ground"] {
+      position: absolute;
+      inset: 0;
+      background: transparent;
+    }
+
+    [id="f04-populate-surface"] {
+      position: absolute;
+      left: 270px;
+      top: 68px;
+      width: 1392px;
+      height: 824px;
+      transform-origin: 50% 50%;
+      transform-style: preserve-3d;
+      will-change: transform, opacity;
+      pointer-events: none;
+    }
+
+    [class~="04-populate-shell"] {
+      position: absolute;
+      inset: 0;
+      border: 3px solid #0b1b42;
+      border-radius: 14px;
+    }
+
+    [class~="04-populate-shell"]::after {
+      content: "";
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      top: 14px;
+      height: 4px;
+      border-radius: 2px;
+      background: #0b61df;
+    }
+
+    [id="f04-populate-wash"] {
+      position: absolute;
+      left: 16px;
+      top: 44px;
+      width: 1360px;
+      height: 765px;
+      border-radius: 10px;
+      background: #ffffff;
+      will-change: opacity;
+    }
+
+    [id="f04-populate-title-tab"] {
+      position: absolute;
+      left: 16px;
+      top: -28px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 22px;
+      border: 1.5px solid rgba(11, 97, 223, 0.2);
+      border-radius: 100px;
+      background: #ffffff;
+      color: #0b1b42;
+      font-size: 20px;
+      line-height: 1;
+      font-weight: 650;
+      letter-spacing: 0.06em;
+      will-change: transform, opacity;
+    }
+
+    [class~="04-populate-title-dot"] {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #0b61df;
+    }
+
+    [id="f04-populate-proof"] {
+      position: absolute;
+      left: 286px;
+      top: 112px;
+      width: 1360px;
+      height: 765px;
+      display: block;
+      object-fit: contain;
+      border-radius: 10px;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    [id="f04-populate-rail"] {
+      position: absolute;
+      left: 64px;
+      top: 218px;
+      width: 182px;
+      padding: 14px;
+      border: 1.5px solid rgba(11, 97, 223, 0.2);
+      border-radius: 14px;
+      background: rgba(11, 97, 223, 0.04);
+      will-change: transform, opacity;
+    }
+
+    [class~="04-populate-rail-kicker"] {
+      margin: 0 0 12px;
+      color: #0b61df;
+      font-size: 15px;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    [class~="04-populate-rail-item"] {
+      position: relative;
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px 0 18px;
+      border: 1.5px solid rgba(11, 97, 223, 0.2);
+      border-radius: 100px;
+      background: #ffffff;
+      color: #425b7a;
+      font-size: 27px;
+      line-height: 1;
+      font-weight: 550;
+    }
+
+    [class~="04-populate-rail-item"] + [class~="04-populate-rail-item"] {
+      margin-top: 10px;
+    }
+
+    [class~="04-populate-rail-mark"] {
+      position: absolute;
+      left: 7px;
+      top: 11px;
+      bottom: 11px;
+      width: 4px;
+      border-radius: 2px;
+      background: #0b61df;
+    }
+
+    [id="f04-populate-marker"] {
+      position: absolute;
+      left: 642px;
+      top: 300px;
+      width: 300px;
+      height: 530px;
+      pointer-events: none;
+    }
+
+    [id="f04-populate-marker"] svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    [id="f04-populate-marker-path"] {
+      fill: none;
+      stroke: #0b61df;
+      stroke-width: 5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+      vector-effect: non-scaling-stroke;
+    }
+
+    [id="f04-populate-count"] {
+      position: absolute;
+      right: 272px;
+      top: 42px;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      border: 1.5px solid rgba(11, 97, 223, 0.2);
+      border-radius: 100px;
+      background: #0b61df;
+      color: #ffffff;
+      font-size: 27px;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    [class~="04-populate-progress-track"] {
+      position: absolute;
+      left: 0;
+      top: 888px;
+      width: 1920px;
+      height: 4px;
+      background: rgba(11, 97, 223, 0.08);
+    }
+
+    [class~="04-populate-progress-bar"] {
+      display: block;
+      width: 1097px;
+      height: 4px;
+      background: #0b61df;
+    }
+  </style>
+
+  <div data-hf-id="hf-c6os" id="root" data-composition-id="04-populate" data-start="0" data-duration="7.5" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-drqz" id="f04-populate-ground-clip" class="clip 04-populate-ground" data-start="0" data-duration="7.5" data-track-index="0"></div>
+
+    <!-- approved frame video hoisted by assemble-index -->
+
+    <div data-hf-id="hf-h35f" id="f04-populate-content-clip" class="clip 04-populate-content" data-start="0" data-duration="7.5" data-track-index="2">
+      <div data-hf-id="hf-booa" id="f04-populate-surface">
+        <div data-hf-id="hf-hbxy" class="04-populate-shell"></div>
+        <div data-hf-id="hf-tp24" id="f04-populate-wash"></div>
+        <div data-hf-id="hf-gqjv" id="f04-populate-title-tab">
+          <span data-hf-id="hf-6ffb" class="04-populate-title-dot"></span>
+          <span data-hf-id="hf-mehv">LIVE PREVIEW</span>
+        </div>
+      </div>
+
+      <img data-hf-id="hf-560a" id="f04-populate-proof" src="assets/populate-proof.png" alt="">
+
+      <div data-hf-id="hf-bo89" id="f04-populate-rail">
+        <div data-hf-id="hf-a4t9" class="04-populate-rail-kicker">PHRASE GROUPS</div>
+        <div data-hf-id="hf-rew6" class="04-populate-rail-item" data-04-populate-rail="0">
+          <span data-hf-id="hf-5k0t" class="04-populate-rail-mark"></span>Question
+        </div>
+        <div data-hf-id="hf-e0cg" class="04-populate-rail-item" data-04-populate-rail="1">
+          <span data-hf-id="hf-xf3l" class="04-populate-rail-mark"></span>Comment
+        </div>
+        <div data-hf-id="hf-cyzz" class="04-populate-rail-item" data-04-populate-rail="2">
+          <span data-hf-id="hf-ym0o" class="04-populate-rail-mark"></span>Positive
+        </div>
+        <div data-hf-id="hf-cxju" class="04-populate-rail-item" data-04-populate-rail="3">
+          <span data-hf-id="hf-y7pn" class="04-populate-rail-mark"></span>Negative
+        </div>
+        <div data-hf-id="hf-mvky" class="04-populate-rail-item" data-04-populate-rail="4">
+          <span data-hf-id="hf-w86i" class="04-populate-rail-mark"></span>Personal
+        </div>
+      </div>
+
+      <div data-hf-id="hf-8d8u" id="f04-populate-marker" aria-hidden="true">
+        <svg data-hf-id="hf-jfje" viewBox="0 0 300 530" preserveAspectRatio="none">
+          <rect data-hf-id="hf-2k95" id="f04-populate-marker-path" x="3" y="3" width="294" height="524" rx="14" pathLength="1" />
+        </svg>
+      </div>
+
+      <div data-hf-id="hf-w4lf" id="f04-populate-count">15 READY-TO-SAY PHRASES</div>
+
+      <div data-hf-id="hf-h6nn" class="04-populate-progress-track">
+        <span data-hf-id="hf-cb4w" class="04-populate-progress-bar"></span>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/gsap.min.js"></script>
+  <script>
+    window.__timelines = window.__timelines || {};
+
+    const byId = (id) => document.getElementById(id);
+    const surface = byId("f04-populate-surface");
+    const video = byId("f04-populate-video");
+    const wash = byId("f04-populate-wash");
+    const titleTab = byId("f04-populate-title-tab");
+    const proof = byId("f04-populate-proof");
+    const rail = byId("f04-populate-rail");
+    const railItems = Array.from(document.querySelectorAll("[data-04-populate-rail]"));
+    const markerPath = byId("f04-populate-marker-path");
+    const count = byId("f04-populate-count");
+    const tl = gsap.timeline({ paused: true });
+
+    tl.fromTo(
+      surface,
+      { scale: 0.972, rotateY: -2.4, rotateX: 1.2, transformPerspective: 1600, opacity: 0.72 },
+      { scale: 1, rotateY: 0, rotateX: 0, opacity: 1, duration: 0.58, ease: "power3.out" },
+      0,
+    );
+    if (video) {
+      tl.fromTo(
+        video,
+        { scale: 0.972, rotateY: -2.4, rotateX: 1.2, transformPerspective: 1600, opacity: 0.74 },
+        { scale: 1, rotateY: 0, rotateX: 0, opacity: 1, duration: 0.58, ease: "power3.out" },
+        0,
+      );
+    }
+    tl.fromTo(wash, { opacity: 0.86 }, { opacity: 0, duration: 0.52, ease: "power3.out" }, 0.02);
+    tl.fromTo(
+      titleTab,
+      { y: -10, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.42, ease: "power3.out" },
+      0.18,
+    );
+    tl.fromTo(
+      rail,
+      { x: -18, opacity: 0 },
+      { x: 0, opacity: 1, duration: 0.48, ease: "power3.out" },
+      0.78,
+    );
+
+    tl.to(surface, { scale: 1.018, duration: 3.4, ease: "power3.out" }, 1.3);
+    if (video) {
+      tl.to(video, { scale: 1.018, duration: 3.4, ease: "power3.out" }, 1.3);
+    }
+
+    const railDriver = { t: 0 };
+    const applyRailState = (time) => {
+      const active = Math.min(4, Math.floor(time / 0.72));
+      railItems.forEach((item, index) => {
+        const selected = index === active;
+        item.style.backgroundColor = selected ? "rgba(11, 97, 223, 0.08)" : "#ffffff";
+        item.style.borderColor = selected ? "#0b61df" : "rgba(11, 97, 223, 0.2)";
+        item.style.color = selected ? "#0b1b42" : "#425b7a";
+        item.style.opacity = index <= active ? "1" : "0.46";
+        item.querySelector("[class~='04-populate-rail-mark']").style.opacity = selected ? "1" : "0";
+      });
+    };
+    applyRailState(0);
+    tl.to(
+      railDriver,
+      {
+        t: 3.6,
+        duration: 3.6,
+        ease: "none",
+        onUpdate: () => applyRailState(railDriver.t),
+      },
+      1.3,
+    );
+
+    if (video) {
+      tl.to(video, { scale: 0.985, opacity: 0, duration: 0.38, ease: "power2.in" }, 4.86);
+    }
+    tl.fromTo(
+      proof,
+      { scale: 0.985, opacity: 0 },
+      { scale: 1, opacity: 1, duration: 0.58, ease: "power3.out" },
+      5.04,
+    );
+    tl.to(surface, { scale: 1, duration: 0.58, ease: "power3.out" }, 4.92);
+    tl.fromTo(
+      markerPath,
+      { strokeDashoffset: 1, opacity: 0.4 },
+      { strokeDashoffset: 0, opacity: 1, duration: 0.72, ease: "power2.inOut" },
+      5.24,
+    );
+
+    tl.fromTo(
+      count,
+      { scale: 0.96, y: -8, opacity: 0 },
+      { scale: 1, y: 0, opacity: 1, duration: 0.38, ease: "power3.out" },
+      6.08,
+    );
+
+    window.__timelines["04-populate"] = tl;
+  </script>
+</template>

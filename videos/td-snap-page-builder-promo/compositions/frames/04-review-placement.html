@@ -1,0 +1,478 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Archivo";
+      src: url("assets/fonts/Archivo.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+    }
+
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      color: #1d1d1f;
+      font-family: "Archivo", sans-serif;
+    }
+
+    .ground,
+    .stage {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    .ground {
+      background: #ffffff;
+    }
+
+    .headline {
+      position: absolute;
+      z-index: 5;
+      top: 76px;
+      left: 5cqw;
+      width: 90cqw;
+      margin: 0;
+      color: #1d1d1f;
+      font-size: 4.2cqw;
+      font-weight: 720;
+      letter-spacing: -0.02em;
+      line-height: 1.06;
+      text-align: center;
+      will-change: transform, opacity;
+    }
+
+    .headline-accent {
+      color: #0066cc;
+    }
+
+    .side-glow {
+      position: absolute;
+      z-index: 1;
+      top: 245px;
+      width: 760px;
+      height: 570px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0, 113, 227, 0.18) 0%, rgba(0, 113, 227, 0.07) 38%, rgba(0, 113, 227, 0) 72%);
+      filter: blur(12px);
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .glow-left {
+      left: 85px;
+    }
+
+    .glow-right {
+      right: 85px;
+    }
+
+    .split-stage {
+      position: absolute;
+      z-index: 2;
+      top: 270px;
+      left: 90px;
+      display: flex;
+      width: 1740px;
+      height: 500px;
+      gap: 160px;
+      perspective: 1600px;
+      transform-style: preserve-3d;
+    }
+
+    .feature-card {
+      position: relative;
+      display: block;
+      flex: 0 0 790px;
+      width: 790px;
+      height: 500px;
+      transform-style: preserve-3d;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .depth-layer,
+    .crop-shell {
+      position: absolute;
+      border: 1.5px solid rgba(0, 113, 227, 0.2);
+      border-radius: 14px;
+      background: rgba(0, 113, 227, 0.04);
+    }
+
+    .depth-back {
+      z-index: 1;
+      inset: 20px 8px 2px;
+      background: rgba(0, 113, 227, 0.06);
+    }
+
+    .depth-mid {
+      z-index: 2;
+      inset: 10px 4px 1px;
+      background: rgba(0, 113, 227, 0.08);
+    }
+
+    .card-left .depth-back {
+      transform: translate3d(20px, 12px, -56px);
+    }
+
+    .card-left .depth-mid {
+      transform: translate3d(10px, 6px, -28px);
+    }
+
+    .card-right .depth-back {
+      transform: translate3d(-20px, 12px, -56px);
+    }
+
+    .card-right .depth-mid {
+      transform: translate3d(-10px, 6px, -28px);
+    }
+
+    .crop-shell {
+      z-index: 3;
+      inset: 0;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    .workspace-crop {
+      position: absolute;
+      display: block;
+      max-width: none;
+      user-select: none;
+    }
+
+    .left-crop .workspace-crop {
+      top: -500px;
+      left: -20px;
+      width: 1800px;
+      height: 1125px;
+    }
+
+    .right-crop .workspace-crop {
+      top: -160px;
+      left: -700px;
+      width: 1500px;
+      height: 938px;
+    }
+
+    .card-label {
+      position: absolute;
+      z-index: 5;
+      top: 22px;
+      display: inline-flex;
+      min-height: 38px;
+      align-items: center;
+      padding: 0 17px;
+      border: 1.5px solid rgba(0, 113, 227, 0.2);
+      border-radius: 100px;
+      background: rgba(255, 255, 255, 0.94);
+      color: #0066cc;
+      font-size: 14px;
+      font-weight: 650;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      text-transform: uppercase;
+      will-change: transform, opacity;
+    }
+
+    .card-left .card-label {
+      left: 22px;
+    }
+
+    .card-right .card-label {
+      right: 22px;
+    }
+
+    .trust-badge {
+      position: absolute;
+      z-index: 7;
+      top: 390px;
+      display: inline-flex;
+      width: 320px;
+      height: 56px;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      border: 1.5px solid rgba(0, 113, 227, 0.2);
+      border-radius: 100px;
+      background: #ffffff;
+      color: #1d1d1f;
+      font-size: 0.96cqw;
+      font-weight: 650;
+      letter-spacing: -0.01em;
+      line-height: 1;
+      white-space: nowrap;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .badge-left {
+      left: 506px;
+    }
+
+    .badge-right {
+      left: 914px;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      margin-right: 11px;
+      border-radius: 50%;
+      background: #0071e3;
+    }
+
+    .connector {
+      position: absolute;
+      z-index: 8;
+      top: 390px;
+      left: 826px;
+      width: 88px;
+      height: 56px;
+      pointer-events: none;
+    }
+
+    .connector-line {
+      position: absolute;
+      top: 26px;
+      left: 0;
+      display: block;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: #0071e3;
+      transform-origin: 0 50%;
+      will-change: transform, opacity;
+    }
+
+    .check-circle {
+      position: absolute;
+      top: 7px;
+      left: 24px;
+      display: block;
+      width: 40px;
+      height: 40px;
+      box-sizing: border-box;
+      border: 3px solid #0071e3;
+      border-radius: 50%;
+      background: #ffffff;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .check-segment {
+      position: absolute;
+      display: block;
+      height: 4px;
+      transform-origin: 0 50%;
+    }
+
+    .check-short-wrap {
+      top: 18px;
+      left: 8px;
+      width: 11px;
+      transform: rotate(45deg);
+    }
+
+    .check-long-wrap {
+      top: 21px;
+      left: 15px;
+      width: 18px;
+      transform: rotate(-48deg);
+    }
+
+    .check-segment > span {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: 2px;
+      background: #0071e3;
+      transform-origin: 0 50%;
+      will-change: transform;
+    }
+
+    .progress-rail {
+      position: absolute;
+      z-index: 10;
+      top: 895px;
+      left: 5cqw;
+      right: 5cqw;
+      height: 3px;
+      overflow: hidden;
+      border-radius: 6px;
+      background: rgba(0, 113, 227, 0.08);
+    }
+
+    .progress-fill {
+      display: block;
+      width: 66.667%;
+      height: 100%;
+      border-radius: 6px;
+      background: #0071e3;
+      transform-origin: 0 50%;
+      will-change: transform;
+    }
+  </style>
+
+  <div data-hf-id="hf-kwgt" id="root" data-composition-id="04-review-placement" data-width="1920" data-height="1080" data-duration="9.6">
+    <div data-hf-id="hf-1kky" class="clip ground" data-start="0" data-duration="9.6" data-track-index="0"></div>
+
+    <div data-hf-id="hf-h7zw" class="clip stage" data-start="0" data-duration="9.6" data-track-index="1">
+      <h1 data-hf-id="hf-s6ny" id="f04-headline" class="headline"><span data-hf-id="hf-mb1o" class="headline-accent">Review</span> before you run</h1>
+
+      <div data-hf-id="hf-7z6f" id="f04-glow-left" class="side-glow glow-left" aria-hidden="true"></div>
+      <div data-hf-id="hf-jxc7" id="f04-glow-right" class="side-glow glow-right" aria-hidden="true"></div>
+
+      <div data-hf-id="hf-8mvo" class="split-stage" data-layout-allow-overflow="">
+        <article data-hf-id="hf-pe9i" id="f04-card-left" class="feature-card card-left" aria-label="Magnified button list">
+          <div data-hf-id="hf-o7it" class="depth-layer depth-back" aria-hidden="true"></div>
+          <div data-hf-id="hf-de5e" class="depth-layer depth-mid" aria-hidden="true"></div>
+          <div data-hf-id="hf-03l5" class="crop-shell left-crop">
+            <img data-hf-id="hf-hcod" class="workspace-crop" src="assets/editor-workspace.png" alt="TD Snap Page Builder button list">
+            <div data-hf-id="hf-7g1y" id="f04-label-left" class="card-label">Button list</div>
+          </div>
+        </article>
+
+        <article data-hf-id="hf-0zfy" id="f04-card-right" class="feature-card card-right" aria-label="Magnified exact page grid">
+          <div data-hf-id="hf-sk09" class="depth-layer depth-back" aria-hidden="true"></div>
+          <div data-hf-id="hf-r5ja" class="depth-layer depth-mid" aria-hidden="true"></div>
+          <div data-hf-id="hf-p0gc" class="crop-shell right-crop">
+            <img data-hf-id="hf-tq3o" class="workspace-crop" src="assets/editor-workspace.png" alt="TD Snap Page Builder exact page-grid preview">
+            <div data-hf-id="hf-l54s" id="f04-label-right" class="card-label">Exact grid</div>
+          </div>
+        </article>
+
+        <div data-hf-id="hf-e8ok" id="f04-badge-left" class="trust-badge badge-left">
+          <span data-hf-id="hf-12w5" class="badge-dot" aria-hidden="true"></span>Existing words stay locked
+        </div>
+
+        <div data-hf-id="hf-9guf" id="f04-badge-right" class="trust-badge badge-right">
+          <span data-hf-id="hf-ir09" class="badge-dot" aria-hidden="true"></span>Exact placement stays yours
+        </div>
+
+        <div data-hf-id="hf-vz5u" class="connector" aria-hidden="true">
+          <span data-hf-id="hf-xtls" id="f04-connector-line" class="connector-line"></span>
+          <span data-hf-id="hf-0emo" id="f04-check-circle" class="check-circle">
+            <span data-hf-id="hf-mrcb" class="check-segment check-short-wrap"><span data-hf-id="hf-pmyy" id="f04-check-short"></span></span>
+            <span data-hf-id="hf-evjz" class="check-segment check-long-wrap"><span data-hf-id="hf-tnqe" id="f04-check-long"></span></span>
+          </span>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-kqox" class="progress-rail" aria-hidden="true">
+        <span data-hf-id="hf-fb4g" id="f04-progress-fill" class="progress-fill"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      window.__timelines = window.__timelines || {};
+
+      const tl = gsap.timeline({ paused: true });
+      const leftCard = document.getElementById("f04-card-left");
+      const rightCard = document.getElementById("f04-card-right");
+
+      tl.fromTo(
+        "#f04-headline",
+        { opacity: 0, y: -54 },
+        { opacity: 1, y: 0, duration: 0.78, ease: "power3.out" },
+        0,
+      );
+
+      tl.fromTo(
+        "#f04-glow-left",
+        { opacity: 0, scale: 0.88 },
+        { opacity: 0.17, scale: 1, duration: 1.1, ease: "power2.out" },
+        1.65,
+      );
+      tl.fromTo(
+        "#f04-glow-right",
+        { opacity: 0, scale: 0.88 },
+        { opacity: 0.17, scale: 1, duration: 1.1, ease: "power2.out" },
+        1.85,
+      );
+
+      tl.fromTo(
+        leftCard,
+        { x: -430, rotateY: 24, scale: 0.85, opacity: 0 },
+        { x: 0, rotateY: 12, scale: 1, opacity: 1, duration: 1.05, ease: "power3.out" },
+        1.7,
+      );
+      tl.fromTo(
+        rightCard,
+        { x: 430, rotateY: -24, scale: 0.85, opacity: 0 },
+        { x: 0, rotateY: -12, scale: 1, opacity: 1, duration: 1.05, ease: "power3.out" },
+        1.9,
+      );
+
+      tl.fromTo(
+        "#f04-label-left",
+        { opacity: 0, y: 18 },
+        { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" },
+        2.5,
+      );
+      tl.fromTo(
+        "#f04-label-right",
+        { opacity: 0, y: 18 },
+        { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" },
+        2.72,
+      );
+
+      tl.to(leftCard, { y: -3, duration: 1.05, ease: "sine.inOut" }, 3.2);
+      tl.to(rightCard, { y: 3, duration: 1.05, ease: "sine.inOut" }, 3.2);
+      tl.to(leftCard, { y: 0, duration: 1.05, ease: "sine.inOut" }, 4.25);
+      tl.to(rightCard, { y: 0, duration: 1.05, ease: "sine.inOut" }, 4.25);
+
+      tl.fromTo(
+        "#f04-badge-left",
+        { scale: 0, opacity: 0, y: 10 },
+        { scale: 1, opacity: 1, y: 0, duration: 0.6, ease: "power3.out" },
+        5.45,
+      );
+      tl.fromTo(
+        "#f04-badge-right",
+        { scale: 0, opacity: 0, y: 10 },
+        { scale: 1, opacity: 1, y: 0, duration: 0.6, ease: "power3.out" },
+        5.82,
+      );
+
+      tl.fromTo(
+        "#f04-connector-line",
+        { scaleX: 0, opacity: 0 },
+        { scaleX: 1, opacity: 1, duration: 0.5, ease: "power2.out" },
+        6.38,
+      );
+      tl.fromTo(
+        "#f04-check-circle",
+        { scale: 0, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.42, ease: "power3.out" },
+        6.68,
+      );
+      tl.fromTo(
+        "#f04-check-short",
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.22, ease: "power2.out" },
+        6.93,
+      );
+      tl.fromTo(
+        "#f04-check-long",
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.26, ease: "power2.out" },
+        7.08,
+      );
+
+      tl.fromTo(
+        "#f04-progress-fill",
+        { scaleX: 0.75 },
+        { scaleX: 1, duration: 9, ease: "none" },
+        0,
+      );
+
+      window.__timelines["04-review-placement"] = tl;
+    })();
+  </script>
+</template>

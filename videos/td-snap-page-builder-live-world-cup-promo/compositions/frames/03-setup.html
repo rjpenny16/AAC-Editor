@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Set up the topic</title>
+  </head>
+  <body>
+    <template>
+      <style>
+        @font-face {
+          font-family: "Segoe UI Variable Text";
+          src: url("assets/fonts/Segoe_UI_Variable_Text.ttf") format("truetype");
+          font-style: normal;
+          font-weight: 100 900;
+          font-display: block;
+        }
+
+        #root {
+          position: relative;
+          width: 1920px;
+          height: 1080px;
+          overflow: hidden;
+          color: #0b1b42;
+          font-family: "Segoe UI Variable Text";
+          container-type: size;
+        }
+
+        .f03-setup-ground {
+          position: absolute;
+          inset: 0;
+          width: 1920px;
+          height: 1080px;
+          overflow: hidden;
+          background: transparent;
+          z-index: 0;
+        }
+
+        .f03-setup-overlay {
+          position: absolute;
+          inset: 0;
+          width: 1920px;
+          height: 1080px;
+          overflow: hidden;
+          z-index: 2002;
+          pointer-events: none;
+        }
+
+        .f03-setup-kicker {
+          position: absolute;
+          left: 245px;
+          top: 27px;
+          color: #0b61df;
+          font-size: 18px;
+          font-weight: 650;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .f03-setup-live-pill {
+          position: absolute;
+          right: 65px;
+          top: 22px;
+          padding: 9px 17px 10px;
+          border-radius: 100px;
+          background: rgba(11, 97, 223, 0.08);
+          color: #0b61df;
+          font-size: 15px;
+          font-weight: 650;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+        }
+
+        .f03-setup-video-frame {
+          position: absolute;
+          left: 245px;
+          top: 88px;
+          width: 1610px;
+          height: 792px;
+          border: 1.5px solid rgba(11, 97, 223, 0.2);
+          border-radius: 14px;
+          box-sizing: border-box;
+        }
+
+        .f03-setup-final-still {
+          position: absolute;
+          left: 245px;
+          top: 88px;
+          width: 1610px;
+          height: 792px;
+          object-fit: cover;
+          border-radius: 14px;
+        }
+
+        .f03-setup-rail {
+          position: absolute;
+          left: 50px;
+          top: 220px;
+          width: 158px;
+          height: 260px;
+        }
+
+        .f03-setup-rail-line {
+          position: absolute;
+          left: 22px;
+          top: 32px;
+          width: 2px;
+          height: 190px;
+          background: rgba(11, 97, 223, 0.15);
+        }
+
+        .f03-setup-active {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 158px;
+          height: 68px;
+          border-radius: 12px;
+          background: #0b61df;
+        }
+
+        .f03-setup-step {
+          position: absolute;
+          left: 0;
+          width: 158px;
+          height: 68px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 0 12px;
+          box-sizing: border-box;
+          border: 1.5px solid rgba(11, 97, 223, 0.2);
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.88);
+          color: #425b7a;
+        }
+
+        .f03-setup-step-one { top: 0; color: #ffffff; background: transparent; border-color: transparent; }
+        .f03-setup-step-two { top: 92px; }
+        .f03-setup-step-three { top: 184px; }
+
+        .f03-setup-step-num {
+          width: 27px;
+          flex: 0 0 27px;
+          color: currentColor;
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+        }
+
+        .f03-setup-step-label {
+          color: currentColor;
+          font-size: 18px;
+          font-weight: 680;
+          letter-spacing: 0.035em;
+          line-height: 1.05;
+        }
+
+        .f03-setup-focus {
+          position: absolute;
+          left: 390px;
+          top: 258px;
+          width: 300px;
+          height: 76px;
+          border: 2px solid rgba(11, 97, 223, 0.7);
+          border-radius: 12px;
+          background: rgba(11, 97, 223, 0.04);
+          box-sizing: border-box;
+        }
+
+        .f03-setup-cursor {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 52px;
+          height: 52px;
+          border: 1.5px solid rgba(11, 97, 223, 0.2);
+          border-radius: 50%;
+          background: #ffffff;
+          display: grid;
+          place-items: center;
+          z-index: 10;
+          will-change: transform;
+        }
+
+        .f03-setup-cursor svg {
+          display: block;
+          width: 27px;
+          height: 27px;
+        }
+
+        .f03-setup-ripple {
+          position: absolute;
+          width: 46px;
+          height: 46px;
+          border: 2px solid #0b61df;
+          border-radius: 50%;
+          box-sizing: border-box;
+          pointer-events: none;
+        }
+
+        .f03-setup-ripple-one { left: 507px; top: 269px; }
+        .f03-setup-ripple-two { left: 505px; top: 517px; }
+
+        .f03-setup-track-box {
+          position: absolute;
+          left: 368px;
+          top: 314px;
+          width: 264px;
+          height: 64px;
+          pointer-events: none;
+          will-change: transform, width, height;
+        }
+
+        .f03-setup-corner {
+          position: absolute;
+          width: 24px;
+          height: 24px;
+        }
+
+        .f03-setup-corner-tl {
+          left: 0;
+          top: 0;
+          border-left: 4px solid #0b61df;
+          border-top: 4px solid #0b61df;
+        }
+
+        .f03-setup-corner-tr {
+          right: 0;
+          top: 0;
+          border-right: 4px solid #0b61df;
+          border-top: 4px solid #0b61df;
+        }
+
+        .f03-setup-corner-bl {
+          left: 0;
+          bottom: 0;
+          border-left: 4px solid #0b61df;
+          border-bottom: 4px solid #0b61df;
+        }
+
+        .f03-setup-corner-br {
+          right: 0;
+          bottom: 0;
+          border-right: 4px solid #0b61df;
+          border-bottom: 4px solid #0b61df;
+        }
+
+        .f03-setup-track-label {
+          position: absolute;
+          left: 0;
+          top: -37px;
+          padding: 6px 12px 7px;
+          border-radius: 100px;
+          background: #0b61df;
+          color: #ffffff;
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
+
+        .f03-setup-match-tag {
+          position: absolute;
+          left: 672px;
+          top: 800px;
+          padding: 11px 18px 12px;
+          border: 1.5px solid rgba(11, 97, 223, 0.2);
+          border-radius: 100px;
+          background: rgba(255, 255, 255, 0.94);
+          color: #0b61df;
+          font-size: 18px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+        }
+
+        .f03-setup-progress-track {
+          position: absolute;
+          left: 0;
+          top: 890px;
+          width: 1920px;
+          height: 3px;
+          background: rgba(11, 97, 223, 0.08);
+          overflow: hidden;
+        }
+
+        .f03-setup-progress-fill {
+          width: 1920px;
+          height: 3px;
+          background: #0b61df;
+          transform-origin: 0 50%;
+          will-change: transform;
+        }
+      </style>
+
+      <div data-hf-id="hf-rsyv" id="root" data-composition-id="03-setup" data-width="1920" data-height="1080" data-duration="6.5" data-fps="30">
+        <div data-hf-id="hf-7c5l" id="f03-setup-ground" class="clip f03-setup-ground" data-start="0" data-duration="6.5" data-track-index="0"></div>
+
+        <!-- approved frame video hoisted by assemble-index -->
+
+        <div data-hf-id="hf-mo5l" id="f03-setup-overlay" class="clip f03-setup-overlay" data-start="0" data-duration="6.5" data-track-index="2">
+          <div data-hf-id="hf-wdtc" class="f03-setup-kicker">Setup / 03</div>
+          <div data-hf-id="hf-n3ij" class="f03-setup-live-pill">Live workflow</div>
+          <div data-hf-id="hf-mwh7" class="f03-setup-video-frame"></div>
+
+          <img data-hf-id="hf-ljr3" id="f03-setup-final-still" class="f03-setup-final-still" src="assets/setup-proof.png" alt="Configured World Cup Final topic page setup">
+
+          <div data-hf-id="hf-tiga" class="f03-setup-rail">
+            <div data-hf-id="hf-jd3t" class="f03-setup-rail-line"></div>
+            <div data-hf-id="hf-69b6" id="f03-setup-active" class="f03-setup-active"></div>
+            <div data-hf-id="hf-afe6" id="f03-setup-step-one" class="f03-setup-step f03-setup-step-one">
+              <span data-hf-id="hf-yoq5" class="f03-setup-step-num">01</span>
+              <span data-hf-id="hf-w9y5" class="f03-setup-step-label">NEW PAGE</span>
+            </div>
+            <div data-hf-id="hf-mhra" id="f03-setup-step-two" class="f03-setup-step f03-setup-step-two">
+              <span data-hf-id="hf-zvn8" class="f03-setup-step-num">02</span>
+              <span data-hf-id="hf-36ez" class="f03-setup-step-label">TOPIC</span>
+            </div>
+            <div data-hf-id="hf-e1c6" id="f03-setup-step-three" class="f03-setup-step f03-setup-step-three">
+              <span data-hf-id="hf-zhc7" class="f03-setup-step-num">03</span>
+              <span data-hf-id="hf-row3" class="f03-setup-step-label">READY</span>
+            </div>
+          </div>
+
+          <div data-hf-id="hf-555u" id="f03-setup-focus" class="f03-setup-focus"></div>
+
+          <div data-hf-id="hf-qn4b" id="f03-setup-cursor" class="f03-setup-cursor" aria-hidden="true">
+            <svg data-hf-id="hf-mqc6" viewBox="0 0 28 28" role="presentation">
+              <path data-hf-id="hf-oopq" d="M5 3L22 14L14.2 15.2L10.5 23L5 3Z" fill="#0b61df" stroke="#0b1b42" stroke-width="1.2" />
+            </svg>
+          </div>
+          <div data-hf-id="hf-z4sm" id="f03-setup-ripple-one" class="f03-setup-ripple f03-setup-ripple-one"></div>
+          <div data-hf-id="hf-qgym" id="f03-setup-ripple-two" class="f03-setup-ripple f03-setup-ripple-two"></div>
+
+          <div data-hf-id="hf-kgqw" id="f03-setup-track-box" class="f03-setup-track-box">
+            <div data-hf-id="hf-rrgv" class="f03-setup-corner f03-setup-corner-tl"></div>
+            <div data-hf-id="hf-51n5" class="f03-setup-corner f03-setup-corner-tr"></div>
+            <div data-hf-id="hf-le61" class="f03-setup-corner f03-setup-corner-bl"></div>
+            <div data-hf-id="hf-qz6v" class="f03-setup-corner f03-setup-corner-br"></div>
+            <div data-hf-id="hf-ip3e" class="f03-setup-track-label">World Cup Final</div>
+          </div>
+
+          <div data-hf-id="hf-isn3" id="f03-setup-match-tag" class="f03-setup-match-tag">SPAIN × ARGENTINA</div>
+          <div data-hf-id="hf-kht9" class="f03-setup-progress-track">
+            <div data-hf-id="hf-babg" id="f03-setup-progress-fill" class="f03-setup-progress-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <script src="assets/gsap.min.js"></script>
+      <script>
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+
+        const active = document.getElementById("f03-setup-active");
+        const stepOne = document.getElementById("f03-setup-step-one");
+        const stepTwo = document.getElementById("f03-setup-step-two");
+        const stepThree = document.getElementById("f03-setup-step-three");
+        const focus = document.getElementById("f03-setup-focus");
+        const cursor = document.getElementById("f03-setup-cursor");
+        const rippleOne = document.getElementById("f03-setup-ripple-one");
+        const rippleTwo = document.getElementById("f03-setup-ripple-two");
+        const trackBox = document.getElementById("f03-setup-track-box");
+        const matchTag = document.getElementById("f03-setup-match-tag");
+        const finalStill = document.getElementById("f03-setup-final-still");
+        const progress = document.getElementById("f03-setup-progress-fill");
+
+        const railEntries = [
+          { element: stepOne, text: "NEW PAGE" },
+          { element: stepTwo, text: "TOPIC" },
+          { element: stepThree, text: "READY" },
+        ];
+        const baseReveal = 0.16;
+        const secondsPerCharacter = 0.018;
+        const railDurations = railEntries.map((entry) => baseReveal + entry.text.length * secondsPerCharacter);
+        const railTotal = railDurations.reduce((sum, duration) => sum + duration, 0);
+        let railCursor = 0.08;
+
+        tl.set(
+          [stepOne, stepTwo, stepThree, focus, cursor, rippleOne, rippleTwo, trackBox, matchTag, finalStill],
+          { opacity: 0 },
+          0,
+        );
+
+        railEntries.forEach((entry, index) => {
+          const duration = railDurations[index];
+          tl.fromTo(
+            entry.element,
+            { opacity: 0, x: -22 },
+            { opacity: 1, x: 0, duration, ease: "power3.out", immediateRender: false },
+            railCursor,
+          );
+          railCursor += duration;
+        });
+
+        tl.fromTo(
+          ".f03-setup-video-frame",
+          { opacity: 0, scale: 0.992 },
+          { opacity: 1, scale: 1, duration: Math.min(0.5, railTotal), ease: "power3.out", immediateRender: false },
+          0,
+        );
+        tl.fromTo(
+          focus,
+          { opacity: 0, x: 0, y: 0, scale: 1.08 },
+          { opacity: 1, x: 0, y: 0, scale: 1, duration: 0.36, ease: "power3.out", immediateRender: false },
+          1.5,
+        );
+        tl.fromTo(
+          cursor,
+          { opacity: 0, x: 360, y: 430, scale: 0.84 },
+          { opacity: 1, x: 530, y: 292, scale: 1, duration: 0.55, ease: "power3.out", immediateRender: false },
+          1.42,
+        );
+        tl.to(cursor, { scale: 0.86, duration: 0.08, ease: "power2.in", yoyo: true, repeat: 1 }, 2.0);
+        tl.fromTo(
+          rippleOne,
+          { opacity: 0.75, scale: 0.2 },
+          { opacity: 0, scale: 4.2, duration: 0.65, ease: "power3.out", immediateRender: false },
+          2.0,
+        );
+
+        tl.to(active, { y: 92, duration: 0.55, ease: "power3.inOut" }, 1.55);
+        tl.to(stepOne, { color: "#425b7a", backgroundColor: "rgba(255,255,255,0.88)", borderColor: "rgba(11,97,223,0.2)", duration: 0.2 }, 1.65);
+        tl.to(stepTwo, { color: "#ffffff", backgroundColor: "transparent", borderColor: "transparent", duration: 0.2 }, 1.65);
+
+        tl.to(cursor, { x: 528, y: 540, duration: 0.58, ease: "power3.inOut" }, 2.28);
+        tl.to(focus, { y: 248, duration: 0.58, ease: "power3.inOut" }, 2.28);
+        tl.to(cursor, { scale: 0.86, duration: 0.08, ease: "power2.in", yoyo: true, repeat: 1 }, 2.92);
+        tl.fromTo(
+          rippleTwo,
+          { opacity: 0.75, scale: 0.2 },
+          { opacity: 0, scale: 4.2, duration: 0.65, ease: "power3.out", immediateRender: false },
+          2.92,
+        );
+
+        tl.to(focus, { opacity: 0, duration: 0.22, ease: "power2.out" }, 3.35);
+        tl.to(cursor, { x: 556, y: 345, duration: 0.62, ease: "power3.inOut" }, 3.38);
+        tl.fromTo(
+          trackBox,
+          { opacity: 0, scale: 0.82 },
+          { opacity: 1, scale: 1, duration: 0.48, ease: "back.out(1.35)", immediateRender: false },
+          3.5,
+        );
+        tl.fromTo(
+          matchTag,
+          { opacity: 0, y: 18, scale: 0.96 },
+          { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "power3.out", immediateRender: false },
+          4.45,
+        );
+
+        tl.to(active, { y: 184, duration: 0.48, ease: "power3.inOut" }, 5.2);
+        tl.to(stepTwo, { color: "#425b7a", backgroundColor: "rgba(255,255,255,0.88)", borderColor: "rgba(11,97,223,0.2)", duration: 0.2 }, 5.25);
+        tl.to(stepThree, { color: "#ffffff", backgroundColor: "transparent", borderColor: "transparent", duration: 0.2 }, 5.25);
+        tl.to(cursor, { opacity: 0, duration: 0.24, ease: "power2.out" }, 5.18);
+        tl.fromTo(
+          finalStill,
+          { opacity: 0, x: 12, scale: 1.012 },
+          { opacity: 1, x: 0, scale: 1, duration: 0.55, ease: "power3.out", immediateRender: false },
+          5.2,
+        );
+        tl.to(trackBox, { opacity: 0, duration: 0.2, ease: "power2.out" }, 5.2);
+        tl.to(matchTag, { x: 6, duration: 0.55, ease: "power3.out" }, 5.2);
+
+        tl.fromTo(
+          progress,
+          { scaleX: 0.285 },
+          { scaleX: 0.43, duration: 6, ease: "none", immediateRender: false },
+          0,
+        );
+
+        window.__timelines["03-setup"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

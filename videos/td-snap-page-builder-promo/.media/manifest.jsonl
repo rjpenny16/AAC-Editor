@@ -1,0 +1,7 @@
+{"id":"image_001","type":"image","path":"assets/editor-workspace.png","source":"existing","description":"editor workspace","width":1440,"height":900,"provenance":{"provider":"local","adopted":true}}
+{"id":"voice_001","type":"voice","path":"assets/voice/01.wav","source":"existing","description":"01","duration":5.5,"provenance":{"provider":"local","adopted":true}}
+{"id":"voice_002","type":"voice","path":"assets/voice/02.wav","source":"existing","description":"02","duration":6,"provenance":{"provider":"local","adopted":true}}
+{"id":"voice_003","type":"voice","path":"assets/voice/03.wav","source":"existing","description":"03","duration":7,"provenance":{"provider":"local","adopted":true}}
+{"id":"voice_004","type":"voice","path":"assets/voice/04.wav","source":"existing","description":"04","duration":9,"provenance":{"provider":"local","adopted":true}}
+{"id":"voice_005","type":"voice","path":"assets/voice/05.wav","source":"existing","description":"05","duration":9,"provenance":{"provider":"local","adopted":true}}
+{"id":"voice_006","type":"voice","path":"assets/voice/06.wav","source":"existing","description":"06","duration":8.5,"provenance":{"provider":"local","adopted":true}}

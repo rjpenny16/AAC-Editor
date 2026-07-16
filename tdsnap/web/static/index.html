@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
-<title>TD Snap Page Builder</title>
+<title>AAC Editor</title>
 <link rel="stylesheet" href="/static/app.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%230071e3'/%3E%3Crect x='2.5' y='2.5' width='5' height='5' rx='1.25' fill='white'/%3E%3Crect x='8.5' y='2.5' width='5' height='5' rx='1.25' fill='white' opacity='.55'/%3E%3Crect x='2.5' y='8.5' width='5' height='5' rx='1.25' fill='white' opacity='.55'/%3E%3Crect x='8.5' y='8.5' width='5' height='5' rx='1.25' fill='white' opacity='.3'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="/static/assets/aac-editor-logo.png">
 </head>
 <body>
 
@@ -17,15 +17,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
     <span class="wordmark" aria-hidden="true">
-      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor"/>
-        <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".55"/>
-        <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".55"/>
-        <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".3"/>
-      </svg>
+      <img src="/static/assets/aac-editor-logo.png" alt="">
     </span>
     <div class="brand-lockup">
-      <h1>TD Snap Page Builder</h1>
+      <h1>AAC Editor</h1>
     </div>
     <div class="topbar-status">
       <span class="local-status"><span aria-hidden="true"></span>Private &amp; local</span>
@@ -40,7 +35,7 @@
   </div>
 </header>
 
-<div id="app-activity" class="app-activity" role="status" aria-live="polite" hidden>
+<div id="app-activity" class="app-activity" role="status" aria-live="polite" aria-atomic="true" hidden>
   <span class="activity-spinner" aria-hidden="true"></span>
   <span id="app-activity-text">Working…</span>
 </div>
@@ -237,8 +232,8 @@
         </div>
         <div class="parent-picker">
           <div class="parent-search-row">
-            <input id="parent-filter" type="search" placeholder="Filter detected pages"
-                   aria-label="Filter the page list">
+            <input id="parent-filter" type="search" placeholder="Filter page options"
+                   aria-label="Filter page options without changing the selection">
             <button type="button" id="parent-filter-clear" class="btn btn-ghost btn-compact">Clear filter</button>
           </div>
           <select id="parent-select" aria-describedby="parent-note"></select>
@@ -503,7 +498,7 @@
 
 <section id="quit-screen" class="panel quit-screen" aria-live="polite" hidden>
   <h2>The app has stopped</h2>
-  <p>TD Snap Page Builder is no longer running on this computer.
+  <p>AAC Editor is no longer running on this computer.
   You can close this tab.</p>
 </section>
 

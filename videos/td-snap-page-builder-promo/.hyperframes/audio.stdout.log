@@ -1,0 +1,8 @@
+✓ audio engine → C:\Users\rjpen\OneDrive\Documents\GitHub\AAC-Editor\videos\td-snap-page-builder-promo\audio_engine_meta.json
+  heygen: no  ·  ran: tts,bgm
+  voices: 6  ·  bgm: none  ·  sfx: 0
+  total voice duration: 39.574s
+
+anomalies (non-fatal):
+  - bgm: retrieve requires a HeyGen credential — skipped (no generate fallback for an explicit retrieve)
+✓ audio generate: 6 voice + no bgm → C:\Users\rjpen\OneDrive\Documents\GitHub\AAC-Editor\videos\td-snap-page-builder-promo\audio_meta.json

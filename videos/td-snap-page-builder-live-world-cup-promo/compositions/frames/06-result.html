@@ -1,0 +1,334 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "Segoe UI Variable Text";
+      src: url("assets/fonts/Segoe_UI_Variable_Text.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: block;
+    }
+
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: "Segoe UI Variable Text", sans-serif;
+      color: #0b1b42;
+    }
+
+    .f06-ground {
+      position: absolute;
+      inset: 0;
+      background: transparent;
+    }
+
+    .f06-overlay {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .f06-final-still {
+      position: absolute;
+      left: 70px;
+      top: 64px;
+      width: 1120px;
+      height: 820px;
+      object-fit: contain;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .f06-surface-chrome {
+      position: absolute;
+      left: 248px;
+      top: 64px;
+      width: 763px;
+      height: 820px;
+      border: 2px solid #0b1b42;
+      border-radius: 14px;
+      box-sizing: border-box;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .f06-surface-title {
+      position: absolute;
+      left: 0;
+      top: -45px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      color: #0b1b42;
+      font-size: 22px;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .f06-surface-rule {
+      display: block;
+      width: 60px;
+      height: 4px;
+      border-radius: 2px;
+      background: #0b61df;
+    }
+
+    .f06-connector {
+      position: absolute;
+      left: 854px;
+      top: 380px;
+      width: 188px;
+      height: 3px;
+      border-radius: 6px;
+      background: #0b61df;
+      transform-origin: 0 50%;
+      will-change: transform, opacity;
+    }
+
+    .f06-connector::after {
+      content: "";
+      position: absolute;
+      right: -7px;
+      top: -5px;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #0b61df;
+    }
+
+    .f06-proof {
+      position: absolute;
+      left: 1050px;
+      top: 248px;
+      width: 700px;
+      transform-origin: 0 50%;
+      will-change: transform, opacity;
+    }
+
+    .f06-proof-number {
+      display: block;
+      color: #0b61df;
+      font-size: 134px;
+      line-height: 0.84;
+      font-weight: 760;
+      letter-spacing: -0.045em;
+    }
+
+    .f06-proof-label {
+      display: block;
+      margin-top: 24px;
+      color: #0b1b42;
+      font-size: 48px;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+
+    .f06-benefits {
+      position: absolute;
+      left: 1054px;
+      top: 518px;
+      display: flex;
+      align-items: center;
+      gap: 21px;
+      color: #0b1b42;
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .f06-benefit {
+      display: inline-flex;
+      align-items: center;
+      gap: 21px;
+      will-change: transform, opacity;
+    }
+
+    .f06-benefit + .f06-benefit::before {
+      content: "\00b7";
+      color: #0b61df;
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .f06-ready-pill {
+      position: absolute;
+      left: 1052px;
+      top: 660px;
+      min-width: 420px;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      padding: 0 34px;
+      border-radius: 100px;
+      background: #0b61df;
+      color: #ffffff;
+      font-size: 24px;
+      line-height: 1;
+      font-weight: 720;
+      letter-spacing: 0.06em;
+      transform-origin: 50% 50%;
+      will-change: transform, opacity;
+    }
+
+    .f06-progress-track {
+      position: absolute;
+      left: 0;
+      top: 890px;
+      width: 1920px;
+      height: 3px;
+      overflow: hidden;
+      background: rgba(11, 97, 223, 0.08);
+    }
+
+    .f06-progress-fill {
+      display: block;
+      width: 1646px;
+      height: 3px;
+      background: #0b61df;
+      transform-origin: 0 50%;
+      will-change: transform;
+    }
+  </style>
+
+  <div data-hf-id="hf-50nq" id="root" data-composition-id="06-result" data-start="0" data-duration="6.5" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-d2wc" id="f06-ground-clip" class="clip f06-ground" data-start="0" data-duration="6.5" data-track-index="0"></div>
+
+    <!-- approved frame video hoisted by assemble-index -->
+
+    <div data-hf-id="hf-krji" id="f06-overlay-clip" class="clip f06-overlay" data-start="0" data-duration="6.5" data-track-index="2">
+      <img data-hf-id="hf-7stu" id="f06-result-final-still" class="f06-final-still" src="assets/final-page-proof.png" alt="Completed World Cup Final page with fifteen phrases">
+
+      <div data-hf-id="hf-qdve" id="f06-result-surface-chrome" class="f06-surface-chrome">
+        <div data-hf-id="hf-vmsj" class="f06-surface-title">
+          <span data-hf-id="hf-to6k" class="f06-surface-rule"></span>
+          <span data-hf-id="hf-z50f">WORLD CUP FINAL</span>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-omow" id="f06-result-connector" class="f06-connector"></div>
+
+      <div data-hf-id="hf-q41c" id="f06-result-proof" class="f06-proof">
+        <span data-hf-id="hf-2xim" class="f06-proof-number">15</span>
+        <span data-hf-id="hf-j5qf" class="f06-proof-label">PHRASES</span>
+      </div>
+
+      <div data-hf-id="hf-fy17" class="f06-benefits" aria-label="Use, share, sync">
+        <span data-hf-id="hf-dg7c" id="f06-result-benefit-use" class="f06-benefit">USE</span>
+        <span data-hf-id="hf-5n6s" id="f06-result-benefit-share" class="f06-benefit">SHARE</span>
+        <span data-hf-id="hf-qex2" id="f06-result-benefit-sync" class="f06-benefit">SYNC</span>
+      </div>
+
+      <div data-hf-id="hf-w3bq" id="f06-result-ready-pill" class="f06-ready-pill">READY IN TD SNAP</div>
+
+      <div data-hf-id="hf-sg82" class="f06-progress-track">
+        <span data-hf-id="hf-ymxz" id="f06-result-progress-fill" class="f06-progress-fill"></span>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/gsap.min.js"></script>
+  <script>
+    window.__timelines = window.__timelines || {};
+    const tl = gsap.timeline({ paused: true });
+
+    const liveVideo = document.getElementById("f06-result-live-video");
+    const still = document.getElementById("f06-result-final-still");
+    const chrome = document.getElementById("f06-result-surface-chrome");
+    const connector = document.getElementById("f06-result-connector");
+    const proof = document.getElementById("f06-result-proof");
+    const ready = document.getElementById("f06-result-ready-pill");
+    const progress = document.getElementById("f06-result-progress-fill");
+
+    if (liveVideo) {
+      tl.fromTo(
+        liveVideo,
+        { scale: 0.955, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.5, ease: "power3.out" },
+        0,
+      );
+    }
+    tl.fromTo(
+      chrome,
+      { scale: 0.955, opacity: 0 },
+      { scale: 1, opacity: 1, duration: 0.5, ease: "power3.out" },
+      0,
+    );
+
+    if (liveVideo) {
+      tl.to(
+        liveVideo,
+        { x: -125, scale: 0.88, duration: 0.82, ease: "power3.inOut" },
+        1.7,
+      );
+    }
+    tl.to(
+      chrome,
+      { x: -125, scale: 0.88, duration: 0.82, ease: "power3.inOut" },
+      1.7,
+    );
+    tl.fromTo(
+      connector,
+      { scaleX: 0, opacity: 0 },
+      { scaleX: 1, opacity: 1, duration: 0.58, ease: "power3.out" },
+      1.88,
+    );
+    tl.fromTo(
+      proof,
+      { x: 26, scale: 0.78, opacity: 0 },
+      { x: 0, scale: 1, opacity: 1, duration: 0.7, ease: "power3.out" },
+      1.82,
+    );
+
+    tl.fromTo(
+      still,
+      { x: -125, scale: 0.88, opacity: 0 },
+      { x: -125, scale: 0.88, opacity: 1, duration: 0.42, ease: "power2.out" },
+      3.55,
+    );
+    if (liveVideo) {
+      tl.to(liveVideo, { opacity: 0, duration: 0.22, ease: "power2.out" }, 3.58);
+    }
+
+    const words = [
+      document.getElementById("f06-result-benefit-use"),
+      document.getElementById("f06-result-benefit-share"),
+      document.getElementById("f06-result-benefit-sync"),
+    ];
+    let wordStart = 3.9;
+    words.forEach((word) => {
+      const duration = 0.16 + word.textContent.length * 0.02;
+      tl.fromTo(
+        word,
+        { y: 20, opacity: 0 },
+        { y: 0, opacity: 1, duration, ease: "power3.out" },
+        wordStart,
+      );
+      wordStart += duration + 0.12;
+    });
+
+    tl.fromTo(
+      ready,
+      { scale: 0.86, opacity: 0 },
+      { scale: 1, opacity: 1, duration: 0.46, ease: "power3.out" },
+      5.2,
+    );
+    tl.fromTo(
+      progress,
+      { scaleX: 0.82 },
+      { scaleX: 1, duration: 6, ease: "none" },
+      0,
+    );
+
+    window.__timelines["06-result"] = tl;
+  </script>
+</template>

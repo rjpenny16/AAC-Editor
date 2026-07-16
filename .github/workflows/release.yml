@@ -49,8 +49,8 @@ jobs:
         id: package
         shell: pwsh
         run: |
-          $archive = "TDSnapPageBuilder-${{ inputs.tag_name || github.ref_name }}-windows-x64.zip"
-          Compress-Archive -Path "dist/TDSnapPageBuilder" -DestinationPath $archive
+          $archive = "AACEditor-${{ inputs.tag_name || github.ref_name }}-windows-x64.zip"
+          Compress-Archive -Path "dist/AACEditor" -DestinationPath $archive
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $archive" | Set-Content -Encoding ascii "$archive.sha256"
           "archive=$archive" >> $env:GITHUB_OUTPUT

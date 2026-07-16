@@ -1,22 +1,22 @@
-# TD Snap Page Builder
+# AAC Editor
 
 [![Tests](https://github.com/rjpenny16/AAC-Editor/actions/workflows/tests.yml/badge.svg)](https://github.com/rjpenny16/AAC-Editor/actions/workflows/tests.yml)
 [![Latest release](https://img.shields.io/github/v/release/rjpenny16/AAC-Editor)](https://github.com/rjpenny16/AAC-Editor/releases/latest)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-TD Snap Page Builder helps AAC users, parents, SLPs, and other professionals
+AAC Editor helps AAC users, parents, SLPs, and other professionals
 spend less time editing buttons and more time communicating. Add many words or
 entire topic pages at once, review every change before it runs, and update the
 page set already open in TD Snap so it keeps its existing sharing and sync
 identity—saving hours of repetitive work.
 
-![TD Snap Page Builder live editor with a page preview](docs/screenshot.png)
+![AAC Editor with a live page preview](docs/screenshot.png)
 
 ## Download
 
-Download **`TDSnapPageBuilder-*-windows-x64.zip`** from the
+Download **`AACEditor-*-windows-x64.zip`** from the
 [latest release](https://github.com/rjpenny16/AAC-Editor/releases/latest), unzip
-it, and open **TD Snap Page Builder.exe**. Python is not required.
+it, and open **AAC Editor.exe**. Python is not required.
 
 > Windows may warn about an unfamiliar unsigned app. Releases are built by the
 > public GitHub Actions workflow and include a SHA-256 checksum and verifiable
@@ -50,7 +50,7 @@ AI is optional and local:
 ## Quick start
 
 1. Open TD Snap and the page set you want to edit.
-2. Open TD Snap Page Builder and select **Connect to TD Snap**.
+2. Open AAC Editor and select **Connect to TD Snap**.
 3. Choose **Add to an existing page** or **Create a new page**.
 4. Add and arrange buttons in the preview, then select **Update TD Snap**.
 5. Review the checks before returning to TD Snap.
