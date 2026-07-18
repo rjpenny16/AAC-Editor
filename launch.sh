@@ -13,9 +13,9 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-if ! python3 -c "import flask, requests" 2>/dev/null; then
+if ! python3 -c "import flask" 2>/dev/null; then
     echo "Installing required packages..."
-    if ! python3 -m pip install -r requirements.txt; then
+    if ! python3 -m pip install .; then
         echo "ERROR: Failed to install dependencies"
         echo ""
         read -p "Press Enter to exit..."

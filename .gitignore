@@ -44,6 +44,15 @@ playwright-report/
 output/
 @AutomationLog.txt
 
+# Promo media belongs in a separate media workspace, not the application repo.
+/videos/
+
+# Python test and analysis artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Application specific
 td_snap_coordinates.json
 # Page set files (user data + generated working/edited copies)

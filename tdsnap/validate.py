@@ -14,7 +14,7 @@ Three layers:
 import hashlib
 import sqlite3
 import uuid as uuid_module
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from . import schema
 from .errors import PagesetError
@@ -134,14 +134,35 @@ def validate_pageset(conn: sqlite3.Connection) -> Dict[str, List[str]]:
     if dup_page_uuid:
         problems.append(f"{dup_page_uuid} duplicated Page UniqueId value(s).")
 
-    dup_positions = count(
-        "SELECT COUNT(*) FROM (SELECT PageLayoutId, GridPosition FROM "
-        "ElementPlacement WHERE PageLayoutId IS NOT NULL AND Visible = 1 "
-        "GROUP BY PageLayoutId, GridPosition HAVING COUNT(*) > 1)"
-    )
-    if dup_positions:
+    occupied = {}
+    overlaps = set()
+    invalid_placements = 0
+    for row in conn.execute(
+        "SELECT ep.Id, ep.PageLayoutId, ep.GridPosition, ep.GridSpan, "
+        "pl.PageLayoutSetting FROM ElementPlacement ep "
+        "JOIN PageLayout pl ON pl.Id = ep.PageLayoutId WHERE ep.Visible = 1"
+    ):
+        try:
+            cols, rows = schema.parse_grid(row["PageLayoutSetting"])
+            col, grid_row = schema.parse_grid_position(row["GridPosition"])
+            col_span, row_span = schema.parse_grid_span(row["GridSpan"])
+        except PagesetError:
+            invalid_placements += 1
+            continue
+        for x in range(col, col + col_span):
+            for y in range(grid_row, grid_row + row_span):
+                cell = (row["PageLayoutId"], x, y)
+                if cell in occupied:
+                    overlaps.add(cell)
+                occupied[cell] = row["Id"]
+    if invalid_placements:
         problems.append(
-            f"{dup_positions} grid cell(s) hold more than one visible button."
+            f"{invalid_placements} visible ElementPlacement row(s) have an "
+            "invalid grid position/span."
+        )
+    if overlaps:
+        problems.append(
+            f"{len(overlaps)} grid cell(s) hold more than one visible button."
         )
 
     pages_no_syncdata = count(
@@ -295,23 +316,6 @@ def validate_new_page(conn: sqlite3.Connection, report: Dict) -> List[str]:
     return problems
 
 
-def table_snapshot(conn: sqlite3.Connection) -> Dict[str, Tuple[int, str]]:
-    """Return ``{table: (row_count, sha256-of-ordered-dump)}`` for every table.
-
-    Taken before and after an edit to prove that only the expected tables
-    changed and everything else survived byte-for-byte.
-    """
-    snapshot = {}
-    for table in schema.tables(conn):
-        digest = hashlib.sha256()
-        count = 0
-        for row in conn.execute(f'SELECT * FROM "{table}" ORDER BY rowid'):
-            digest.update(repr(tuple(row)).encode("utf-8", "backslashreplace"))
-            count += 1
-        snapshot[table] = (count, digest.hexdigest())
-    return snapshot
-
-
 # Tables add_category_page is allowed to touch. Anything else changing is a bug.
 EXPECTED_CHANGED_TABLES = frozenset(
     {
@@ -330,8 +334,39 @@ EXPECTED_CHANGED_TABLES = frozenset(
 )
 
 
+def table_snapshot(conn: sqlite3.Connection) -> Dict[str, Dict[str, object]]:
+    """Hash every table and retain keyed rows for tables the writer may touch."""
+    snapshot = {}
+    for table in schema.tables(conn):
+        digest = hashlib.sha256()
+        cursor = conn.execute(f'SELECT * FROM "{table}" ORDER BY rowid')
+        columns = tuple(description[0] for description in cursor.description)
+        key_name = (
+            "name" if table == "sqlite_sequence" else
+            "UniqueId" if table == "SyncData" else "Id"
+        )
+        key_index = columns.index(key_name) if (
+            table in EXPECTED_CHANGED_TABLES and key_name in columns
+        ) else None
+        rows = {}
+        count = 0
+        for row in cursor:
+            values = tuple(row)
+            digest.update(repr(values).encode("utf-8", "backslashreplace"))
+            if key_index is not None:
+                rows[values[key_index]] = values
+            count += 1
+        snapshot[table] = {
+            "count": count,
+            "digest": digest.hexdigest(),
+            "columns": columns if key_index is not None else (),
+            "rows": rows,
+        }
+    return snapshot
+
+
 def diff_snapshots(
-    before: Dict[str, Tuple[int, str]], after: Dict[str, Tuple[int, str]]
+    before: Dict[str, Dict[str, object]], after: Dict[str, Dict[str, object]]
 ) -> List[str]:
     """Return the names of tables whose contents differ between snapshots."""
     changed = []
@@ -342,16 +377,85 @@ def diff_snapshots(
 
 
 def check_roundtrip(
-    before: Dict[str, Tuple[int, str]], after: Dict[str, Tuple[int, str]]
+    before: Dict[str, Dict[str, object]], after: Dict[str, Dict[str, object]]
 ) -> List[str]:
-    """Assert only the tables an edit may touch actually changed."""
+    """Reject unexpected table changes and mutations to pre-existing rows."""
+    problems = []
     unexpected = [
         table for table in diff_snapshots(before, after)
         if table not in EXPECTED_CHANGED_TABLES
     ]
     if unexpected:
-        return [
+        problems.append(
             "Tables changed that the edit should never touch: "
             + ", ".join(unexpected)
-        ]
-    return []
+        )
+    removed_tables = sorted(set(before) - set(after))
+    if removed_tables:
+        problems.append(
+            "Tables disappeared during the edit: " + ", ".join(removed_tables)
+        )
+
+    allowed_columns = {
+        "Page": {"Timestamp"},
+        "SyncData": {"Timestamp"},
+        "Synchronization": {"PageSetTimestamp"},
+        "PageSetProperties": {"Timestamp"},
+        "sqlite_sequence": {"seq"},
+    }
+    changed_existing = {}
+    for table in sorted(EXPECTED_CHANGED_TABLES & before.keys() & after.keys()):
+        old, new = before[table], after[table]
+        old_columns = old["columns"]
+        new_columns = new["columns"]
+        if old_columns != new_columns:
+            problems.append(f"Table {table}'s schema changed during the edit.")
+            continue
+        old_rows = old["rows"]
+        new_rows = new["rows"]
+        removed = set(old_rows) - set(new_rows)
+        if removed:
+            problems.append(f"Table {table} lost {len(removed)} pre-existing row(s).")
+        changed = []
+        for key in set(old_rows) & set(new_rows):
+            if old_rows[key] == new_rows[key]:
+                continue
+            changed_columns = {
+                column
+                for column, old_value, new_value in zip(
+                    old_columns, old_rows[key], new_rows[key]
+                )
+                if old_value != new_value
+            }
+            if not changed_columns <= allowed_columns.get(table, set()):
+                problems.append(
+                    f"Pre-existing {table} row {key!r} changed unexpected columns: "
+                    + ", ".join(sorted(changed_columns))
+                    + "."
+                )
+            changed.append(key)
+        changed_existing[table] = changed
+
+    for table in ("Page", "SyncData", "Synchronization", "PageSetProperties"):
+        if len(changed_existing.get(table, [])) > 1:
+            problems.append(f"The edit changed more than one pre-existing {table} row.")
+
+    page_ids = changed_existing.get("Page", [])
+    sync_ids = changed_existing.get("SyncData", [])
+    if page_ids or sync_ids:
+        page_columns = before["Page"]["columns"]
+        sync_columns = before["SyncData"]["columns"]
+        page_unique_ids = {
+            before["Page"]["rows"][key][page_columns.index("UniqueId")]
+            for key in page_ids
+        }
+        sync_unique_ids = {
+            before["SyncData"]["rows"][key][sync_columns.index("UniqueId")]
+            for key in sync_ids
+        }
+        if page_unique_ids != sync_unique_ids:
+            problems.append(
+                "The pre-existing Page and SyncData timestamp changes target "
+                "different pages."
+            )
+    return problems

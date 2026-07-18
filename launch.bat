@@ -15,11 +15,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Install dependencies if missing
-python -c "import flask, requests" >nul 2>&1
+REM Install the project and its Windows automation dependency if missing
+python -c "import flask, uiautomation" >nul 2>&1
 if errorlevel 1 (
     echo Installing required packages...
-    python -m pip install -r requirements.txt
+    python -m pip install .
     if errorlevel 1 (
         echo ERROR: Failed to install dependencies
         echo.

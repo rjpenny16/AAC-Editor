@@ -9,6 +9,7 @@ frozen Windows builds (llama-cpp workers would otherwise respawn the GUI).
 import multiprocessing
 import os
 import sys
+import argparse
 
 
 def main() -> None:
@@ -21,7 +22,16 @@ def main() -> None:
         sys.stderr = open(os.devnull, "w")
     from tdsnap.web.desktop import run_desktop
 
-    run_desktop()
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--replace-instance", action="store_true")
+    parser.add_argument("--grid3", action="store_true")
+    args, _ = parser.parse_known_args()
+    run_desktop(
+        port=args.port,
+        replace_instance=args.replace_instance,
+        initial_provider="grid3" if args.grid3 else None,
+    )
 
 
 if __name__ == "__main__":

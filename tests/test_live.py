@@ -1,7 +1,10 @@
 import sqlite3
 from types import SimpleNamespace
 
+import pytest
+
 from tdsnap import live
+from tdsnap.errors import PagesetError
 
 
 def test_live_lists_every_page_from_active_pageset(tmp_path, monkeypatch):
@@ -47,6 +50,48 @@ def test_live_lists_every_page_from_active_pageset(tmp_path, monkeypatch):
         ("All Word Lists", "Word Lists", False),
         ("Nested", "Nested Page", False),
     ]
+
+
+def test_active_pageset_is_bound_to_unique_visible_content(tmp_path, monkeypatch):
+    for user_name, label in (("first", "Apple"), ("second", "Pear")):
+        user = (tmp_path / "Packages" / "TobiiDynavox.Snap_test" /
+                "LocalState" / "Users" / user_name)
+        user.mkdir(parents=True)
+        with sqlite3.connect(user / "Settings.ssf") as conn:
+            conn.execute("CREATE TABLE UserSettings (PageSetGuid TEXT)")
+            conn.execute("INSERT INTO UserSettings VALUES ('active')")
+        with sqlite3.connect(user / "active.sps") as conn:
+            conn.execute(
+                "CREATE TABLE Page (Id INTEGER, Title TEXT, PageType INTEGER)"
+            )
+            conn.execute(
+                "CREATE TABLE ElementReference (Id INTEGER, PageId INTEGER)"
+            )
+            conn.execute(
+                "CREATE TABLE Button (Label TEXT, ElementReferenceId INTEGER)"
+            )
+            conn.execute("INSERT INTO Page VALUES (1, 'Eating', 1)")
+            conn.execute("INSERT INTO ElementReference VALUES (1, 1)")
+            conn.execute("INSERT INTO Button VALUES (?, 1)", (label,))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    selected = live._active_pageset_path("Eating", ["Apple"])
+
+    assert selected.replace("\\", "/").endswith("first/active.sps")
+    assert live._active_pageset_path("Eating") is None
+
+
+def test_td_snap_window_requires_exact_packaged_application(monkeypatch):
+    window = SimpleNamespace(Exists=lambda _timeout: True, ProcessId=42)
+    auto = SimpleNamespace(WindowControl=lambda **_kwargs: window)
+    expected = live.TD_SNAP_APP.removeprefix("shell:AppsFolder\\")
+    monkeypatch.setattr(live, "_process_app_id", lambda _pid: expected)
+
+    assert live._window(auto) is window
+
+    monkeypatch.setattr(live, "_process_app_id", lambda _pid: "Other.App!App")
+    with pytest.raises(PagesetError, match="not the installed TD Snap"):
+        live._window(auto)
 
 
 def test_live_grid_finds_first_uncovered_cell():
@@ -375,6 +420,41 @@ def test_live_add_button_uses_hidden_accessibility_textbox(monkeypatch):
     assert state["value"] == "hello"
 
 
+def test_live_add_button_requires_requested_spoken_message_field(monkeypatch):
+    state = {"clicked": False, "undone": False}
+    group = object()
+    textbox = SimpleNamespace(
+        ControlTypeName="EditControl", AutomationId="TextBox", IsEnabled=True
+    )
+
+    class Auto:
+        def Click(self, _x, _y, waitTime):
+            state["clicked"] = waitTime
+
+    def find(_root, **criteria):
+        if criteria.get("automation_id") == "MessageBox":
+            return None
+        return object()
+
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: (state["clicked"],))
+    monkeypatch.setattr(live, "_physical_point", lambda *_args: (10, 20))
+    monkeypatch.setattr(live, "_set_value", lambda *_args: None)
+    monkeypatch.setattr(live, "_walk", lambda *_args: [(textbox, 10)])
+    monkeypatch.setattr(live, "_find", find)
+    monkeypatch.setattr(live, "_expand_editor", lambda _window: None)
+    monkeypatch.setattr(
+        live, "_undo_if_needed", lambda _window: state.update(undone=True)
+    )
+
+    with pytest.raises(PagesetError, match="spoken-message field"):
+        live._add_button(
+            Auto(), object(), live.Cell(50, 60, 40, 30), "hello", "speak this"
+        )
+
+    assert state["undone"] is True
+
+
 def test_live_click_coordinates_scale_from_client_origin(monkeypatch):
     monkeypatch.setattr(live, "_client_origin", lambda _window: (1600, 80))
     monkeypatch.setattr(live, "_window_dpi", lambda _window: 120)
@@ -385,7 +465,8 @@ def test_live_click_coordinates_scale_from_client_origin(monkeypatch):
 def test_existing_page_remeasures_grid_in_edit_mode(monkeypatch):
     view_grid = live.Grid((10, 20), (30, 40), 8, 8)
     edit_grid = live.Grid((110, 120), (130, 140), 18, 18)
-    grids = iter((view_grid, edit_grid))
+    grids = iter((view_grid, edit_grid, edit_grid))
+    layouts = iter(([], [{"slot": 0, "label": "hello"}]))
     added = {}
     group = SimpleNamespace(GetChildren=lambda: [SimpleNamespace(Name="hello")])
 
@@ -395,12 +476,14 @@ def test_existing_page_remeasures_grid_in_edit_mode(monkeypatch):
     monkeypatch.setattr(live, "_focus_window", lambda _window: None)
     monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
     monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("baseline",))
     monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
     monkeypatch.setattr(live, "_grid", lambda _group: next(grids))
-    monkeypatch.setattr(live, "_page_layout", lambda _group, _grid: [])
+    monkeypatch.setattr(live, "_page_layout", lambda _group, _grid: next(layouts))
     monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
     monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
     monkeypatch.setattr(live, "_exit_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_verify_added_buttons", lambda _window, _items: None)
     monkeypatch.setattr(
         live, "_add_button",
         lambda _auto, _window, cell, *_args: added.update(cell=cell) or {
@@ -413,6 +496,127 @@ def test_existing_page_remeasures_grid_in_edit_mode(monkeypatch):
     )
 
     assert added["cell"] == live.Cell(110, 130, 18, 18)
+
+
+def test_existing_page_requires_review_fingerprint(monkeypatch):
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_focus_window", lambda _window: None)
+    monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
+
+    with pytest.raises(PagesetError, match="review fingerprint is required"):
+        live.add_to_existing_page("Eating", [{"label": "hello", "slot": 0}])
+
+
+def test_existing_page_failure_restores_reviewed_baseline(monkeypatch):
+    grid = live.Grid((10, 20), (30, 40), 8, 8)
+    state = {"adds": 0, "restored": None, "exits": 0}
+    group = SimpleNamespace(GetChildren=lambda: [])
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_focus_window", lambda _window: None)
+    monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("before",))
+    monkeypatch.setattr(live, "_grid", lambda _group: grid)
+    monkeypatch.setattr(live, "_page_layout", lambda *_args: [])
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(
+        live, "_exit_edit_mode",
+        lambda _window: state.update(exits=state["exits"] + 1),
+    )
+
+    def add(*_args):
+        state["adds"] += 1
+        if state["adds"] == 2:
+            raise PagesetError("second add failed")
+        return {"symbol": False, "border": True}
+
+    monkeypatch.setattr(live, "_add_button", add)
+    monkeypatch.setattr(
+        live, "_restore_page_fingerprint",
+        lambda _window, baseline, maximum: state.update(
+            restored=(baseline, maximum)
+        ),
+    )
+
+    with pytest.raises(PagesetError, match="original page was restored"):
+        live.add_to_existing_page(
+            "Eating",
+            [
+                {"label": "hello", "slot": 0, "symbol": False},
+                {"label": "goodbye", "slot": 1, "symbol": False},
+            ],
+            "v1",
+        )
+
+    assert state["adds"] == 2
+    assert state["restored"][0] == ("before",)
+    assert state["exits"] == 1
+
+
+def test_new_page_rejects_duplicate_title_before_editing(monkeypatch):
+    group = SimpleNamespace(GetChildren=lambda: [])
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_focus_window", lambda _window: None)
+    monkeypatch.setattr(live, "_navigate_to_parent", lambda *_args: "Topics")
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_active_pageset_pages", lambda *_args: ["Snacks"])
+
+    with pytest.raises(PagesetError, match="already exists"):
+        live.add_topic_page("Snacks", [{"label": "Apple"}], "Topics")
+
+
+def test_new_page_capacity_failure_rolls_back_provisional_page(monkeypatch):
+    state = {"page": "Topics", "rollback": None}
+    parent_group = SimpleNamespace(GetChildren=lambda: [])
+    child_group = SimpleNamespace(GetChildren=lambda: [])
+    grid = live.Grid((10,), (20,), 8, 8)
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_focus_window", lambda _window: None)
+    monkeypatch.setattr(live, "_navigate_to_parent", lambda *_args: "Topics")
+    monkeypatch.setattr(
+        live, "_page_group",
+        lambda _window: child_group if state["page"] == "Snacks" else parent_group,
+    )
+    monkeypatch.setattr(live, "_active_pageset_pages", lambda *_args: [])
+    monkeypatch.setattr(live, "_find", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(live, "_empty_cell", lambda *_args, **_kwargs: live.Cell(10, 20, 8, 8))
+    monkeypatch.setattr(live, "_grid", lambda _group: grid)
+    monkeypatch.setattr(
+        live, "_fingerprint",
+        lambda group: ("child",) if group is child_group else ("parent",),
+    )
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_exit_edit_mode", lambda _window: None)
+    monkeypatch.setattr(
+        live, "_create_page_link",
+        lambda *_args: state.update(page="Snacks"),
+    )
+    monkeypatch.setattr(live, "_page_layout", lambda *_args: [])
+    monkeypatch.setattr(
+        live, "_rollback_new_page",
+        lambda _auto, _window, parent, parent_baseline, page_baseline, maximum:
+        state.update(
+            rollback=(parent, parent_baseline, page_baseline, maximum)
+        ),
+    )
+
+    with pytest.raises(PagesetError, match="provisional page and parent link were restored"):
+        live.add_topic_page(
+            "Snacks", [{"label": "Apple"}, {"label": "Pear"}], "Topics"
+        )
+
+    assert state["rollback"][:3] == ("Topics", ("parent",), ("child",))
 
 
 def test_live_web_endpoints(monkeypatch):

@@ -12,7 +12,7 @@ body:
     attributes:
       label: Version
       description: Release version or commit SHA
-      placeholder: v2.1.0
+      placeholder: v2.2.0
     validations:
       required: true
   - type: dropdown
@@ -21,6 +21,7 @@ body:
       label: Mode
       options:
         - Live TD Snap editing
+        - Live Grid 3 editing
         - Exported-file editing
         - Web interface
         - Command line

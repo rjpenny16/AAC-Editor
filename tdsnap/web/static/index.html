@@ -15,8 +15,8 @@
     <img class="brand-logo" src="/static/assets/aac-editor-logo.png" alt="">
     <h1>AAC Editor</h1>
     <div class="connection-area">
-      <span class="local-status"><span aria-hidden="true"></span>Private and local</span>
-      <button type="button" id="file-badge" class="file-badge" aria-label="Reconnect to TD Snap" hidden></button>
+      <span class="local-status"><span aria-hidden="true"></span>Local by default</span>
+      <button type="button" id="file-badge" class="file-badge" aria-label="Change AAC app" hidden></button>
     </div>
   </div>
 </header>
@@ -28,38 +28,66 @@
 
 <main class="shell">
   <section class="wizard-progress" aria-label="Task progress">
-    <div class="progress-copy">
-      <strong id="wizard-progress-label">Step 1 of 5 · Connect</strong>
-      <span id="wizard-progress-percent">20%</span>
-    </div>
-    <progress id="wizard-progress" max="5" value="1">1 of 5</progress>
+    <strong id="wizard-progress-label">Setup</strong>
+    <ol id="wizard-progress" class="stage-progress" aria-label="Add, Review, Done">
+      <li data-stage="add">Add</li>
+      <li data-stage="review">Review</li>
+      <li data-stage="done">Done</li>
+    </ol>
     <p id="wizard-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
   </section>
 
   <section id="step-load" class="wizard-card" aria-labelledby="load-heading" hidden>
     <p class="step-eyebrow">Step 1</p>
-    <h2 id="load-heading" tabindex="-1">Connect to TD Snap</h2>
-    <p class="lead">Open the page you want to change in TD Snap, then connect. The editor will read that page without moving any buttons.</p>
+    <h2 id="load-heading" tabindex="-1">Choose your AAC app</h2>
+    <p id="connect-lead" class="lead">Choose the app that already has the page or grid you want to update.</p>
+
+    <div class="provider-list" role="radiogroup" aria-label="AAC app">
+      <button type="button" id="provider-tdsnap" class="choice-card provider-card selected" role="radio" aria-checked="true">
+        <strong>TD Snap</strong>
+        <span>Edit the open page or create and link a new page.</span>
+        <small id="provider-tdsnap-state"></small>
+      </button>
+      <button type="button" id="provider-grid3" class="choice-card provider-card" role="radio" aria-checked="false">
+        <strong>Grid 3</strong>
+        <span>Add vocabulary to empty spaces AAC Editor can update safely on the grid already open.</span>
+        <small id="provider-grid3-state"></small>
+      </button>
+      <button type="button" id="provider-file" class="choice-card provider-card" role="radio" aria-checked="false">
+        <strong>TD Snap exported file</strong>
+        <span>Create a page in a separate edited copy. Useful outside Windows or when direct editing is unavailable.</span>
+        <small id="provider-file-state"></small>
+      </button>
+    </div>
+
+    <input id="file-input" class="sr-only" type="file" accept=".sps,.spb,application/octet-stream" aria-label="Choose a TD Snap exported page set">
 
     <div class="primary-task">
       <div>
-        <strong>Ready to connect?</strong>
-        <p>Keep Windows unlocked while the editor is working.</p>
+        <strong id="connect-task-title">Use the page open in TD Snap</strong>
+        <p id="connect-task-copy">Open the page you want to change and keep Windows unlocked.</p>
       </div>
       <button type="button" id="live-connect-btn" class="btn btn-primary">
-        <span class="btn-label">Connect to TD Snap</span>
+        <span class="btn-label">Use the page open in TD Snap</span>
       </button>
     </div>
     <p id="live-status" class="status-line" role="status" aria-live="polite"></p>
+    <div id="connection-error" class="alert connection-error" role="alert" tabindex="-1" hidden>
+      <strong>AAC Editor couldn’t reach TD Snap. Nothing was changed.</strong>
+      <div class="connection-error-actions">
+        <button type="button" id="connection-retry" class="btn btn-primary">Try again</button>
+        <button type="button" id="connection-help-btn" class="btn btn-secondary">Connection help</button>
+      </div>
+    </div>
 
-    <details class="help-disclosure">
-      <summary>Having trouble?</summary>
-      <ol>
+    <details class="help-disclosure" id="connection-help-details">
+      <summary>Connection help</summary>
+      <ol id="connection-help">
         <li>Open TD Snap and choose the person and page set you want to edit.</li>
         <li>Open the page you want to change.</li>
-        <li>Return here and select <strong>Connect to TD Snap</strong>.</li>
+        <li>Return here and select <strong>Use the page open in TD Snap</strong>.</li>
       </ol>
-      <p>Changes are applied directly. There are no exports to download or import.</p>
+      <p id="connection-help-note">Direct changes keep the page set’s existing sharing and sync identity.</p>
     </details>
   </section>
 
@@ -140,6 +168,11 @@
         <p class="step-eyebrow">Add vocabulary</p>
         <h2 id="items-heading" tabindex="-1">What words or phrases would you like to add?</h2>
         <p class="lead">Type one item and select Add. You can also paste a comma-separated list.</p>
+        <div class="item-setup-actions" data-tdsnap-only data-live-tdsnap-only>
+          <span id="current-page-label"></span>
+          <button type="button" id="choose-page-btn" class="text-button">Choose another page</button>
+          <button type="button" id="create-page-btn" class="text-button">Create a new page</button>
+        </div>
 
         <div class="field">
           <div class="label-row">
@@ -180,11 +213,11 @@
               <div class="topic-row-control topic-row-label" data-row-fn="personal"><strong>Personal</strong></div>
               <div class="topic-row-control topic-row-phrases" data-row-phrases="personal"></div>
               <button type="button" class="topic-row-control topic-row-add" data-add-fn="personal" aria-label="Add a personal phrase">Add</button>
-              <input id="word-input" type="text" autocomplete="off" spellcheck="false" placeholder="For example, help" aria-label="Word or phrase to add" aria-describedby="chip-note items-error">
+              <input id="word-input" type="text" autocomplete="off" spellcheck="false" placeholder="For example, help" maxlength="60" aria-label="Word or phrase to add" aria-describedby="chip-note items-error">
             </div>
             <button type="button" id="word-add-btn" class="btn btn-secondary">Add</button>
           </div>
-          <p id="chip-note" class="status-line" role="status" aria-live="polite"></p>
+          <div id="chip-note" class="status-line" role="status" aria-live="polite" aria-atomic="true"></div>
           <p id="items-error" class="step-error" data-error-for="items" role="alert" tabindex="-1" hidden></p>
         </div>
 
@@ -194,9 +227,14 @@
             <button type="button" id="layout-options-btn" class="btn btn-secondary">Change page layout</button>
 
             <details class="ai-suggest" id="ai-suggest">
-              <summary><span id="ai-summary-text">Help me think of words</span> <span class="optional-tag">Optional · private</span></summary>
+              <summary><span id="ai-summary-text">Help me think of words</span> <span class="optional-tag">Optional · local by default</span></summary>
               <div class="ai-body">
                 <p>Suggestions run on this computer. Nothing is required to finish your edit.</p>
+                <label class="ai-grounding-option" for="ai-grounding">
+                  <input id="ai-grounding" type="checkbox">
+                  Look up public reference facts on Wikipedia
+                </label>
+                <p class="field-hint">When enabled, AAC Editor sends only this page title to Wikipedia for this request.</p>
                 <p><strong>Status:</strong> <span id="ai-engine-state" role="status" aria-live="polite">Check when you are ready.</span></p>
                 <div id="ai-download-card" class="ai-download" hidden>
                   <h4>Recommended: use the built-in model</h4>
@@ -273,6 +311,11 @@
             <span id="preview-loading-text">Loading the page layout…</span>
           </div>
         </div>
+        <section id="placement-order-wrap" class="placement-order" aria-labelledby="placement-order-heading" hidden>
+          <h3 id="placement-order-heading">New buttons in order</h3>
+          <p class="field-hint">Use Move earlier or Move later when the grid is too small to use comfortably.</p>
+          <ol id="placement-order"></ol>
+        </section>
         <div id="preview-legend" class="preview-legend" aria-label="Topic-page row colors" hidden>
           <span>Question</span><span>Comment</span><span>Positive</span><span>Negative</span><span>Personal</span>
         </div>
@@ -299,11 +342,23 @@
         <h3>Buttons to add</h3>
         <ul id="review-items" class="review-items"></ul>
       </div>
+      <section class="review-placement-preview" aria-labelledby="review-placement-heading">
+        <div class="preview-heading">
+          <div>
+            <h3 id="review-placement-heading">Check positions</h3>
+            <p class="field-hint">New buttons are highlighted. Existing vocabulary is locked.</p>
+          </div>
+        </div>
+        <div class="preview-frame">
+          <div id="review-preview" class="preview" aria-label="Preview of the reviewed button positions"></div>
+        </div>
+        <ol id="review-placement-order" class="review-placement-order" aria-label="New buttons in position order"></ol>
+      </section>
       <div id="review-error" class="alert" role="alert" tabindex="-1" hidden></div>
       <div class="wizard-actions review-actions">
         <button type="button" id="review-back-btn" class="btn btn-ghost">Back</button>
-        <button type="button" id="adjust-placement-btn" class="btn btn-secondary">Adjust placement</button>
-        <button type="button" id="confirm-update-btn" class="btn btn-primary"><span id="confirm-update-label" class="btn-label">Update TD Snap</span></button>
+        <button type="button" id="adjust-placement-btn" class="btn btn-secondary">Change positions</button>
+        <button type="button" id="confirm-update-btn" class="btn btn-primary"><span id="confirm-update-label" class="btn-label">Confirm change</span></button>
       </div>
     </div>
 
@@ -312,7 +367,8 @@
       <ul id="checks" class="checks" aria-label="Verification results"></ul>
       <div id="result-warnings" class="alert warning" role="status" hidden></div>
       <div class="wizard-actions">
-        <button type="button" id="another-btn" class="btn btn-secondary">Make another edit</button>
+        <button type="button" id="another-btn" class="btn btn-secondary">Add more buttons</button>
+        <a id="file-save-btn" class="btn btn-primary" hidden>Save edited copy</a>
       </div>
       <p id="live-result-note" class="safety">Use Sync in TD Snap whenever you are ready to share the change.</p>
     </div>
@@ -351,7 +407,7 @@
 </dialog>
 
 <footer class="foot">
-  <p>Nothing leaves this computer.</p>
+  <p>Page-set content stays on this computer.</p>
   <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
 </footer>
 

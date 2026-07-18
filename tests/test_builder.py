@@ -4,7 +4,7 @@ import uuid
 import pytest
 
 from tdsnap import validate
-from tdsnap.builder import add_category_page
+from tdsnap.builder import _normalize_items, add_category_page
 from tdsnap.errors import PagesetError
 
 
@@ -211,6 +211,67 @@ def test_button_slots_follow_visual_preview(seeded_pageset):
     assert positions == {"later": "1,1", "first": "0,0"}
 
 
+def test_parent_free_slot_respects_spanning_buttons(seeded_pageset):
+    ps = seeded_pageset
+    parent_id = ps.find_page_id_by_name("Home Page")
+    ps.conn.execute("DELETE FROM ElementPlacement WHERE GridPosition = '1,0'")
+    ps.conn.execute(
+        "UPDATE ElementPlacement SET GridSpan = '2,1' WHERE GridPosition = '0,0'"
+    )
+
+    report = add_category_page(ps, "No Overlap", ["word"], parent_id)
+    position = ps.conn.execute(
+        "SELECT ep.GridPosition FROM ElementPlacement ep "
+        "JOIN Button b ON b.ElementReferenceId = ep.ElementReferenceId "
+        "WHERE b.Id = ?", (report["nav_button_id"],),
+    ).fetchone()[0]
+    assert position == "2,0"
+
+
+def test_nested_transaction_remains_caller_owned(seeded_pageset):
+    ps = seeded_pageset
+    ps.conn.execute("UPDATE PageSetProperties SET Description = 'caller change'")
+    assert ps.conn.in_transaction
+
+    add_category_page(ps, "Nested", ["word"], None)
+
+    assert ps.conn.in_transaction
+    ps.conn.rollback()
+    assert ps.conn.execute(
+        "SELECT COUNT(*) FROM Page WHERE Title = 'Nested'"
+    ).fetchone()[0] == 0
+    assert ps.conn.execute(
+        "SELECT Description FROM PageSetProperties"
+    ).fetchone()[0] is None
+
+
+@pytest.mark.parametrize(
+    "items, message",
+    [
+        ([{"label": 1}], "label must be text"),
+        ([{"label": "x", "message": 1}], "message.*must be text"),
+        ([{"label": "x", "border_color": 1 << 40}], "signed 32-bit"),
+        ([{"label": "x", "slot": -1}], "non-negative integer"),
+        ([{"label": "x", "symbol": "yes"}], "true or false"),
+        (["same", "SAME"], "duplicate labels"),
+        (["x" * 61], "maximum 60"),
+        ([{"label": "x", "message": "m" * 201}], "maximum 200"),
+    ],
+)
+def test_item_boundary_validation(items, message):
+    with pytest.raises(PagesetError, match=message):
+        _normalize_items(items)
+
+
+def test_title_and_item_collection_boundaries(seeded_pageset):
+    with pytest.raises(PagesetError, match="title must be text"):
+        add_category_page(seeded_pageset, 1, ["x"], None)
+    with pytest.raises(PagesetError, match="maximum 60"):
+        add_category_page(seeded_pageset, "t" * 61, ["x"], None)
+    with pytest.raises(PagesetError, match="provided as a list"):
+        add_category_page(seeded_pageset, "Title", ("x",), None)
+
+
 def test_argb_encoding():
     from tdsnap.colors import argb_from_hex, hex_from_argb
     from tdsnap.errors import PagesetError
@@ -234,6 +295,8 @@ def test_error_paths(seeded_pageset):
         add_category_page(ps, "Too Big", [f"w{i}" for i in range(13)], None)
     with pytest.raises(PagesetError, match="not found"):
         add_category_page(ps, "Orphan", ["a"], parent_page_id=99999)
+    with pytest.raises(PagesetError, match="already exists"):
+        add_category_page(ps, "home page", ["a"], None)
 
 
 def test_rollback_on_failure(seeded_pageset):

@@ -9,7 +9,7 @@ the template.
 
 import json
 import sqlite3
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping
 
 from . import schema
 from .errors import PagesetError
