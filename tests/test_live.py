@@ -77,7 +77,7 @@ def test_active_pageset_is_bound_to_unique_visible_content(tmp_path, monkeypatch
 
     selected = live._active_pageset_path("Eating", ["Apple"])
 
-    assert selected.endswith("first\\active.sps")
+    assert selected.replace("\\", "/").endswith("first/active.sps")
     assert live._active_pageset_path("Eating") is None
 
 

@@ -197,7 +197,7 @@ def test_frozen_browser_launch_clears_bundled_dll_directory(monkeypatch):
     monkeypatch.setattr(server.sys, "platform", "win32")
     monkeypatch.setattr(server.sys, "frozen", True, raising=False)
     monkeypatch.setattr(server.sys, "_MEIPASS", r"C:\\AACEditor\\_internal", raising=False)
-    monkeypatch.setattr(ctypes, "WinDLL", lambda *_args, **_kwargs: kernel32)
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *_args, **_kwargs: kernel32, raising=False)
     monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
 
     assert server._open_browser("http://127.0.0.1:8765") is True
