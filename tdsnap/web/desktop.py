@@ -16,7 +16,14 @@ falls back to the classic browser mode so the app still works.
 
 import json
 import os
+import subprocess
+import sys
+import threading
+import time
 import urllib.request
+import ctypes
+from ctypes import wintypes
+from typing import Optional
 
 from ..errors import PagesetError
 from . import server
@@ -32,8 +39,9 @@ class NativeApi:
     frontend handles errors the same way as HTTP responses.
     """
 
-    def __init__(self):
+    def __init__(self, port):
         self.window = None  # set once the window exists
+        self.port = port
 
     def open_pageset(self):
         """Native open dialog → load the chosen file into a new session."""
@@ -69,6 +77,43 @@ class NativeApi:
         except (PagesetError, OSError) as exc:
             return {"ok": False, "error": str(exc)}
 
+    def restart_elevated_for_grid3(self):
+        """Request UAC elevation, leaving this instance intact on cancel."""
+        if sys.platform != "win32":
+            return {"ok": False, "error": "Grid 3 editing is available on Windows only."}
+        try:
+            if getattr(sys, "frozen", False):
+                executable = sys.executable
+                arguments = ["--replace-instance", "--grid3", "--port", str(self.port)]
+            else:
+                executable = sys.executable
+                arguments = [
+                    "-m", "tdsnap.web", "--window", "--replace-instance",
+                    "--grid3", "--port", str(self.port),
+                ]
+            execute = ctypes.windll.shell32.ShellExecuteW
+            execute.argtypes = [
+                wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR,
+                wintypes.LPCWSTR, wintypes.LPCWSTR, ctypes.c_int,
+            ]
+            execute.restype = wintypes.HINSTANCE
+            result = execute(
+                None, "runas", executable, subprocess.list2cmdline(arguments),
+                os.getcwd(), 1,
+            )
+            if result <= 32:
+                return {
+                    "ok": False,
+                    "error": "Administrator restart was cancelled or Windows denied it.",
+                }
+            # The elevated child waits for this server to release the normal
+            # port. Destroying the window follows the same clean shutdown path
+            # as the user closing it.
+            threading.Timer(0.25, self.window.destroy).start()
+            return {"ok": True, "restarting": True}
+        except (AttributeError, OSError) as exc:
+            return {"ok": False, "error": f"Could not request administrator access: {exc}"}
+
 
 def _focus_running(port: int) -> None:
     """A copy is already running: raise its window, or open a tab to it."""
@@ -82,9 +127,7 @@ def _focus_running(port: int) -> None:
         focused = False
     if not focused:
         # The running copy is in browser mode; point a tab at it.
-        import webbrowser
-
-        webbrowser.open(url)
+        server._open_browser(url)
 
 
 def _bring_to_front(window) -> None:
@@ -104,7 +147,12 @@ def _bring_to_front(window) -> None:
         pass
 
 
-def run_desktop(port: int = server.DEFAULT_PORT) -> None:
+def run_desktop(
+    port: int = server.DEFAULT_PORT,
+    *,
+    replace_instance: bool = False,
+    initial_provider: Optional[str] = None,
+) -> None:
     """Open the app in a native window; fall back to browser mode if needed."""
     try:
         import webview
@@ -112,21 +160,26 @@ def run_desktop(port: int = server.DEFAULT_PORT) -> None:
         server.run(port=port)
         return
 
+    if replace_instance:
+        deadline = time.monotonic() + 20
+        while server.instance_running(port) and time.monotonic() < deadline:
+            time.sleep(0.2)
+
     if server.instance_running(port):
         _focus_running(port)
         return
 
     port = server.pick_port(port)
     url = f"http://127.0.0.1:{port}"
+    if initial_provider == "grid3":
+        url += "/?provider=grid3"
     server.set_native(True)
     flask_server = server.make_server(port)
-
-    import threading
 
     serve_thread = threading.Thread(target=flask_server.serve_forever, daemon=True)
     serve_thread.start()
 
-    api = NativeApi()
+    api = NativeApi(port)
     try:
         window = webview.create_window(
             WINDOW_TITLE,
@@ -142,13 +195,12 @@ def run_desktop(port: int = server.DEFAULT_PORT) -> None:
     except Exception:
         # No usable webview runtime — behave like browser mode with the
         # already-running server; the Quit button in the UI stops it.
-        import webbrowser
-
         server.set_native(False)
         server.set_focus_handler(None)
-        webbrowser.open(url)
+        server._open_browser(url)
         serve_thread.join()
     else:
         # Window closed: stop the server and exit.
         flask_server.shutdown()
+    server.cleanup_sessions()
     flask_server.server_close()

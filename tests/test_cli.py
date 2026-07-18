@@ -1,6 +1,8 @@
 """Command-line interface: the add round trip and scratch-file hygiene."""
 
 import os
+import hashlib
+import pathlib
 import sqlite3
 
 from tdsnap.cli import main
@@ -48,3 +50,24 @@ def test_add_rejects_missing_parent(seeded_source, capsys):
 def test_verify_passes_on_seeded_file(seeded_source, capsys):
     assert main(["verify", seeded_source]) == 0
     assert "OK" in capsys.readouterr().out
+
+
+def test_verify_normalizes_malformed_sqlite_error(tmp_path, capsys):
+    wrong = tmp_path / "wrong.sps"
+    with sqlite3.connect(wrong) as conn:
+        conn.execute("CREATE TABLE Unrelated (x)")
+
+    assert main(["verify", str(wrong)]) == 1
+    assert "missing tables" in capsys.readouterr().err
+
+
+def test_cli_refuses_to_overwrite_source(seeded_source, capsys):
+    before = hashlib.sha256(pathlib.Path(seeded_source).read_bytes()).hexdigest()
+    code = main([
+        "add", seeded_source, "--title", "Unsafe", "--items", "word",
+        "--output", seeded_source,
+    ])
+
+    assert code == 1
+    assert "overwrite the original" in capsys.readouterr().err
+    assert hashlib.sha256(pathlib.Path(seeded_source).read_bytes()).hexdigest() == before

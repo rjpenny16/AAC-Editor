@@ -1,0 +1,61 @@
+name: Package smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/package-smoke.yml"
+      - "packaging/**"
+      - "pyproject.toml"
+      - "tdsnap/**"
+  pull_request:
+    paths:
+      - ".github/workflows/package-smoke.yml"
+      - "packaging/**"
+      - "pyproject.toml"
+      - "tdsnap/**"
+
+permissions:
+  contents: read
+
+jobs:
+  signed-install:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            packaging/release-constraints.txt
+
+      - name: Install pinned packaging inputs
+        shell: pwsh
+        run: |
+          choco install innosetup --version=6.7.1 --yes --no-progress
+          python -m pip install --constraint packaging/release-constraints.txt pip
+          python -m pip install --constraint packaging/release-constraints.txt ".[ai,desktop,dev]" pyinstaller --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
+      - name: Build, sign, install, start, and uninstall
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=AAC Editor CI Test Only" -CertStoreLocation Cert:\CurrentUser\My
+          $certificate = Join-Path $env:RUNNER_TEMP "aac-editor-ci.cer"
+          Export-Certificate -Cert $cert -FilePath $certificate | Out-Null
+          Import-Certificate -FilePath $certificate -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          $env:AAC_EDITOR_SIGNING_THUMBPRINT = $cert.Thumbprint
+          $env:AAC_EDITOR_TIMESTAMP_URL = "none"
+          try {
+            $version = (python -c "import tdsnap; print(tdsnap.__version__)").Trim()
+            ./packaging/build.ps1 -Version $version -Sign
+            $installer = "dist/installer/AACEditor-$version-windows-x64-setup.exe"
+            ./packaging/smoke_test.ps1 -Installer $installer -ExpectedVersion $version -AllowInstall
+          } finally {
+            Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\LocalMachine\Root\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item $certificate -ErrorAction SilentlyContinue
+          }

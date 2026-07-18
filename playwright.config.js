@@ -15,7 +15,7 @@ module.exports = defineConfig({
   webServer: {
     command: 'python -m tdsnap.web --no-browser --port 8765',
     url: 'http://127.0.0.1:8765/api/health',
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 30_000,
   },
 });

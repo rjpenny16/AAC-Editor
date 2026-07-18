@@ -1,0 +1,12 @@
+# Direct release inputs are exact so rerunning a tag does not silently select
+# newer application or bundler versions. Review and test these pins deliberately.
+pip==26.1.2
+coverage==7.15.2
+flask==3.1.3
+llama-cpp-python==0.3.34
+pip-audit==2.10.1
+pyinstaller==6.21.0
+pywebview==6.2.1
+pytest==9.1.1
+ruff==0.15.22
+uiautomation==2.0.29; sys_platform == "win32"

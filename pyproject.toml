@@ -4,21 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aac-editor"
-version = "2.1.0"
+dynamic = ["version"]
 description = "Edit AAC page sets with a local web UI and optional on-device AI suggestions."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 dependencies = [
     "flask>=3.0",
-    "requests>=2.32.0",
     "uiautomation>=2.0.29; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
 ai = ["llama-cpp-python>=0.3"]
 desktop = ["pywebview>=5.0"]
-dev = ["pytest"]
+dev = [
+    "coverage[toml]>=7.6",
+    "pip-audit>=2.7",
+    "pytest>=8",
+    "ruff>=0.9",
+]
 
 [project.scripts]
 tdsnap = "tdsnap.cli:main"
@@ -30,5 +34,24 @@ Issues = "https://github.com/rjpenny16/AAC-Editor/issues"
 [tool.setuptools.packages.find]
 include = ["tdsnap*"]
 
+[tool.setuptools.dynamic]
+version = { attr = "tdsnap.__version__" }
+
 [tool.setuptools.package-data]
 "tdsnap.web" = ["static/*", "static/assets/*"]
+
+[tool.coverage.run]
+branch = true
+source = ["tdsnap"]
+
+[tool.coverage.report]
+fail_under = 55
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

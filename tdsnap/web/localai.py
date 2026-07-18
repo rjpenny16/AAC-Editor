@@ -11,6 +11,7 @@ Override with the TDSNAP_MODEL_URL / TDSNAP_MODEL_FILE environment variables
 (useful for smaller models on weak machines, or for tests).
 """
 
+import hashlib
 import os
 import shutil
 import threading
@@ -21,18 +22,29 @@ from . import prompts
 
 MODEL_NAME = "Qwen2.5 1.5B Instruct"
 MODEL_LICENSE = "Apache-2.0"
-MODEL_URL = os.environ.get(
-    "TDSNAP_MODEL_URL",
-    "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/"
-    "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+MODEL_REVISION = "91cad51170dc346986eccefdc2dd33a9da36ead9"
+_DEFAULT_MODEL_FILE = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+_DEFAULT_MODEL_URL = (
+    "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/"
+    f"{MODEL_REVISION}/{_DEFAULT_MODEL_FILE}"
 )
-MODEL_FILE = os.environ.get("TDSNAP_MODEL_FILE", "qwen2.5-1.5b-instruct-q4_k_m.gguf")
+_DEFAULT_MODEL_SHA256 = "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
+_DEFAULT_MODEL_SIZE = 1_117_320_736
+MODEL_URL = os.environ.get("TDSNAP_MODEL_URL", _DEFAULT_MODEL_URL)
+MODEL_FILE = os.environ.get("TDSNAP_MODEL_FILE", _DEFAULT_MODEL_FILE)
+MODEL_SHA256 = os.environ.get("TDSNAP_MODEL_SHA256")
+MODEL_EXPECTED_SIZE = None
+if MODEL_URL == _DEFAULT_MODEL_URL and MODEL_FILE == _DEFAULT_MODEL_FILE:
+    MODEL_SHA256 = MODEL_SHA256 or _DEFAULT_MODEL_SHA256
+    MODEL_EXPECTED_SIZE = _DEFAULT_MODEL_SIZE
 MODEL_SIZE_HINT = "about 1 GB"
 
 _download = {"status": "idle", "done": 0, "total": 0, "error": None}
 _download_lock = threading.Lock()
 _llm = None
 _llm_lock = threading.Lock()
+_validation = {"signature": None, "error": None}
+_validation_lock = threading.Lock()
 
 
 def _models_dir() -> str:
@@ -62,8 +74,45 @@ def engine_available() -> bool:
         return False
 
 
+def _validation_error(path: Optional[str] = None) -> Optional[str]:
+    """Return why a model is unsafe to load, caching the expensive hash check."""
+    path = path or model_path()
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return "The AI model hasn't been downloaded yet."
+    signature = (
+        path, stat.st_size, stat.st_mtime_ns, MODEL_SHA256, MODEL_EXPECTED_SIZE,
+    )
+    with _validation_lock:
+        if _validation["signature"] == signature:
+            return _validation["error"]
+    error = None
+    if MODEL_EXPECTED_SIZE is not None and stat.st_size != MODEL_EXPECTED_SIZE:
+        error = "The downloaded model has the wrong size."
+    else:
+        digest = hashlib.sha256() if MODEL_SHA256 else None
+        try:
+            with open(path, "rb") as handle:
+                magic = handle.read(4)
+                if magic != b"GGUF":
+                    error = "The downloaded file is not a GGUF model."
+                elif digest:
+                    digest.update(magic)
+                    while chunk := handle.read(1024 * 1024):
+                        digest.update(chunk)
+        except OSError as exc:
+            error = f"The downloaded model could not be read: {exc}"
+        if digest and error is None:
+            if digest.hexdigest().lower() != MODEL_SHA256.lower():
+                error = "The downloaded model failed its integrity check."
+    with _validation_lock:
+        _validation.update(signature=signature, error=error)
+    return error
+
+
 def is_downloaded() -> bool:
-    return os.path.exists(model_path())
+    return _validation_error() is None
 
 
 def download_state() -> dict:
@@ -105,7 +154,9 @@ def start_download() -> dict:
             request = urllib.request.Request(
                 MODEL_URL, headers={"User-Agent": "tdsnap-editor"}
             )
-            with urllib.request.urlopen(request) as response:
+            digest = hashlib.sha256()
+            first_bytes = b""
+            with urllib.request.urlopen(request, timeout=60) as response:
                 total = int(response.headers.get("Content-Length") or 0)
                 with _download_lock:
                     _download["total"] = total
@@ -115,9 +166,21 @@ def start_download() -> dict:
                         if not chunk:
                             break
                         handle.write(chunk)
+                        digest.update(chunk)
+                        if len(first_bytes) < 4:
+                            first_bytes = (first_bytes + chunk)[:4]
                         with _download_lock:
                             _download["done"] += len(chunk)
+            size = os.path.getsize(part)
+            if first_bytes != b"GGUF":
+                raise ValueError("The download is not a GGUF model.")
+            if MODEL_EXPECTED_SIZE is not None and size != MODEL_EXPECTED_SIZE:
+                raise ValueError("The model download has the wrong size.")
+            if MODEL_SHA256 and digest.hexdigest().lower() != MODEL_SHA256.lower():
+                raise ValueError("The model download failed its integrity check.")
             os.replace(part, model_path())
+            with _validation_lock:
+                _validation["signature"] = None
             with _download_lock:
                 _download["status"] = "ready"
         except Exception as exc:  # network errors surface in the UI
@@ -136,6 +199,9 @@ def _load_llm():
     global _llm
     with _llm_lock:
         if _llm is None:
+            error = _validation_error()
+            if error:
+                raise RuntimeError(error)
             from llama_cpp import Llama
 
             _llm = Llama(
@@ -158,8 +224,9 @@ def generate_words(
     """Return ``(words, error)`` from the built-in model."""
     if not engine_available():
         return [], "The built-in AI engine isn't available in this install."
-    if not is_downloaded():
-        return [], "The AI model hasn't been downloaded yet."
+    error = _validation_error()
+    if error:
+        return [], error
     count = max(1, min(int(count), 60))
     prompt = prompts.build_prompt(category, count, kind, function, existing, reference)
     try:

@@ -31,7 +31,10 @@ function inferPhraseFunction(label, suggested = "") {
   return suggested && suggested !== "question" ? suggested : "comment";
 }
 
+const requestedProvider = new URLSearchParams(window.location.search).get("provider");
 const state = {
+  provider: ["tdsnap", "grid3", "file"].includes(requestedProvider)
+    ? requestedProvider : "tdsnap",
   mode: "live",
   connected: false,
   operation: "existing", // "existing" | "new"
@@ -40,6 +43,10 @@ const state = {
   placementAdjusted: false,
   grid: { cols: 8, rows: 5 },
   existingButtons: [],
+  availableSlots: null,
+  grid3Cells: [],
+  previewAspect: null,
+  gridBackground: null,
   layoutFingerprint: null,
   pages: [],
   words: [], // [{label, message|null, fn|"", slot, symbol}]
@@ -51,31 +58,51 @@ const state = {
   parentTouched: false,
   recommendedParent: null,
   currentPage: "",
+  sessionId: null,
+  filename: "",
   edits: 0,
   native: false, // running inside the app's own window (pywebview)?
+  elevated: false,
   apiToken: "",
   targetLoading: false,
 };
 
 let liveMonitor = null;
 let liveSyncing = false;
+const API_TIMEOUT_MS = 10_000;
 
 /* ---------- helpers ---------- */
 
 /* Fetch the per-run token (and native flag) once. Every POST awaits this so
    a fast first click can't race the config request and get a 403. */
+async function fetchWithDeadline(path, options = {}, timeoutMs = API_TIMEOUT_MS) {
+  if (!timeoutMs) return fetch(path, options);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    if (options.signal.aborted) controller.abort();
+    else options.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  try {
+    return await fetch(path, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 const configReady = (async () => {
   try {
-    const response = await fetch("/api/config");
+    const response = await fetchWithDeadline("/api/config");
     const config = await response.json();
     state.apiToken = config.token || "";
     state.native = Boolean(config.native);
+    state.elevated = Boolean(config.elevated);
   } catch {
     /* keep going; the server will reject protected POSTs if it is older */
   }
 })();
 
-async function api(path, options) {
+async function api(path, options, timeoutMs = API_TIMEOUT_MS) {
   await configReady;
   options = options || {};
   options.headers = Object.assign(
@@ -83,7 +110,12 @@ async function api(path, options) {
     options.headers,
     state.apiToken ? { "X-TDSnap-Token": state.apiToken } : {}
   );
-  const response = await fetch(path, options).catch(() => {
+  const response = await fetchWithDeadline(path, options, timeoutMs).catch((error) => {
+    if (error.name === "AbortError") {
+      const timeout = new Error("The request took too long and was stopped.");
+      timeout.name = "TimeoutError";
+      throw timeout;
+    }
     throw new Error("The local editor isn’t responding. Try again; if it continues, restart the app.");
   });
   let data = null;
@@ -98,24 +130,6 @@ async function api(path, options) {
     throw error;
   }
   return data;
-}
-
-function stepsFor(operation = state.operation) {
-  return operation === "new"
-    ? ["connect", "operation", "title", "destination", "items", "review"]
-    : ["connect", "operation", "destination", "items", "review"];
-}
-
-function stepName(step) {
-  if (step === "connect") return "Connect";
-  if (step === "operation") return "Choose a task";
-  if (step === "title") return "Name the page";
-  if (step === "destination") {
-    return state.operation === "existing" ? "Choose a page" : "Choose where it belongs";
-  }
-  if (step === "items") return "Add words or phrases";
-  if (step === "review") return "Review";
-  return "Adjust placement";
 }
 
 function headingFor(step) {
@@ -133,22 +147,20 @@ function headingFor(step) {
 }
 
 function updateProgress(step) {
-  const steps = stepsFor();
-  const complete = step === "result";
-  const shownStep = step === "placement" ? "review" : step === "layout" ? "items" : step;
-  const index = Math.max(0, steps.indexOf(shownStep));
-  const value = complete ? steps.length : index + 1;
-  const label = complete
-    ? "Complete"
-    : step === "placement" || step === "layout"
-      ? `Optional · ${step === "placement" ? "Adjust placement" : "Change page layout"}`
-      : `Step ${value} of ${steps.length} · ${stepName(step)}`;
-  const progress = $("wizard-progress");
-  progress.max = steps.length;
-  progress.value = value;
-  progress.textContent = `${value} of ${steps.length}`;
+  const stage = step === "result" ? "done"
+    : ["review", "placement"].includes(step) ? "review"
+      : ["items", "layout"].includes(step) ? "add" : "setup";
+  const labels = { setup: "Setup", add: "Add", review: "Review", done: "Done" };
+  const stages = ["add", "review", "done"];
+  const index = stages.indexOf(stage);
+  document.querySelectorAll("#wizard-progress [data-stage]").forEach((item) => {
+    const itemIndex = stages.indexOf(item.dataset.stage);
+    item.classList.toggle("complete", index > itemIndex);
+    if (item.dataset.stage === stage) item.setAttribute("aria-current", "step");
+    else item.removeAttribute("aria-current");
+  });
+  const label = labels[stage];
   $("wizard-progress-label").textContent = label;
-  $("wizard-progress-percent").textContent = `${Math.round((value / steps.length) * 100)}%`;
   $("wizard-announcer").textContent = label;
 }
 
@@ -172,19 +184,13 @@ function show(step, focus = true) {
       ? $("step-result")
       : $(`wizard-${step}`);
   if (active && typeof active.scrollIntoView === "function") {
-    const compactReflow = window.matchMedia(
-      "(max-height: 40rem), (min-resolution: 1.75dppx)"
-    ).matches;
-    const scrollTarget = compactReflow
-      ? document.querySelector(".wizard-progress")
-      : active;
-    scrollTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+    active.scrollIntoView({ behavior: "auto", block: "start" });
   }
   if (focus) {
     const heading = $(headingFor(step));
     if (heading) {
       heading.tabIndex = -1;
-      requestAnimationFrame(() => heading.focus({ preventScroll: true }));
+      heading.focus({ preventScroll: true });
     }
   }
 }
@@ -218,12 +224,94 @@ function setPreviewBusy(busy, message = "Loading the page layout…") {
   loading.hidden = !busy;
 }
 
-/* ---------- step 1: connect to live TD Snap ---------- */
+/* ---------- step 1: choose and connect to an AAC app ---------- */
+
+function setProviderState(provider, label, stateName = "") {
+  $(`provider-${provider}-state`).textContent = label;
+  $(`provider-${provider}`).dataset.state = stateName;
+}
+
+function clearConnectionError() {
+  $("connection-error").hidden = true;
+}
+
+function showConnectionError(product, message = "") {
+  const box = $("connection-error");
+  if (product === "TD Snap") {
+    box.querySelector("strong").textContent =
+      "AAC Editor couldn’t reach TD Snap. Nothing was changed.";
+  } else {
+    box.querySelector("strong").textContent = `AAC Editor couldn’t reach ${product}. Nothing was changed.`;
+  }
+  $("live-status").textContent = message;
+  box.hidden = false;
+  box.focus({ preventScroll: true });
+}
+
+function selectProvider(provider) {
+  if (state.connected || !["tdsnap", "grid3", "file"].includes(provider)) return;
+  state.provider = provider;
+  document.body.dataset.provider = provider;
+  ["tdsnap", "grid3", "file"].forEach((name) => {
+    const selected = name === provider;
+    $(`provider-${name}`).classList.toggle("selected", selected);
+    $(`provider-${name}`).setAttribute("aria-checked", String(selected));
+    $(`provider-${name}`).tabIndex = selected ? 0 : -1;
+  });
+  const grid3 = provider === "grid3";
+  const file = provider === "file";
+  clearConnectionError();
+  document.querySelectorAll("[data-tdsnap-only]").forEach((element) => {
+    element.hidden = grid3;
+  });
+  document.querySelectorAll("[data-live-tdsnap-only]").forEach((element) => {
+    element.hidden = grid3 || file;
+  });
+  $("layout-options-btn").hidden = grid3;
+  $("connect-task-title").textContent = file
+    ? "Open a TD Snap exported file"
+    : grid3 ? "Use the grid open in Grid 3" : "Use the page open in TD Snap";
+  $("connect-task-copy").textContent = file
+    ? "Choose an .sps or .spb export. Your original file stays unchanged."
+    : grid3
+      ? "Open the grid you want in Grid 3. Do not enter Edit Mode."
+      : "Open the page you want to change and keep Windows unlocked.";
+  $("live-connect-btn").querySelector(".btn-label").textContent = file
+    ? "Choose exported page set"
+    : grid3
+      ? (state.elevated ? "Connect to Grid 3" : "Enable Grid 3 editing")
+      : "Use the page open in TD Snap";
+  $("connection-help").innerHTML = file
+    ? "<li>Export the page set from TD Snap as an .sps or .spb file.</li>" +
+      "<li>Choose that exported file here and add the new page.</li>" +
+      "<li>Save the edited copy, then import it into TD Snap after reviewing it.</li>"
+    : grid3
+      ? "<li>Open Grid 3 and the existing grid you want to change.</li>" +
+        "<li>Save or discard any unfinished Grid 3 edits.</li>" +
+        "<li>Return here and connect. Windows may request administrator approval.</li>"
+      : "<li>Open TD Snap and choose the person and page set you want to edit.</li>" +
+        "<li>Open the page you want to change.</li>" +
+        "<li>Return here and select <strong>Use the page open in TD Snap</strong>.</li>";
+  $("connection-help-note").textContent = file
+    ? "The editor works on a temporary copy and never overwrites your export."
+    : "Direct editing follows the page open in the selected AAC app.";
+  $("live-status").textContent = "";
+}
+
+$("provider-tdsnap").addEventListener("click", () => selectProvider("tdsnap"));
+$("provider-grid3").addEventListener("click", () => selectProvider("grid3"));
+$("provider-file").addEventListener("click", () => selectProvider("file"));
+$("connection-retry").addEventListener("click", () => $("live-connect-btn").click());
+$("connection-help-btn").addEventListener("click", () => {
+  const details = $("connection-help-details");
+  details.open = true;
+  details.querySelector("summary").focus();
+});
 
 function rememberDetectedPages(data) {
   const detected = Array.isArray(data.pages) && data.pages.length
     ? data.pages
-    : [data.page, "Topics Menu Page"];
+    : [data.page];
   state.pages = [...new Set(detected.filter(Boolean))].map((title) => ({
     id: title,
     title,
@@ -231,28 +319,174 @@ function rememberDetectedPages(data) {
 }
 
 async function refreshDetectedPages() {
+  if (state.mode === "file") {
+    const data = await api(`/api/pageset/${encodeURIComponent(state.sessionId)}/pages`);
+    state.pages = (data.pages || []).map((page) => ({
+      id: String(page.id),
+      title: page.title,
+    }));
+    renderParents(parentFilter.value);
+    return data;
+  }
   const data = await api("/api/tdsnap/status");
   rememberDetectedPages(data);
   renderParents(parentFilter.value);
   return data;
 }
 
+async function useFileSession(data) {
+  if (!data || data.ok === false) throw new Error(data?.error || "The page set could not be opened.");
+  if (data.cancelled) return false;
+  if (!data.session_id || !Array.isArray(data.pages) || !data.pages.length) {
+    throw new Error("The page set does not contain any editable pages.");
+  }
+  clearInterval(liveMonitor);
+  state.mode = "file";
+  state.provider = "file";
+  state.connected = true;
+  state.sessionId = data.session_id;
+  state.filename = data.filename || "page-set.sps";
+  state.grid = data.grid || state.grid;
+  state.pages = data.pages.map((page) => ({ id: String(page.id), title: page.title }));
+  state.currentPage = state.pages[0].id;
+  state.parentId = state.currentPage;
+  state.parentFree = null;
+  state.parentTouched = false;
+  state.words = [];
+  state.existingButtons = [];
+  state.availableSlots = null;
+  state.layoutFingerprint = null;
+  state.edits = 0;
+  state.pendingEdit = null;
+  state.placementAdjusted = false;
+  $("title-input").value = "";
+  setPageStyle("words");
+  setOperation("new");
+  renderParents("");
+  $("file-badge").textContent = `${state.filename} · Change file`;
+  $("file-badge").setAttribute("aria-label", `Change exported file (currently ${state.filename})`);
+  $("file-badge").hidden = false;
+  $("build-sub").textContent =
+    `${state.filename} · ${state.grid.cols}×${state.grid.rows} grid · ${state.pages.length} pages`;
+  $("preview-live-text").textContent = `Exported copy · ${state.filename}`;
+  $("live-result-note").textContent =
+    "Save the edited copy, review it, then import it into TD Snap.";
+  setProviderState("file", "Ready", "ready");
+  show("title");
+  return true;
+}
+
+async function uploadPageset(file) {
+  const form = new FormData();
+  form.append("file", file);
+  return api("/api/pageset", { method: "POST", body: form }, 0);
+}
+
+$("file-input").addEventListener("change", async () => {
+  const input = $("file-input");
+  const file = input.files?.[0];
+  if (!file) return;
+  const button = $("live-connect-btn");
+  clearConnectionError();
+  setBusy(button, true, "Opening…");
+  setActivity("Opening a temporary copy of the exported page set…");
+  try {
+    await useFileSession(await uploadPageset(file));
+  } catch (error) {
+    showConnectionError("the exported file", error.message);
+  } finally {
+    input.value = "";
+    setActivity();
+    setBusy(button, false);
+  }
+});
+
 $("live-connect-btn").addEventListener("click", async () => {
   const button = $("live-connect-btn");
   const status = $("live-status");
   if (state.connected) {
-    show("operation");
+    show("items");
     return;
   }
+  clearConnectionError();
   status.classList.remove("error");
-  status.textContent = "Checking TD Snap...";
-  setActivity("Checking for TD Snap…");
+  const product = state.provider === "grid3"
+    ? "Grid 3" : state.provider === "file" ? "the exported file" : "TD Snap";
+  status.textContent = "";
+  setActivity(`Checking for ${product}…`);
   setBusy(button, true, "Connecting…");
   try {
+    if (state.provider === "file") {
+      if (state.native && window.pywebview?.api?.open_pageset) {
+        await useFileSession(await window.pywebview.api.open_pageset());
+      } else {
+        $("file-input").click();
+      }
+      return;
+    }
+    if (state.provider === "grid3") {
+      const data = await api("/api/grid3/status");
+      if (!data.available) throw new Error("Grid 3 editing is available on Windows only.");
+      if (!data.installed) {
+        setProviderState("grid3", "Not installed", "not-installed");
+        throw new Error("Grid 3 was not found in its standard installation folder.");
+      }
+      if (data.needs_elevation) {
+        setProviderState("grid3", "Administrator approval required", "elevation");
+        if (!state.native || !window.pywebview?.api?.restart_elevated_for_grid3) {
+          throw new Error("Open the AAC Editor desktop app to enable Grid 3 editing.");
+        }
+        status.textContent = "Windows will ask for administrator approval. AAC Editor will reopen here.";
+        const restarted = await window.pywebview.api.restart_elevated_for_grid3();
+        if (!restarted || restarted.ok === false) {
+          throw new Error(restarted?.error || "Administrator restart was cancelled.");
+        }
+        return;
+      }
+      if (!data.running) {
+        setProviderState("grid3", "Not running", "not-running");
+        throw new Error(data.error || "Open Grid 3 to the grid you want to edit.");
+      }
+      if (data.dirty) throw new Error("Save or discard the unfinished change in Grid 3 first.");
+      if (!data.unlocked) throw new Error("Unlock Windows, then try again.");
+      state.mode = "live";
+      state.operation = "existing";
+      state.grid = data.grid;
+      state.currentPage = data.page;
+      state.pages = [{ id: data.page, title: data.page }];
+      state.words = [];
+      state.parentId = data.page;
+      state.parentTouched = false;
+      state.edits = 0;
+      state.pendingEdit = null;
+      state.placementAdjusted = false;
+      setPageStyle("words");
+      $("build-sub").textContent =
+        `Connected to “${data.page}” in ${data.grid_set} · ` +
+        `${data.grid.cols}×${data.grid.rows} grid`;
+      $("preview-live-text").textContent = `Grid 3 · ${data.page}`;
+      $("preview-hint").textContent =
+        "New buttons use the size, color, and style of each empty Grid 3 space.";
+      $("live-result-note").textContent = "Your Grid 3 grid was saved.";
+      setActivity("Reading the current Grid 3 grid…");
+      await loadTargetLayout(data.page);
+      setActivity("Checking Grid 3 Edit Mode compatibility…");
+      await api("/api/grid3/probe", {
+        method: "POST",
+        headers: { "X-AAC-Editor": "grid3" },
+      });
+      state.connected = true;
+      $("file-badge").textContent = "Grid 3 · Change app";
+      $("file-badge").setAttribute("aria-label", "Change app (currently Grid 3)");
+      $("file-badge").hidden = false;
+      setProviderState("grid3", "Ready", "ready");
+      status.textContent = data.compatibility_warning || "";
+      show("items");
+      return;
+    }
     let data = await api("/api/tdsnap/status");
     if (!data.available) throw new Error("Direct editing is available on Windows only.");
     if (!data.running) {
-      status.textContent = "Opening TD Snap…";
       setActivity("Opening TD Snap…");
       await api("/api/tdsnap/launch", { method: "POST" });
       for (let attempt = 0; attempt < 60 && !data.running; attempt += 1) {
@@ -264,12 +498,11 @@ $("live-connect-btn").addEventListener("click", async () => {
     if (!data.unlocked) throw new Error("Unlock Windows, then try again.");
 
     state.mode = "live";
-    state.connected = true;
     state.grid = data.grid;
     state.currentPage = data.page;
     rememberDetectedPages(data);
     state.words = [];
-    state.parentId = data.page;
+    state.parentId = data.page || state.pages[0]?.id || null;
     state.parentFree = 1;
     state.parentTouched = false;
     state.recommendedParent = data.page;
@@ -277,8 +510,8 @@ $("live-connect-btn").addEventListener("click", async () => {
     state.pendingEdit = null;
     state.placementAdjusted = false;
 
-    $("file-badge").textContent = "Connected to TD Snap";
-    $("file-badge").hidden = false;
+    $("file-badge").textContent = "TD Snap · Change app";
+    $("file-badge").setAttribute("aria-label", "Change app (currently TD Snap)");
     $("build-sub").textContent =
       `Connected to “${data.page}” · ${data.grid.cols}×${data.grid.rows} grid · ` +
       `${state.pages.length} pages in this page set`;
@@ -288,13 +521,33 @@ $("live-connect-btn").addEventListener("click", async () => {
     button.querySelector(".btn-label").dataset.idleLabel = "Continue";
     renderParents("");
     setOperation("existing");
-    setActivity("Reading the current TD Snap page…");
-    await loadTargetLayout(data.page);
-    show("operation");
+    if (data.page) {
+      setActivity("Reading the page open in TD Snap…");
+      try {
+        await loadTargetLayout(data.page);
+      } catch (error) {
+        if (error.name === "TimeoutError") throw error;
+        state.layoutFingerprint = null;
+        showBuildError("Choose a page to continue.", ["AAC Editor couldn’t determine the open page."]);
+      }
+    }
+    state.connected = true;
+    $("file-badge").hidden = false;
+    setProviderState("tdsnap", "Ready", "ready");
+    if (state.layoutFingerprint) show("items");
+    else show("destination");
     startLiveMonitor();
   } catch (error) {
-    status.classList.add("error");
-    status.textContent = `Couldn’t connect to TD Snap. ${error.message}`;
+    state.connected = false;
+    $("file-badge").hidden = true;
+    if (state.provider === "grid3") {
+      if (!["not-installed", "not-running", "elevation"].includes(
+        $("provider-grid3").dataset.state
+      )) setProviderState("grid3", "Unsupported grid", "unsupported");
+    }
+    setActivity();
+    setBusy(button, false);
+    showConnectionError(product, state.provider === "grid3" ? error.message : "");
   } finally {
     setActivity();
     setBusy(button, false);
@@ -312,24 +565,37 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     ? "Refreshing the live TD Snap page…"
     : `Loading “${pageName}”…`);
   try {
-    const data = await api(currentOnly
-      ? "/api/tdsnap/page-layout"
-      : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
+    const data = await api(state.provider === "grid3"
+      ? "/api/grid3/page-layout"
+      : currentOnly
+        ? "/api/tdsnap/page-layout"
+        : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
     state.grid = data.grid;
     state.existingButtons = data.buttons || [];
+    state.availableSlots = data.free_slots || [];
+    state.grid3Cells = state.provider === "grid3" ? (data.cells || []) : [];
+    state.previewAspect = data.preview_aspect || null;
+    state.gridBackground = data.background || null;
     state.layoutFingerprint = data.fingerprint;
     state.parentFree = data.free_slots.length;
     const occupied = new Set(state.existingButtons.map((button) => button.slot));
     state.words.forEach((item) => {
-      if (occupied.has(item.slot)) item.slot = firstAvailableSlot(item.fn);
+      if (occupied.has(item.slot) || !state.availableSlots.includes(item.slot)) {
+        item.slot = firstAvailableSlot(item.fn);
+      }
     });
     $("parent-capacity").classList.remove("error");
-    $("parent-capacity").textContent =
-      `${data.free_slots.length} empty cell${data.free_slots.length === 1 ? "" : "s"} on “${data.page}”.`;
+    $("parent-capacity").textContent = data.free_slots.length
+      ? `${data.free_slots.length} empty space${data.free_slots.length === 1 ? "" : "s"} ` +
+        `AAC Editor can update safely on “${data.page}”.`
+      : `“${data.page}” is full. Choose another page or remove existing vocabulary in ${state.provider === "grid3" ? "Grid 3" : "TD Snap"}.`;
+    $("current-page-label").textContent = `Adding to ${data.page}`;
     renderWords();
     return data;
   } catch (error) {
     state.existingButtons = [];
+    state.availableSlots = null;
+    state.grid3Cells = [];
     state.layoutFingerprint = null;
     $("parent-capacity").classList.add("error");
     $("parent-capacity").textContent = "The layout could not be loaded.";
@@ -408,8 +674,12 @@ function setOperation(operation) {
     : "Name the new page, then choose where its link belongs.";
   $("preview-hint").textContent = "Drag buttons to move them, or use the arrow keys.";
   $("build-btn-label").textContent = "Review changes";
+  $("current-page-label").textContent = existing
+    ? `Adding to ${titleOf(state.parentId)}`
+    : `Creating ${$("title-input").value.trim() || "a new page"}`;
   state.existingButtons = existing ? state.existingButtons : [];
   state.layoutFingerprint = existing ? state.layoutFingerprint : null;
+  if (!existing) state.parentFree = null;
   updateProgress(state.wizardStep);
   renderWords();
 }
@@ -467,8 +737,19 @@ async function continueWizard() {
       showStepError("title", "Enter a name for the new page.");
       return;
     }
+    if (state.pages.some(
+      (page) => page.title.trim().toLocaleLowerCase() === title.toLocaleLowerCase()
+    )) {
+      showStepError("title", `A page named “${title}” already exists. Choose a different name.`);
+      return;
+    }
     updatePlacementRecommendation();
     show("destination");
+    try {
+      await loadParentCapacity();
+    } catch (error) {
+      showStepError("destination", `We couldn't check that page. ${error.message}`);
+    }
     return;
   }
 
@@ -489,6 +770,14 @@ async function continueWizard() {
         return;
       }
     }
+    if (state.operation === "new" && state.parentFree === null) {
+      try {
+        await loadParentCapacity();
+      } catch (error) {
+        showStepError("destination", `We couldn't check that page. ${error.message}`);
+        return;
+      }
+    }
     if (state.operation === "new" && state.parentFree === 0) {
       showStepError("destination", "That page is full. Choose a page with an open space.");
       return;
@@ -499,6 +788,15 @@ async function continueWizard() {
 
 function backWizard() {
   clearStepError(state.wizardStep);
+  if (state.provider === "grid3") {
+    show("connect");
+    return;
+  }
+  if (state.mode === "file") {
+    const previous = { title: "connect", destination: "title", items: "destination" };
+    show(previous[state.wizardStep] || "title");
+    return;
+  }
   const previous = state.operation === "new"
     ? { operation: "connect", title: "operation", destination: "title", items: "destination" }
     : { operation: "connect", destination: "operation", items: "destination" };
@@ -646,7 +944,9 @@ function firstAvailableSlot(preferredFn = "") {
   const capacity = state.grid.cols * state.grid.rows;
   const available = [];
   for (let slot = 0; slot < capacity; slot += 1) {
-    if (!used.has(slot)) available.push(slot);
+    if (!used.has(slot) && (!state.availableSlots || state.availableSlots.includes(slot))) {
+      available.push(slot);
+    }
   }
   return available.find((slot) => !preferredFn || functionForSlot(slot) === preferredFn)
     ?? available[0]
@@ -682,9 +982,10 @@ function autoFormatTopicRows() {
 function addWords(raw, forcedFn = null) {
   clearStepError("items");
   state.pendingEdit = null;
-  const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
-  let duplicates = 0;
-  let overflow = 0;
+  const capacity = state.availableSlots
+    ? state.availableSlots.length : state.grid.cols * state.grid.rows - state.existingButtons.length;
+  const duplicates = [];
+  const overflow = [];
   raw
     .split(",")
     .map((word) => word.trim())
@@ -698,9 +999,9 @@ function addWords(raw, forcedFn = null) {
         (item) => String(item.label || "").toLocaleLowerCase() === normalized
       );
       if (alreadyPlanned || alreadyPresent) {
-        duplicates += 1;
+        duplicates.push(word);
       } else if (state.words.length >= capacity) {
-        overflow += 1;
+        overflow.push(word);
       } else {
         const fn = state.pageStyle === "topic"
           ? forcedFn || (state.autoTopicRows
@@ -711,22 +1012,42 @@ function addWords(raw, forcedFn = null) {
         state.words.push({ label: word, message: null, fn, slot, symbol: true });
       }
     });
-  // Say when something was silently dropped, or a pasted list quietly
-  // loses words and the user only finds out inside TD Snap.
-  const skipped = [];
-  if (overflow) {
-    skipped.push(
-      `${overflow} word${overflow === 1 ? "" : "s"} didn't fit — the ` +
-      `${state.grid.cols}×${state.grid.rows} grid is full`
-    );
-  }
-  if (duplicates) {
-    skipped.push(
-      `${duplicates} duplicate${duplicates === 1 ? "" : "s"} skipped`
-    );
-  }
-  $("chip-note").textContent = skipped.length ? skipped.join(" · ") + "." : "";
+  renderSkippedFeedback(duplicates, overflow);
   renderWords();
+}
+
+function appendNamedList(container, lead, items) {
+  const text = document.createElement("span");
+  text.textContent = lead;
+  container.append(text);
+  const list = document.createElement("ul");
+  items.forEach((label) => {
+    const item = document.createElement("li");
+    item.textContent = label;
+    list.append(item);
+  });
+  container.append(list);
+}
+
+function renderSkippedFeedback(duplicates, overflow) {
+  const note = $("chip-note");
+  note.innerHTML = "";
+  const destination = titleOf(state.parentId);
+  if (duplicates.length === 1) {
+    const text = document.createElement("span");
+    text.textContent = `${duplicates[0]} is already on ${destination}, so it wasn’t added.`;
+    note.append(text);
+  } else if (duplicates.length) {
+    appendNamedList(note, `These buttons are already on ${destination}, so they weren’t added:`, duplicates);
+  }
+  if (overflow.length) {
+    if (note.childNodes.length) note.append(document.createElement("br"));
+    appendNamedList(
+      note,
+      `${destination} is full. Remove a planned button or choose another page before adding:`,
+      overflow
+    );
+  }
 }
 
 const PHRASE_MARK_SVG =
@@ -788,11 +1109,18 @@ function renderWords() {
     }
   });
 
-  const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
+  const capacity = state.availableSlots
+    ? state.availableSlots.length : state.grid.cols * state.grid.rows - state.existingButtons.length;
   const meter = $("capacity");
-  meter.textContent = `${state.words.length} of ${capacity} cells`;
+  const left = Math.max(0, capacity - state.words.length);
+  meter.textContent = capacity === 0
+    ? "Page is full"
+    : state.words.length === 0
+      ? `${capacity} space${capacity === 1 ? "" : "s"} available`
+      : `${state.words.length} added · ${left} space${left === 1 ? "" : "s"} left`;
   meter.classList.toggle("full", state.words.length >= capacity);
   wordInput.disabled = state.words.length >= capacity;
+  $("word-add-btn").disabled = state.words.length >= capacity;
   wordInput.placeholder = state.pageStyle === "topic"
     ? "+"
     : state.words.length
@@ -800,6 +1128,7 @@ function renderWords() {
       : "Type a word, press Enter — or paste a comma-separated list";
   updateTopicInputRow();
   renderPreview();
+  renderPlacementOrder();
 }
 
 /* ---------- step 2: chip editor dialog ---------- */
@@ -891,7 +1220,7 @@ $("parent-filter-clear").addEventListener("click", () => {
 parentSelect.addEventListener("change", async () => {
   state.parentId = parentSelect.value;
   state.parentTouched = true;
-  state.parentFree = 1;
+  state.parentFree = null;
   if (state.operation === "existing") {
     try {
       await loadTargetLayout(titleOf(state.parentId));
@@ -899,15 +1228,58 @@ parentSelect.addEventListener("change", async () => {
       showBuildError("Couldn’t load the selected TD Snap page.", [error.message]);
     }
   } else {
-    $("parent-capacity").classList.remove("error");
-    $("parent-capacity").textContent =
-      `The link will use the first free cell on “${titleOf(state.parentId)}”.`;
+    try {
+      await loadParentCapacity();
+    } catch (error) {
+      showBuildError("Couldn’t check the selected parent page.", [error.message]);
+    }
   }
 });
 
 function titleOf(pageId) {
   const page = state.pages.find((p) => p.id === pageId);
   return page ? page.title : `Page ${pageId}`;
+}
+
+async function loadParentCapacity() {
+  if (!state.parentId || state.operation !== "new") return null;
+  const requestedId = String(state.parentId);
+  state.parentFree = null;
+  parentSelect.disabled = true;
+  $("parent-capacity").classList.remove("error");
+  $("parent-capacity").textContent = `Checking space on “${titleOf(state.parentId)}”…`;
+  try {
+    let free;
+    if (state.mode === "file") {
+      const data = await api(
+        `/api/pageset/${encodeURIComponent(state.sessionId)}/page/` +
+        `${encodeURIComponent(state.parentId)}/capacity`
+      );
+      free = Number(data.free_cells);
+    } else {
+      const data = await api(
+        `/api/tdsnap/page-layout?page=${encodeURIComponent(titleOf(state.parentId))}`
+      );
+      free = Array.isArray(data.free_slots) ? data.free_slots.length : 0;
+    }
+    if (String(state.parentId) !== requestedId) return null;
+    state.parentFree = Number.isFinite(free) && free >= 0 ? free : 0;
+    $("parent-capacity").classList.toggle("error", state.parentFree === 0);
+    $("parent-capacity").textContent = state.parentFree
+      ? `${state.parentFree} empty space${state.parentFree === 1 ? "" : "s"} on ` +
+        `“${titleOf(state.parentId)}” for the new page button.`
+      : `“${titleOf(state.parentId)}” is full. Choose another page or remove a button first.`;
+    return state.parentFree;
+  } catch (error) {
+    if (String(state.parentId) === requestedId) {
+      state.parentFree = null;
+      $("parent-capacity").classList.add("error");
+      $("parent-capacity").textContent = "Capacity could not be checked.";
+    }
+    throw error;
+  } finally {
+    parentSelect.disabled = false;
+  }
 }
 
 const AAC_PAGE_GROUPS = [
@@ -963,14 +1335,16 @@ function updatePlacementRecommendation() {
   const hasName = Boolean($("title-input").value.trim());
   $("placement-title").textContent = hasName ? `Suggested location: ${title}` : "AAC-friendly placement";
   $("placement-copy").textContent = hasName
-    ? `This is the closest existing category the app can detect. Keeping related fringe vocabulary together makes it easier to find without moving established words.`
+    ? `The new ${$("title-input").value.trim()} button will be added to ${title}. ` +
+      "Choose another page if that isn’t where you want it."
     : "Name the page above and the app will suggest an existing location, keeping related vocabulary together.";
   if (!state.parentTouched && recommendation) {
     state.parentId = recommendation;
+    state.parentFree = null;
     renderParents(parentFilter.value);
     title = titleOf(state.parentId);
     $("parent-capacity").textContent =
-      `The link will use the first free cell on “${title}”.`;
+      `Space on “${title}” will be checked before continuing.`;
   }
   $("use-placement").hidden = !hasName || state.parentId === recommendation;
 }
@@ -981,6 +1355,7 @@ $("title-input").addEventListener("input", () => {
 });
 $("use-placement").addEventListener("click", () => {
   state.parentId = state.recommendedParent;
+  state.parentFree = null;
   state.parentTouched = false;
   parentFilter.value = "";
   renderParents("");
@@ -995,6 +1370,7 @@ function renderParents(filter) {
   );
   const selected = state.pages.find((page) => page.id === state.parentId);
   if (selected && !matches.includes(selected)) matches.unshift(selected);
+  parentSelect.size = query ? Math.min(Math.max(matches.length, 2), 6) : 1;
   matches
     .forEach((page) => {
       const option = document.createElement("option");
@@ -1037,6 +1413,83 @@ function addPreviewCellContent(cell, label, fn = "", showSymbol = true) {
   cell.append(text);
 }
 
+function renderGrid3Preview(preview) {
+  preview.classList.add("grid3-preview");
+  preview.classList.remove("topic-preview");
+  preview.style.aspectRatio = state.previewAspect ? String(state.previewAspect) : "1.4";
+  preview.style.setProperty("--grid3-background", state.gridBackground || "#f4f6f8");
+  state.grid3Cells.filter((item) => item.rect).forEach((model) => {
+    const cell = document.createElement("div");
+    const rect = model.rect;
+    const style = model.style || {};
+    cell.className = "cell";
+    cell.dataset.slot = model.slot;
+    cell.style.left = `${rect.left * 100}%`;
+    cell.style.top = `${rect.top * 100}%`;
+    cell.style.width = `${rect.width * 100}%`;
+    cell.style.height = `${rect.height * 100}%`;
+    if (style.background) cell.style.backgroundColor = style.background;
+    if (style.border) cell.style.borderColor = style.border;
+    if (style.foreground) cell.style.color = style.foreground;
+
+    const wordIndex = state.words.findIndex((item) => item.slot === model.slot);
+    if (!model.safe_blank) {
+      cell.classList.add("existing");
+      if (model.label) addPreviewCellContent(cell, model.label, "", false);
+      cell.title = "Existing or special Grid 3 cell — locked";
+      cell.setAttribute("aria-label", `${model.label || "Special cell"}, existing and locked`);
+    } else if (wordIndex >= 0) {
+      const item = state.words[wordIndex];
+      cell.classList.add("used");
+      addPreviewCellContent(cell, item.label, "", item.symbol !== false);
+      cell.draggable = true;
+      cell.tabIndex = 0;
+      cell.setAttribute("role", "button");
+      cell.setAttribute(
+        "aria-label",
+        `${item.label}, row ${model.y + 1}, column ${model.x + 1}. ` +
+        "Drag or use arrow keys to move. This button retains the existing Grid 3 cell style."
+      );
+      cell.title = item.message
+        ? `Speaks: “${item.message}” · retains ${style.key || "existing"} style`
+        : `Retains ${style.key || "existing"} style`;
+      cell.addEventListener("dragstart", (event) => {
+        event.dataTransfer.setData("text/plain", String(wordIndex));
+        event.dataTransfer.effectAllowed = "move";
+      });
+      cell.addEventListener("keydown", (event) => {
+        const moves = { ArrowLeft: -1, ArrowRight: 1,
+          ArrowUp: -state.grid.cols, ArrowDown: state.grid.cols };
+        if (!(event.key in moves)) return;
+        event.preventDefault();
+        const target = model.slot + moves[event.key];
+        movePreviewItem(wordIndex, target);
+        preview.querySelector(`[data-slot="${target}"]`)?.focus();
+      });
+    } else {
+      cell.setAttribute(
+        "aria-label",
+        `Empty space AAC Editor can update safely, row ${model.y + 1}, column ${model.x + 1}, ` +
+        `${style.key || "existing"} style`
+      );
+    }
+    if (model.safe_blank) {
+      cell.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        cell.classList.add("drop-target");
+      });
+      cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
+      cell.addEventListener("drop", (event) => {
+        event.preventDefault();
+        cell.classList.remove("drop-target");
+        const index = Number(event.dataTransfer.getData("text/plain"));
+        if (Number.isInteger(index)) movePreviewItem(index, model.slot);
+      });
+    }
+    preview.append(cell);
+  });
+}
+
 function renderPreview() {
   const preview = $("preview");
   const previewTitle = state.operation === "existing"
@@ -1046,7 +1499,13 @@ function renderPreview() {
   preview.style.setProperty("--cols", state.grid.cols);
   preview.style.setProperty("--rows", state.grid.rows);
   preview.classList.toggle("topic-preview", state.pageStyle === "topic");
+  preview.classList.remove("grid3-preview");
+  preview.style.removeProperty("aspect-ratio");
   preview.innerHTML = "";
+  if (state.provider === "grid3" && state.grid3Cells.length) {
+    renderGrid3Preview(preview);
+    return;
+  }
   if (state.pageStyle !== "topic" && !state.words.length && !state.existingButtons.length) {
     const note = document.createElement("div");
     note.className = "cell empty-note";
@@ -1145,10 +1604,61 @@ function renderPreview() {
   }
 }
 
+function placementSlots() {
+  if (state.provider === "grid3" && state.grid3Cells.length) {
+    return state.grid3Cells
+      .filter((cell) => cell.safe_blank)
+      .sort((left, right) => left.y - right.y || left.x - right.x)
+      .map((cell) => cell.slot);
+  }
+  if (state.availableSlots) return [...state.availableSlots].sort((a, b) => a - b);
+  const occupied = new Set(state.existingButtons.map((button) => button.slot));
+  return Array.from({ length: state.grid.cols * state.grid.rows }, (_, slot) => slot)
+    .filter((slot) => !occupied.has(slot));
+}
+
+function renderPlacementOrder() {
+  const wrap = $("placement-order-wrap");
+  const list = $("placement-order");
+  list.innerHTML = "";
+  wrap.hidden = state.provider !== "grid3" || !state.words.length;
+  if (wrap.hidden) return;
+  const slots = placementSlots();
+  [...state.words]
+    .sort((left, right) => slots.indexOf(left.slot) - slots.indexOf(right.slot))
+    .forEach((item) => {
+      const index = state.words.indexOf(item);
+      const position = slots.indexOf(item.slot);
+      const row = document.createElement("li");
+      const label = document.createElement("strong");
+      label.textContent = item.label;
+      row.append(label);
+      [-1, 1].forEach((direction) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn btn-ghost";
+        button.textContent = direction < 0 ? "Move earlier" : "Move later";
+        button.dataset.index = index;
+        button.dataset.direction = direction;
+        button.disabled = position + direction < 0 || position + direction >= slots.length;
+        button.setAttribute("aria-label", `${button.textContent}: ${item.label}`);
+        button.addEventListener("click", () => {
+          movePreviewItem(index, slots[position + direction]);
+          $("placement-order").querySelector(
+            `[data-index="${index}"][data-direction="${direction}"]`
+          )?.focus();
+        });
+        row.append(button);
+      });
+      list.append(row);
+    });
+}
+
 function movePreviewItem(index, targetSlot) {
   const item = state.words[index];
   if (!item || item.slot === targetSlot) return;
-  if (state.existingButtons.some((button) => button.slot === targetSlot)) return;
+  if (state.existingButtons.some((button) => button.slot === targetSlot) ||
+      (state.availableSlots && !state.availableSlots.includes(targetSlot))) return;
   const previousSlot = item.slot;
   const occupant = state.words.find((candidate, candidateIndex) =>
     candidateIndex !== index && candidate.slot === targetSlot
@@ -1163,6 +1673,15 @@ function movePreviewItem(index, targetSlot) {
   state.pendingEdit = null;
   renderWords();
 }
+
+$("choose-page-btn").addEventListener("click", () => {
+  setOperation("existing");
+  show("destination");
+});
+$("create-page-btn").addEventListener("click", () => {
+  setOperation("new");
+  show("title");
+});
 
 /* ---------- step 2: AI engines ---------- */
 
@@ -1344,13 +1863,15 @@ $("ai-go").addEventListener("click", async () => {
         model: $("ai-model").value,
         kind: topic ? "phrases" : "words",
         function: topic && state.activeFn ? state.activeFn : null,
+        grounding: $("ai-grounding").checked,
         existing: [...new Set(state.existingButtons
           .map((item) => item.label.trim())
           .filter((label) => label && label.toLocaleLowerCase() !== "existing button"))],
       }),
     });
     // Phrases arrive comma-prone; add them one by one instead of splitting.
-    const capacity = state.grid.cols * state.grid.rows - state.existingButtons.length;
+    const capacity = state.availableSlots
+      ? state.availableSlots.length : state.grid.cols * state.grid.rows - state.existingButtons.length;
     let added = 0;
     data.words.forEach((suggestion) => {
       const label = (typeof suggestion === "string"
@@ -1406,43 +1927,83 @@ function freezePayload(payload) {
   return Object.freeze(payload);
 }
 
+function syncReviewPlacement() {
+  renderPreview();
+  const source = $("preview");
+  const target = $("review-preview");
+  target.className = `${source.className} review-preview`;
+  target.setAttribute("style", source.getAttribute("style") || "");
+  target.replaceChildren(...[...source.children].map((child) => child.cloneNode(true)));
+  target.setAttribute("aria-hidden", "true");
+  target.querySelectorAll("[tabindex], [role], [draggable]").forEach((element) => {
+    element.removeAttribute("tabindex");
+    element.removeAttribute("role");
+    element.removeAttribute("draggable");
+  });
+  const slots = placementSlots();
+  const list = $("review-placement-order");
+  list.innerHTML = "";
+  [...state.words]
+    .sort((left, right) => slots.indexOf(left.slot) - slots.indexOf(right.slot))
+    .forEach((item) => {
+      const row = document.createElement("li");
+      row.textContent = item.label;
+      list.append(row);
+    });
+}
+
 function prepareReview() {
   const title = $("title-input").value.trim();
   const parentTitle = titleOf(state.parentId);
   const operation = state.operation;
-  const payload = freezePayload({
-    operation: operation === "existing" ? "add_to_existing_page" : "create_page",
-    title,
-    items: state.words.map((item) => ({
+  const items = state.words.map((item) => ({
       label: item.label,
       message: item.message,
       border_color: item.fn ? FUNCTIONS[item.fn].color : null,
       slot: item.slot,
       symbol: item.symbol !== false,
-    })),
-    parent: parentTitle,
-    page: parentTitle,
-    fingerprint: state.layoutFingerprint,
-  });
+    }));
+  const payload = freezePayload(state.mode === "file"
+    ? {
+        title,
+        items,
+        parent_page_id: Number(state.parentId),
+      }
+    : {
+        operation: operation === "existing" ? "add_to_existing_page" : "create_page",
+        title,
+        items,
+        parent: parentTitle,
+        page: parentTitle,
+        fingerprint: state.layoutFingerprint,
+      });
   state.pendingEdit = Object.freeze({
     operation,
-    path: operation === "existing" ? "/api/tdsnap/edit-plan" : "/api/tdsnap/page",
+    path: state.mode === "file"
+      ? `/api/pageset/${encodeURIComponent(state.sessionId)}/page`
+      : state.provider === "grid3"
+        ? "/api/grid3/edit-plan"
+        : operation === "existing" ? "/api/tdsnap/edit-plan" : "/api/tdsnap/page",
     payload,
     title,
     parentTitle,
     displayTitle: operation === "existing" ? parentTitle : title,
+    knownPageTitles: Object.freeze(
+      state.pages.map((page) => page.title.trim().toLocaleLowerCase())
+    ),
   });
 
   $("result-eyebrow").textContent = "Review";
-  $("result-heading").textContent = operation === "existing"
-    ? "Ready to update TD Snap?"
-    : "Ready to create this page?";
+  $("result-heading").textContent = "Check positions before adding";
   $("result-sub").textContent = "Check the details below. Nothing changes until you confirm.";
   $("review-state").hidden = false;
   $("success-state").hidden = true;
-  $("review-action").textContent = operation === "existing"
-    ? "Add buttons to an existing page"
-    : "Create a new page";
+  const count = payload.items.length;
+  const buttonWord = `button${count === 1 ? "" : "s"}`;
+  const resultLabel = operation === "existing"
+    ? `Add ${count} ${buttonWord} to ${parentTitle}`
+    : `Create ${title} with ${count} ${buttonWord}`;
+  $("review-action").textContent = resultLabel;
   $("review-target").textContent = operation === "existing"
     ? parentTitle
     : `${title}, found from ${parentTitle}`;
@@ -1450,9 +2011,7 @@ function prepareReview() {
   $("review-placement").textContent = state.placementAdjusted
     ? "The positions you chose"
     : "Automatic — the first open spaces";
-  $("confirm-update-label").textContent = operation === "existing"
-    ? "Update TD Snap"
-    : "Create page in TD Snap";
+  $("confirm-update-label").textContent = resultLabel;
   $("review-error").hidden = true;
   $("review-error").innerHTML = "";
 
@@ -1470,6 +2029,7 @@ function prepareReview() {
     }
     list.append(row);
   });
+  syncReviewPlacement();
   show("review");
 }
 
@@ -1507,6 +2067,10 @@ buildForm.addEventListener("submit", (event) => {
     showStepError("items", "Add at least one word or phrase before continuing.");
     return;
   }
+  if (state.availableSlots && state.words.length > state.availableSlots.length) {
+    showStepError("items", "This page is full. Remove a planned button or choose another page.");
+    return;
+  }
 
   prepareReview();
 });
@@ -1535,26 +2099,32 @@ $("confirm-update-btn").addEventListener("click", async () => {
   const button = $("confirm-update-btn");
   $("review-error").hidden = true;
   setBusy(button, true, pending.operation === "existing"
-    ? "Updating and checking…"
+    ? `Updating ${state.provider === "grid3" ? "Grid 3" : "TD Snap"} and checking…`
     : "Creating and checking…");
   $("step-result").setAttribute("aria-busy", "true");
   setActivity(pending.operation === "existing"
-    ? "Updating TD Snap and checking the result…"
+    ? `Updating ${state.provider === "grid3" ? "Grid 3" : "TD Snap"} and checking the result…`
     : "Creating the page in TD Snap and checking the result…");
   try {
     const data = await api(pending.path, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-TDSnap-Editor": "1",
+        ...(state.mode === "file"
+          ? {}
+          : state.provider === "grid3"
+          ? { "X-AAC-Editor": "grid3" }
+          : { "X-TDSnap-Editor": "1" }),
       },
       body: JSON.stringify(pending.payload),
-    });
+    }, 0);
     state.edits = data.edits || state.edits + 1;
-    try {
-      await refreshDetectedPages();
-    } catch {
-      // The requested edit is already verified. A later reconnect can refresh the list.
+    if (state.provider === "tdsnap" || state.mode === "file") {
+      try {
+        await refreshDetectedPages();
+      } catch {
+        // The requested edit is already verified. A later reconnect can refresh the list.
+      }
     }
     renderResult(
       pending.displayTitle,
@@ -1565,13 +2135,13 @@ $("confirm-update-btn").addEventListener("click", async () => {
     state.pendingEdit = null;
     show("result");
   } catch (error) {
-    if (pending.operation === "new" && pending.title) {
+    if (state.mode !== "file" && pending.operation === "new" && pending.title) {
       try {
         await refreshDetectedPages();
         const created = state.pages.find(
           (page) => page.title.toLocaleLowerCase() === pending.title.toLocaleLowerCase()
         );
-        if (created) {
+        if (created && !pending.knownPageTitles.includes(pending.title.toLocaleLowerCase())) {
           setOperation("existing");
           state.parentId = created.id;
           state.parentTouched = true;
@@ -1604,7 +2174,7 @@ $("confirm-update-btn").addEventListener("click", async () => {
         // Keep the original error if TD Snap cannot be inspected for recovery.
       }
     }
-    showReviewError("TD Snap couldn't complete the edit.", [
+    showReviewError(`${state.provider === "grid3" ? "Grid 3" : "TD Snap"} couldn't complete the edit.`, [
       error.message,
       ...(error.problems || []),
     ]);
@@ -1646,6 +2216,10 @@ const CHECK_LABELS = {
   positions: "Every new button is in the reviewed space",
   symbols: "Matching symbols were added when available",
   topic_format: "Topic-page row colors were applied in TD Snap",
+  grid3_edit: "Grid 3 saved the change",
+  target_grid: "The reviewed grid was updated",
+  style_preserved: "Every new cell retained its existing Grid 3 style",
+  save_completed: "Your page set was saved",
 };
 
 const CHECK_SVG =
@@ -1657,12 +2231,24 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
   $("review-state").hidden = true;
   $("success-state").hidden = false;
   $("result-eyebrow").textContent = "Complete";
-  $("result-heading").textContent = "Done — TD Snap was updated";
+  const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
+  $("result-heading").textContent = `Done — ${product} was updated`;
   $("edit-count").textContent =
     state.edits > 1 ? `· ${state.edits} edits this session` : "";
-  $("another-btn").textContent = "Make another edit";
+  $("another-btn").textContent = "Add more buttons";
+  const saveButton = $("file-save-btn");
+  saveButton.hidden = state.mode !== "file";
+  if (state.mode === "file") {
+    const editedName = state.filename.replace(/(\.[^.]+)?$/, ".edited$1");
+    saveButton.href = `/api/pageset/${encodeURIComponent(state.sessionId)}/download`;
+    saveButton.download = editedName;
+  } else {
+    saveButton.removeAttribute("href");
+    saveButton.removeAttribute("download");
+  }
   $("result-sub").textContent = operation === "existing"
-    ? `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to “${title}” without moving its existing vocabulary.`
+    ? `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to ` +
+      `“${title}” without changing its existing ${state.provider === "grid3" ? "cells" : "vocabulary"}.`
     : `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, and “${parentTitle}” now links to it.`;
 
   const checks = $("checks");
@@ -1688,7 +2274,7 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
   warningBox.hidden = warnings.length === 0;
   if (warnings.length) {
     const lead = document.createElement("strong");
-    lead.textContent = "TD Snap finished with a note:";
+    lead.textContent = `${product} finished with a note:`;
     warningBox.append(lead);
     const list = document.createElement("ul");
     warnings.forEach((warning) => {
@@ -1701,44 +2287,125 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
 
 }
 
-$("another-btn").addEventListener("click", () => {
+$("file-save-btn").addEventListener("click", async (event) => {
+  if (state.mode !== "file" || !state.native || !window.pywebview?.api?.save_pageset) return;
+  event.preventDefault();
+  const button = $("file-save-btn");
+  setBusy(button, true, "Saving…");
+  setActivity("Saving the edited copy…");
+  try {
+    const result = await window.pywebview.api.save_pageset(state.sessionId);
+    if (!result || result.ok === false) throw new Error(result?.error || "The file could not be saved.");
+    if (!result.cancelled) {
+      $("live-result-note").textContent =
+        `The edited copy was saved to ${result.path}. Review it before importing it into TD Snap.`;
+    }
+  } catch (error) {
+    $("live-result-note").textContent = `The edited copy could not be saved. ${error.message}`;
+  } finally {
+    setActivity();
+    setBusy(button, false);
+  }
+});
+
+$("another-btn").addEventListener("click", async () => {
   state.words = [];
   state.parentId = state.currentPage;
   state.parentFree = 1;
   state.parentTouched = false;
-  state.existingButtons = [];
-  state.layoutFingerprint = null;
   state.pendingEdit = null;
   state.placementAdjusted = false;
   $("title-input").value = "";
   $("parent-capacity").textContent = "";
   $("chip-note").textContent = "";
   parentFilter.value = "";
+  if (state.mode === "file") {
+    state.existingButtons = [];
+    state.availableSlots = null;
+    state.layoutFingerprint = null;
+    state.parentFree = null;
+    setPageStyle("words");
+    try {
+      await refreshDetectedPages();
+      if (!state.pages.some((page) => page.id === state.parentId)) {
+        state.parentId = state.pages[0]?.id || null;
+      }
+      setOperation("new");
+      renderParents("");
+      show("title");
+    } catch (error) {
+      resetConnection();
+      $("live-status").classList.add("error");
+      $("live-status").textContent = `Open the exported file again. ${error.message}`;
+    }
+    return;
+  }
+  if (state.provider === "grid3") {
+    setPageStyle("words");
+    setActivity("Refreshing the Grid 3 grid…");
+    try {
+      await loadTargetLayout(state.currentPage);
+      renderWords();
+      show("items");
+    } catch (error) {
+      resetConnection();
+      $("live-status").classList.add("error");
+      $("live-status").textContent = `Reconnect to Grid 3. ${error.message}`;
+    } finally {
+      setActivity();
+    }
+    return;
+  }
+  state.existingButtons = [];
+  state.availableSlots = null;
+  state.layoutFingerprint = null;
   setOperation("existing");
   setPageStyle("words");
   renderParents("");
-  renderWords();
   $("build-error").hidden = true;
   $("result-warnings").hidden = true;
-  show("operation");
+  setActivity("Refreshing the page open in TD Snap…");
+  try {
+    await loadTargetLayout(state.currentPage);
+    show("items");
+  } catch (error) {
+    showBuildError("Choose a page to continue.", [error.message]);
+    show("destination");
+  } finally {
+    setActivity();
+  }
 });
 
 function resetConnection() {
   clearInterval(liveMonitor);
+  const sessionId = state.sessionId;
+  if (sessionId) {
+    void api(`/api/pageset/${encodeURIComponent(sessionId)}/close`, { method: "POST" })
+      .catch(() => {});
+  }
   state.mode = "live";
   state.connected = false;
+  state.sessionId = null;
+  state.filename = "";
   state.words = [];
   state.parentId = null;
   state.parentFree = null;
+  state.availableSlots = null;
+  state.grid3Cells = [];
+  state.previewAspect = null;
+  state.gridBackground = null;
   state.pendingEdit = null;
   state.placementAdjusted = false;
   $("file-badge").hidden = true;
+  $("file-save-btn").hidden = true;
+  $("file-save-btn").removeAttribute("href");
+  $("file-save-btn").removeAttribute("download");
   $("title-input").value = "";
   $("live-status").textContent = "";
-  $("live-connect-btn").querySelector(".btn-label").textContent = "Connect to TD Snap";
   $("parent-capacity").textContent = "";
   $("chip-note").textContent = "";
   $("build-error").hidden = true;
+  selectProvider(state.provider);
   renderWords();
   show("load");
 }
@@ -1770,6 +2437,7 @@ configReady.then(() => {
   // In the native window the OS window close button quits the app;
   // in browser mode the Quit button is the only clean way to stop it.
   $("quit-btn").hidden = state.native;
+  selectProvider(state.provider);
 });
 
 /* Radio-style button groups use one tab stop and arrow-key navigation. */

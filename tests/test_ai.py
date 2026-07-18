@@ -4,7 +4,10 @@ No real model or network is used — the download test uses a file:// URL and
 the endpoint tests monkeypatch the backends.
 """
 
+import hashlib
+import json
 import time
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -72,6 +75,10 @@ def isolated_model(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "data"))
     monkeypatch.setattr(localai, "MODEL_URL", fake_model.as_uri())
     monkeypatch.setattr(localai, "MODEL_FILE", "tiny.gguf")
+    monkeypatch.setattr(
+        localai, "MODEL_SHA256", hashlib.sha256(fake_model.read_bytes()).hexdigest()
+    )
+    monkeypatch.setattr(localai, "MODEL_EXPECTED_SIZE", fake_model.stat().st_size)
     localai._download.update(status="idle", done=0, total=0, error=None)
     return fake_model
 
@@ -92,6 +99,18 @@ def test_download_flow(isolated_model):
     assert localai.start_download()["status"] == "ready"
 
 
+def test_download_rejects_wrong_hash(isolated_model, monkeypatch):
+    monkeypatch.setattr(localai, "MODEL_SHA256", "0" * 64)
+    localai.start_download()
+    for _ in range(100):
+        if localai.download_state()["status"] in ("ready", "error"):
+            break
+        time.sleep(0.05)
+    assert localai.download_state()["status"] == "error"
+    assert "integrity" in localai.download_state()["error"].lower()
+    assert not localai.is_downloaded()
+
+
 def test_generate_requires_download(isolated_model, monkeypatch):
     monkeypatch.setattr(localai, "engine_available", lambda: True)
     words, error = localai.generate_words("Snacks")
@@ -108,12 +127,18 @@ def test_ai_endpoints(monkeypatch, tmp_path):
     monkeypatch.setattr(localai, "engine_available", lambda: False)
     monkeypatch.setattr(localai, "is_downloaded", lambda: False)
     # Never touch the network from a unit test; grounding is exercised separately.
-    monkeypatch.setattr(grounding, "reference_text", lambda category: "REF:" + category)
+    grounding_requests = []
+    monkeypatch.setattr(
+        grounding,
+        "reference_text",
+        lambda category, requested=False: grounding_requests.append((category, requested))
+        or ("REF:" + category if requested else ""),
+    )
 
     client = app.test_client()
     headers = {"X-TDSnap-Token": API_TOKEN}
 
-    status = client.get("/api/ai/status").get_json()
+    status = client.get("/api/ai/status", headers=headers).get_json()
     assert status["ollama"]["reachable"] is False
     assert status["local"]["engine_available"] is False
     assert status["local"]["model"]["license"] == "Apache-2.0"
@@ -144,8 +169,15 @@ def test_ai_endpoints(monkeypatch, tmp_path):
                        headers=headers).get_json()
     assert data == {"ok": True, "words": ["Chips", "Apple"], "engine": "local"}
     assert generated["existing"] == ["Crackers", "Juice"]
-    # Grounding facts for the title are threaded into the backend call.
+    # Grounding is private by default and runs only after explicit opt-in.
+    assert generated["reference"] == ""
+    assert grounding_requests == []
+
+    client.post("/api/ai/words", json={
+        "category": "Snacks", "grounding": True,
+    }, headers=headers)
     assert generated["reference"] == "REF:Snacks"
+    assert grounding_requests == [("Snacks", True)]
 
     # A reachable Ollama takes precedence.
     monkeypatch.setattr(
@@ -174,17 +206,24 @@ class _FakeResponse:
     def __init__(self, payload):
         self._payload = payload
 
-    def raise_for_status(self):
-        pass
+    def __enter__(self):
+        return self
 
-    def json(self):
-        return self._payload
+    def __exit__(self, *_args):
+        return False
+
+    def read(self, _limit=-1):
+        return json.dumps(self._payload).encode("utf-8")
 
 
 def test_grounding_builds_reference(monkeypatch):
     calls = []
 
-    def fake_get(url, params=None, headers=None, timeout=None):
+    def fake_urlopen(request, timeout=None):
+        params = {
+            key: values[0]
+            for key, values in parse_qs(urlsplit(request.full_url).query).items()
+        }
         calls.append(params)
         if params.get("list") == "search":
             return _FakeResponse({"query": {"search": [
@@ -197,8 +236,11 @@ def test_grounding_builds_reference(monkeypatch):
             {"extract": "Builderman, Noob, and Guest are notable <b>avatars</b>."}
         ]}})
 
-    monkeypatch.setattr(grounding.requests, "get", fake_get)
-    text = grounding.reference_text("Roblox characters")
+    monkeypatch.setattr(grounding, "urlopen", fake_urlopen)
+    assert grounding.reference_text("Roblox characters") == ""
+    assert calls == []
+
+    text = grounding.reference_text("Roblox characters", requested=True)
     assert "List of Roblox characters" in text
     assert "Builderman" in text
     assert "<b>" not in text  # HTML stripped
@@ -211,14 +253,27 @@ def test_grounding_is_best_effort(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("offline")
 
-    monkeypatch.setattr(grounding.requests, "get", boom)
-    assert grounding.reference_text("Anything") == ""
+    monkeypatch.setattr(grounding, "urlopen", boom)
+    assert grounding.reference_text("Anything", requested=True) == ""
     # Too-short titles are skipped without a request.
-    assert grounding.reference_text("x") == ""
+    assert grounding.reference_text("x", requested=True) == ""
     # An opt-out env var disables lookups entirely.
     monkeypatch.setenv("TDSNAP_WEB_GROUNDING", "0")
     assert not grounding.enabled()
-    assert grounding.reference_text("Roblox characters") == ""
+    assert grounding.reference_text("Roblox characters", requested=True) == ""
+
+
+def test_ollama_host_is_loopback_only():
+    assert ollama.normalize_host("http://localhost:11434/") == "http://localhost:11434"
+    assert ollama.normalize_host("https://[::1]:11434") == "https://[::1]:11434"
+    for host in (
+        "http://169.254.169.254",
+        "http://example.com",
+        "http://localhost:11434/api/tags",
+        "http://user:pass@localhost:11434",
+    ):
+        with pytest.raises(ValueError):
+            ollama.normalize_host(host)
 
 
 def test_download_refused_when_disk_is_full(isolated_model, monkeypatch):

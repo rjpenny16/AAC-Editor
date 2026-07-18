@@ -197,7 +197,45 @@ def _window(auto):
     window = auto.WindowControl(searchDepth=1, Name="TD Snap")
     if not window.Exists(1):
         raise PagesetError("Open TD Snap before using direct editing.")
+    _verify_process(window)
     return window
+
+
+def _process_app_id(process_id):
+    """Return the Windows package application ID for a process, if available."""
+    if sys.platform != "win32" or not process_id:
+        return None
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    getter = getattr(kernel32, "GetApplicationUserModelId", None)
+    if getter is None:
+        return None
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    getter.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.UINT), wintypes.LPWSTR]
+    getter.restype = wintypes.LONG
+    process = kernel32.OpenProcess(0x1000, False, process_id)
+    if not process:
+        return None
+    try:
+        length = wintypes.UINT()
+        if getter(process, ctypes.byref(length), None) != 122 or not length.value:
+            return None
+        application_id = ctypes.create_unicode_buffer(length.value)
+        if getter(process, ctypes.byref(length), application_id) == 0:
+            return application_id.value
+    finally:
+        kernel32.CloseHandle(process)
+    return None
+
+
+def _verify_process(window):
+    expected = TD_SNAP_APP.removeprefix("shell:AppsFolder\\")
+    actual = _process_app_id(getattr(window, "ProcessId", 0))
+    if not actual:
+        raise PagesetError("AAC Editor could not verify the TD Snap application process.")
+    if actual.casefold() != expected.casefold():
+        raise PagesetError("The detected window is not the installed TD Snap application.")
 
 
 def launch():
@@ -262,7 +300,35 @@ def _page_name(window, group=None):
     ).Name
 
 
-def _active_pageset_path():
+def _pageset_matches_visible_page(path, page, labels):
+    try:
+        with closing(sqlite3.connect(
+            f"file:{path}?mode=ro", uri=True, timeout=1
+        )) as conn:
+            rows = conn.execute(
+                "SELECT Id FROM Page WHERE PageType = 1 AND Title = ? COLLATE NOCASE",
+                (page,),
+            ).fetchall()
+            if len(rows) != 1:
+                return False
+            if not labels:
+                return True
+            visible = {
+                row[0].strip().casefold()
+                for row in conn.execute(
+                    "SELECT Button.Label FROM Button "
+                    "JOIN ElementReference ON ElementReference.Id = Button.ElementReferenceId "
+                    "WHERE ElementReference.PageId = ? AND Button.Label IS NOT NULL",
+                    (rows[0][0],),
+                )
+                if row[0].strip()
+            }
+        return {label.strip().casefold() for label in labels if label.strip()} <= visible
+    except (OSError, sqlite3.Error):
+        return False
+
+
+def _active_pageset_path(visible_page=None, visible_labels=()):
     """Return the page-set database selected in TD Snap's user settings."""
     local = os.environ.get("LOCALAPPDATA")
     if not local:
@@ -271,6 +337,7 @@ def _active_pageset_path():
         local, "Packages", "TobiiDynavox.Snap_*", "LocalState",
         "Users", "*", "Settings.ssf",
     ))
+    candidates = []
     for settings_path in settings_files:
         try:
             with closing(sqlite3.connect(
@@ -285,15 +352,26 @@ def _active_pageset_path():
                 os.path.dirname(settings_path), f"{row[0]}.sps"
             )
             if os.path.isfile(pageset_path):
-                return pageset_path
+                candidates.append(pageset_path)
         except (OSError, sqlite3.Error):
             continue
-    return None
+    candidates = list(dict.fromkeys(
+        os.path.realpath(path) for path in candidates
+    ))
+    if len(candidates) == 1:
+        return candidates[0]
+    if not visible_page:
+        return None
+    matches = [
+        path for path in candidates
+        if _pageset_matches_visible_page(path, visible_page, visible_labels)
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
-def _active_pageset_pages():
+def _active_pageset_pages(visible_page=None, visible_labels=()):
     """Read every vocabulary-page title from the page set open in TD Snap."""
-    pageset_path = _active_pageset_path()
+    pageset_path = _active_pageset_path(visible_page, visible_labels)
     if not pageset_path:
         return []
     try:
@@ -309,9 +387,9 @@ def _active_pageset_pages():
         return []
 
 
-def _page_route(start, target):
+def _page_route(start, target, visible_labels=()):
     """Find button presses from *start* to *target* in the active page set."""
-    pageset_path = _active_pageset_path()
+    pageset_path = _active_pageset_path(start, visible_labels)
     if not pageset_path:
         return None
     try:
@@ -789,7 +867,7 @@ def _navigate_to_parent(window, parent):
     current = _page_name(window)
     if current.casefold() == parent.casefold():
         return parent
-    route = _page_route(current, parent)
+    route = _page_route(current, parent, _named_page_buttons(_page_group(window)))
     if not route:
         raise PagesetError(
             f"TD Snap has no page-link route from {current!r} to {parent!r}. "
@@ -890,6 +968,100 @@ def _set_value(control, value):
             pattern.SetValue(value)
             return
     raise PagesetError("TD Snap's text field is not editable through accessibility.")
+
+
+def _value(control):
+    getter = getattr(control, "GetValuePattern", None)
+    pattern = getter() if getter else None
+    return pattern.Value if pattern else None
+
+
+def _control_slot(grid, control):
+    rect = control.BoundingRectangle
+    center_x = (rect.left + rect.right) // 2
+    center_y = (rect.top + rect.bottom) // 2
+    column = min(range(len(grid.xs)), key=lambda index: abs(grid.xs[index] - center_x))
+    row = min(range(len(grid.ys)), key=lambda index: abs(grid.ys[index] - center_y))
+    if (
+        abs(grid.xs[column] - center_x) > grid.cell_width
+        or abs(grid.ys[row] - center_y) > grid.cell_height
+    ):
+        return None
+    return row * len(grid.xs) + column
+
+
+def _verify_added_buttons(window, items):
+    """Verify exact slots, labels, and requested spoken messages in Edit mode."""
+    _collapse_editor(window)
+    group = _page_group(window)
+    grid = _grid(group)
+    by_slot = {
+        _control_slot(grid, control): control
+        for control in group.GetChildren()
+        if control.ControlTypeName == "ButtonControl"
+        and (control.Name or "").strip()
+    }
+    for item in items:
+        control = by_slot.get(item["slot"])
+        if control is None or (control.Name or "").strip() != item["label"]:
+            raise PagesetError(
+                f"TD Snap did not verify {item['label']!r} in its reviewed cell."
+            )
+        if item["message"]:
+            _activate(control)
+            _expand_editor(window)
+            message_box = _find(
+                window, automation_id="MessageBox", control_type="EditControl"
+            )
+            if message_box is None or _value(message_box) != item["message"]:
+                raise PagesetError(
+                    f"TD Snap did not verify the spoken message for {item['label']!r}."
+                )
+            _collapse_editor(window)
+
+
+def _restore_page_fingerprint(window, baseline, maximum):
+    """Undo until the visible page matches the reviewed pre-edit baseline."""
+    _enter_edit_mode(window)
+    for _ in range(maximum + 1):
+        if _fingerprint(_page_group(window)) == baseline:
+            return
+        undo = _find(window, automation_id="UndoButton", control_type="ButtonControl")
+        if undo is None or not getattr(undo, "IsEnabled", False):
+            break
+        _activate(undo)
+        time.sleep(0.12)
+    if _fingerprint(_page_group(window)) != baseline:
+        raise PagesetError(
+            "TD Snap could not verify restoration of the reviewed page. "
+            "Inspect the page before making another edit."
+        )
+
+
+def _rollback_new_page(auto, window, parent, parent_baseline, page_baseline, maximum):
+    """Restore both a provisional child page and its parent link."""
+    try:
+        auto.SendKeys("{Esc}", waitTime=0.05)
+    except (AttributeError, OSError):
+        pass
+    current = _page_name(window)
+    if current.casefold() != parent.casefold():
+        if page_baseline is not None:
+            _restore_page_fingerprint(window, page_baseline, maximum)
+        _exit_edit_mode(window)
+        back = _find(window, automation_id="BackButton", control_type="ButtonControl")
+        if back is None:
+            raise PagesetError(
+                "TD Snap could not return to the parent while restoring the new page. "
+                "Inspect the page set before making another edit."
+            )
+        _activate(back)
+        _wait_for(
+            lambda: _page_name(window).casefold() == parent.casefold(),
+            "TD Snap could not return to the parent while restoring the new page.",
+            timeout=10,
+        )
+    _restore_page_fingerprint(window, parent_baseline, maximum)
 
 
 def _create_page_link(auto, window, title, cell):
@@ -1120,15 +1292,23 @@ def _add_button(auto, window, cell, label, message=None,
         )
         symbol_applied = False
         border_applied = border_color is None
-        if message or border_color is not None or use_symbol:
+        if message:
+            _expand_editor(window)
+            message_box = _find(
+                window, automation_id="MessageBox", control_type="EditControl"
+            )
+            if message_box is None:
+                raise PagesetError(
+                    f"TD Snap did not expose the spoken-message field for {label!r}."
+                )
+            _set_value(message_box, message)
+            _wait_for(
+                lambda: _value(message_box) == message,
+                f"TD Snap did not save the spoken message for {label!r}.",
+            )
+        if border_color is not None or use_symbol:
             try:
                 _expand_editor(window)
-                if message:
-                    message_box = _find(
-                        window, automation_id="MessageBox", control_type="EditControl"
-                    )
-                    if message_box:
-                        _set_value(message_box, message)
                 if use_symbol:
                     symbol_applied = _choose_symbol(window, label)
                 border_applied = _apply_border(window, border_color)
@@ -1165,7 +1345,7 @@ def status(include_pages=True):
         grid={"cols": len(grid.xs), "rows": len(grid.ys)},
     )
     if include_pages:
-        pages = _active_pageset_pages()
+        pages = _active_pageset_pages(result["page"], _named_page_buttons(group))
         if not pages:
             detected = _named_page_buttons(group) if group.Name == DEFAULT_PARENT else []
             pages = [DEFAULT_PARENT] + detected
@@ -1211,13 +1391,18 @@ def add_to_existing_page(page, items, fingerprint=None):
     requested = str(page or "").strip()
     if not requested:
         raise PagesetError("Choose an existing TD Snap page.")
+    if not fingerprint:
+        raise PagesetError(
+            "The TD Snap review fingerprint is required. Refresh the layout and review again."
+        )
     if _page_name(window).casefold() != requested.casefold():
         _navigate_to_parent(window, requested)
     group = _page_group(window)
-    if fingerprint and _fingerprint_token(group) != fingerprint:
+    if _fingerprint_token(group) != fingerprint:
         raise PagesetError(
             "The target page changed after preview. Refresh the layout and review the edit again."
         )
+    baseline = _fingerprint(group)
     grid = _grid(group)
     existing = _page_layout(group, grid)
     occupied = {button["slot"] for button in existing}
@@ -1248,14 +1433,31 @@ def add_to_existing_page(page, items, fingerprint=None):
             )
             symbols += int(result["symbol"])
             styled += int(result["border"] and item["border_color"] is not None)
+        _verify_added_buttons(window, normalized)
+        _exit_edit_mode(window)
+        final_group = _page_group(window)
+        final_grid = _grid(final_group)
+        final_slots = {
+            button["slot"]: button["label"] for button in _page_layout(final_group, final_grid)
+        }
+        missing = [
+            item["label"] for item in normalized
+            if final_slots.get(item["slot"]) != item["label"]
+        ]
+        if missing:
+            raise PagesetError(
+                "TD Snap did not verify the added button(s) in their reviewed cells: "
+                + ", ".join(missing)
+            )
+    except Exception as exc:
+        try:
+            _restore_page_fingerprint(window, baseline, len(normalized) * 6 + 8)
+        except PagesetError as rollback_error:
+            raise PagesetError(f"{exc} {rollback_error}") from exc
+        raise PagesetError(f"{exc} The original page was restored.") from exc
     finally:
         _exit_edit_mode(window)
 
-    final_group = _page_group(window)
-    final_labels = {(button.Name or "").strip().casefold() for button in final_group.GetChildren()}
-    missing = [item["label"] for item in normalized if item["label"].casefold() not in final_labels]
-    if missing:
-        raise PagesetError("TD Snap did not verify the added button(s): " + ", ".join(missing))
     expected_symbols = sum(item.get("symbol", True) for item in normalized)
     expected_styles = sum(item["border_color"] is not None for item in normalized)
     return {
@@ -1293,57 +1495,109 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     _focus_window(window)
     parent = str(parent or DEFAULT_PARENT).strip()
     actual_parent = _navigate_to_parent(window, parent)
-    _enter_edit_mode(window)
-    _collapse_editor(window)
-    grid = _grid(_page_group(window))
-    parent_cell = _empty_cell(window, grid)
-    _create_page_link(auto, window, title, parent_cell)
+    parent_group = _page_group(window)
+    known_pages = _active_pageset_pages(
+        actual_parent, _named_page_buttons(parent_group)
+    )
+    if title.casefold() in {page.casefold() for page in known_pages} or _find(
+        parent_group, name=title, control_type="ButtonControl"
+    ):
+        raise PagesetError(
+            f"A TD Snap page or parent link named {title!r} already exists."
+        )
 
-    _collapse_editor(window)
-    new_grid = _grid(_page_group(window))
-    if len(normalized) > len(new_grid.xs) * len(new_grid.ys):
-        raise PagesetError("The words do not fit on one TD Snap grid screen.")
+    # Find parent capacity before opening any creation dialog. This may move to
+    # another grid screen; the rollback baseline is captured after that move.
+    _empty_cell(window, _grid(parent_group))
+    parent_group = _page_group(window)
+    parent_baseline = _fingerprint(parent_group)
+    page_baseline = None
     symbols = 0
     styled = 0
-    used_slots = set()
-    for item in normalized:
-        _collapse_editor(window)
-        active_grid = _grid(_page_group(window))
-        requested = item.get("slot")
-        cell = _cell_at(active_grid, requested)
-        if cell is None or requested in used_slots:
-            cell = _empty_cell(window, active_grid, allow_scroll=False)
-        else:
-            used_slots.add(requested)
-        result = _add_button(
-            auto, window, cell, item["label"], item["message"],
-            item["border_color"], item.get("symbol", True),
-        )
-        symbols += int(result["symbol"])
-        styled += int(result["border"] and item["border_color"] is not None)
-
-    _exit_edit_mode(window)
-    _activate(_find(window, automation_id="BackButton", control_type="ButtonControl"))
-    _wait_for(
-        lambda: _page_name(window).casefold() == actual_parent.casefold(),
-        "The page was created, but TD Snap did not return to its parent.",
-    )
-    link = _find(_page_group(window), name=title, control_type="ButtonControl")
-    if not link:
-        raise PagesetError("The new page exists, but its parent link was not visible.")
-    link_symbol = False
+    placed = []
     try:
         _enter_edit_mode(window)
+        _collapse_editor(window)
+        parent_cell = _empty_cell(window, _grid(_page_group(window)))
+        _create_page_link(auto, window, title, parent_cell)
+
+        _collapse_editor(window)
+        child_group = _page_group(window)
+        page_baseline = _fingerprint(child_group)
+        new_grid = _grid(child_group)
+        occupied = {
+            button["slot"] for button in _page_layout(child_group, new_grid)
+        }
+        available = [
+            slot for slot in range(len(new_grid.xs) * len(new_grid.ys))
+            if slot not in occupied
+        ]
+        if len(normalized) > len(available):
+            raise PagesetError("The words do not fit in the new TD Snap page's empty cells.")
+
+        unused = set(available)
+        for item in normalized:
+            requested = item.get("slot")
+            slot = requested if isinstance(requested, int) and requested in unused else min(unused)
+            unused.remove(slot)
+            placed_item = dict(item, slot=slot)
+            placed.append(placed_item)
+            _collapse_editor(window)
+            active_grid = _grid(_page_group(window))
+            result = _add_button(
+                auto, window, _cell_at(active_grid, slot), item["label"],
+                item["message"], item["border_color"], item.get("symbol", True),
+            )
+            symbols += int(result["symbol"])
+            styled += int(result["border"] and item["border_color"] is not None)
+
+        _verify_added_buttons(window, placed)
+        _exit_edit_mode(window)
+        final_group = _page_group(window)
+        final_grid = _grid(final_group)
+        final_slots = {
+            button["slot"]: button["label"]
+            for button in _page_layout(final_group, final_grid)
+        }
+        if any(final_slots.get(item["slot"]) != item["label"] for item in placed):
+            raise PagesetError("TD Snap did not verify the new page's reviewed content.")
+
+        back = _find(window, automation_id="BackButton", control_type="ButtonControl")
+        if back is None:
+            raise PagesetError("The new page was created, but its Back button was unavailable.")
+        _activate(back)
+        _wait_for(
+            lambda: _page_name(window).casefold() == actual_parent.casefold(),
+            "The page was created, but TD Snap did not return to its parent.",
+        )
         link = _find(_page_group(window), name=title, control_type="ButtonControl")
-        _activate(link)
-        _expand_editor(window)
-        link_symbol = _choose_symbol(window, title)
-    except PagesetError:
-        pass
+        if not link:
+            raise PagesetError("The new page exists, but its parent link was not visible.")
+        link_symbol = False
+        try:
+            _enter_edit_mode(window)
+            link = _find(_page_group(window), name=title, control_type="ButtonControl")
+            _activate(link)
+            _expand_editor(window)
+            link_symbol = _choose_symbol(window, title)
+        except PagesetError:
+            pass
+        finally:
+            _exit_edit_mode(window)
+        link = _find(_page_group(window), name=title, control_type="ButtonControl")
+        _open_page_button(window, link, title)
+    except Exception as exc:
+        try:
+            _rollback_new_page(
+                auto, window, actual_parent, parent_baseline, page_baseline,
+                len(normalized) * 6 + 12,
+            )
+        except PagesetError as rollback_error:
+            raise PagesetError(f"{exc} {rollback_error}") from exc
+        raise PagesetError(f"{exc} The provisional page and parent link were restored.") from exc
     finally:
         _exit_edit_mode(window)
-    link = _find(_page_group(window), name=title, control_type="ButtonControl")
-    _open_page_button(window, link, title)
+
     total_symbols = symbols + int(link_symbol)
     expected_symbols = len(normalized) + 1
     return {

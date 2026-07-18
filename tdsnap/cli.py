@@ -14,7 +14,7 @@ from typing import List, Optional
 
 from . import builder, schema, validate
 from .errors import PagesetError
-from .pageset import Pageset, default_output_path, is_sqlite_file
+from .pageset import Pageset, is_sqlite_file
 from .ticks import ticks_to_datetime
 
 
@@ -101,7 +101,7 @@ def _cmd_add(args) -> int:
     )
     if report["nav_button_id"] is not None:
         print(f"Linked from parent page Id {parent_id}.")
-    print(f"All validation checks passed.")
+    print("All validation checks passed.")
     print(f"Wrote edited page set to: {dest}")
     print("Import it into a TEST TD Snap user first — see docs/IMPORT_SAFETY.md.")
     return 0
@@ -110,6 +110,7 @@ def _cmd_add(args) -> int:
 def _cmd_verify(args) -> int:
     conn = _open_readonly(args.pageset)
     try:
+        schema.require_tables(conn)
         result = validate.validate_pageset(conn)
         problems, warnings = result["problems"], result["warnings"]
         if args.show_sync:
@@ -118,7 +119,10 @@ def _cmd_verify(args) -> int:
                 "SELECT p.Id, p.Title, p.Timestamp, p.SyncHash FROM Page p "
                 "WHERE p.PageType = 1 ORDER BY p.Timestamp DESC LIMIT 10"
             ):
-                when = ticks_to_datetime(row["Timestamp"]).isoformat()
+                try:
+                    when = ticks_to_datetime(row["Timestamp"]).isoformat()
+                except (TypeError, ValueError, OSError, OverflowError):
+                    when = "invalid timestamp"
                 print(
                     f"  Page {row['Id']} {row['Title']!r}: Timestamp={row['Timestamp']} "
                     f"({when}) SyncHash={row['SyncHash']}"
@@ -140,6 +144,7 @@ def _cmd_verify(args) -> int:
 def _cmd_inspect(args) -> int:
     conn = _open_readonly(args.pageset)
     try:
+        schema.require_tables(conn)
         version = schema.schema_version(conn)
         print(f"SchemaVersion: {version or '(unknown)'}")
         row = conn.execute(
@@ -209,7 +214,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except PagesetError as exc:
+    except (PagesetError, OSError, sqlite3.Error) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

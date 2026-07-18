@@ -95,6 +95,22 @@ def test_detects_duplicate_grid_position(seeded_pageset):
     assert any("more than one visible button" in p for p in problems)
 
 
+def test_detects_spanning_overlap_and_invalid_geometry(seeded_pageset):
+    ps = seeded_pageset
+    ps.conn.execute(
+        "UPDATE ElementPlacement SET GridSpan = '2,1' WHERE GridPosition = '0,0'"
+    )
+    problems = validate.validate_pageset(ps.conn)["problems"]
+    assert any("more than one visible button" in problem for problem in problems)
+
+    ps.conn.execute(
+        "UPDATE ElementPlacement SET GridPosition = '-1,2', GridSpan = '0,1' "
+        "WHERE GridPosition = '0,0'"
+    )
+    problems = validate.validate_pageset(ps.conn)["problems"]
+    assert any("invalid grid position/span" in problem for problem in problems)
+
+
 def test_roundtrip_guard(seeded_pageset):
     ps = seeded_pageset
     before = validate.table_snapshot(ps.conn)
@@ -108,6 +124,36 @@ def test_roundtrip_guard(seeded_pageset):
     )
     tampered = validate.table_snapshot(ps.conn)
     assert validate.check_roundtrip(before, tampered)
+
+
+def test_roundtrip_guard_rejects_unrelated_existing_row_changes(seeded_pageset):
+    ps = seeded_pageset
+    before = validate.table_snapshot(ps.conn)
+    _build(ps)
+    ps.conn.execute("UPDATE Page SET Title = 'Unintended' WHERE Title = 'Food'")
+    after = validate.table_snapshot(ps.conn)
+
+    problems = validate.check_roundtrip(before, after)
+    assert any("unexpected columns: Title" in problem for problem in problems)
+
+
+def test_roundtrip_guard_rejects_removed_allowed_table(seeded_pageset):
+    before = validate.table_snapshot(seeded_pageset.conn)
+    seeded_pageset.conn.execute("DROP TABLE ButtonPageLink")
+    after = validate.table_snapshot(seeded_pageset.conn)
+
+    problems = validate.check_roundtrip(before, after)
+    assert any("Tables disappeared" in problem for problem in problems)
+
+
+def test_roundtrip_guard_pairs_parent_page_and_syncdata(seeded_pageset):
+    ps = seeded_pageset
+    before = validate.table_snapshot(ps.conn)
+    ps.conn.execute("UPDATE Page SET Timestamp = Timestamp + 1 WHERE Title = 'Food'")
+    after = validate.table_snapshot(ps.conn)
+
+    problems = validate.check_roundtrip(before, after)
+    assert any("different pages" in problem for problem in problems)
 
 
 def test_new_warnings_detection():

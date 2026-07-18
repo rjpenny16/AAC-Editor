@@ -25,6 +25,31 @@ REQUIRED_TABLES = (
     "Synchronization",
 )
 
+SUPPORTED_SCHEMA_VERSIONS = frozenset({"4.13"})
+
+# Columns the exported-file writer reads or writes directly. Optional media
+# columns are still discovered at runtime in templates.filtered_overrides.
+REQUIRED_COLUMNS = {
+    "Page": {"Id", "UniqueId", "Title", "PageType", "Timestamp", "SyncHash",
+             "ContentTag", "SerializedMetadata"},
+    "Button": {"Id", "Label", "Message", "BorderColor", "BorderThickness",
+               "UniqueId", "CommandFlags", "ElementReferenceId", "ContentTag"},
+    "ElementReference": {"Id", "PageId", "ElementType"},
+    "ElementPlacement": {"Id", "GridPosition", "GridSpan", "Visible",
+                         "ElementReferenceId", "PageLayoutId"},
+    "PageLayout": {"Id", "PageLayoutSetting", "PageId"},
+    "CommandSequence": {"Id", "SerializedCommands", "ButtonId"},
+    "ButtonPageLink": {"Id", "ButtonId", "PageUniqueId"},
+    "SyncData": {"UniqueId", "Type", "Timestamp", "SyncHash", "Deleted",
+                 "Description"},
+    "PageSetProperties": {"Id", "SchemaVersion", "GridDimension", "Timestamp"},
+    "Synchronization": {"Id", "PageSetTimestamp"},
+}
+REQUIRED_PRIMARY_KEYS = {
+    table: ("UniqueId" if table == "SyncData" else "Id")
+    for table in REQUIRED_COLUMNS
+}
+
 
 def tables(conn: sqlite3.Connection) -> List[str]:
     """Return all table names in the database."""
@@ -62,6 +87,37 @@ def require_tables(conn: sqlite3.Connection) -> None:
         )
 
 
+def require_supported_schema(conn: sqlite3.Connection) -> None:
+    """Reject page sets the exported-file writer has not been tested against."""
+    version = schema_version(conn)
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_SCHEMA_VERSIONS))
+        raise PagesetError(
+            f"TD Snap schema {version or 'unknown'} is not supported for editing; "
+            f"supported version: {supported}."
+        )
+    missing = {}
+    for table, required in REQUIRED_COLUMNS.items():
+        absent = sorted(required - set(columns(conn, table)))
+        if absent:
+            missing[table] = absent
+    if missing:
+        details = "; ".join(
+            f"{table}: {', '.join(names)}" for table, names in missing.items()
+        )
+        raise PagesetError(f"Page-set schema is missing required columns ({details}).")
+    for table, expected in REQUIRED_PRIMARY_KEYS.items():
+        actual = primary_key(conn, table)
+        if actual != expected:
+            raise PagesetError(
+                f"Table {table} has primary key {actual!r}; expected {expected!r}."
+            )
+    for table in ("PageSetProperties", "Synchronization"):
+        count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+        if count != 1:
+            raise PagesetError(f"Table {table} has {count} rows; expected exactly 1.")
+
+
 def schema_version(conn: sqlite3.Connection) -> str:
     """Return PageSetProperties.SchemaVersion (empty string if unavailable)."""
     try:
@@ -91,3 +147,27 @@ def parse_grid(value: str) -> Tuple[int, int]:
     if cols < 1 or rows < 1:
         raise PagesetError(f"Grid dimension out of range: {value!r}")
     return cols, rows
+
+
+def parse_grid_position(value: str) -> Tuple[int, int]:
+    """Parse a zero-based ``"col,row"`` placement coordinate."""
+    try:
+        parts = value.split(",")
+        col, row = int(parts[0]), int(parts[1])
+    except (AttributeError, IndexError, ValueError):
+        raise PagesetError(f"Unparseable grid position: {value!r}")
+    if len(parts) != 2 or col < 0 or row < 0:
+        raise PagesetError(f"Grid position out of range: {value!r}")
+    return col, row
+
+
+def parse_grid_span(value: str) -> Tuple[int, int]:
+    """Parse an exact, positive ``"column_span,row_span"`` value."""
+    try:
+        parts = value.split(",")
+        col_span, row_span = int(parts[0]), int(parts[1])
+    except (AttributeError, IndexError, ValueError):
+        raise PagesetError(f"Unparseable grid span: {value!r}")
+    if len(parts) != 2 or col_span < 1 or row_span < 1:
+        raise PagesetError(f"Grid span out of range: {value!r}")
+    return col_span, row_span

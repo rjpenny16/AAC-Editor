@@ -19,13 +19,29 @@ import sqlite3
 import uuid
 from typing import Dict, List, Optional, Tuple, Union
 
-from . import templates
+from . import schema, templates
 from .colors import BORDER_THICKNESS, argb_from_hex
 from .errors import PagesetError
 from .pageset import Pageset
 from .ticks import net_ticks_now
 
 Item = Union[str, Dict[str, object]]
+MAX_TITLE_LENGTH = 60
+MAX_LABEL_LENGTH = 60
+MAX_MESSAGE_LENGTH = 200
+
+
+def _normalize_title(title: str) -> str:
+    if not isinstance(title, str):
+        raise PagesetError("The new page title must be text.")
+    title = title.strip()
+    if not title:
+        raise PagesetError("The new page needs a title.")
+    if len(title) > MAX_TITLE_LENGTH:
+        raise PagesetError(
+            f"The new page title is too long (maximum {MAX_TITLE_LENGTH} characters)."
+        )
+    return title
 
 
 def _normalize_items(items: List[Item]) -> List[Dict[str, object]]:
@@ -38,29 +54,67 @@ def _normalize_items(items: List[Item]) -> List[Dict[str, object]]:
     zero-based grid index chosen in the visual preview. ``symbol`` controls
     whether live editing should make a best-effort symbol search.
     """
+    if not isinstance(items, list):
+        raise PagesetError("Words must be provided as a list.")
     normalized = []
+    labels = set()
     for item in items:
         if isinstance(item, str):
             item = {"label": item}
         elif not isinstance(item, dict):
             raise PagesetError("Each word must be text or a {label, ...} object.")
-        label = str(item.get("label", "") or "").strip()
+        raw_label = item.get("label", "")
+        if raw_label is None:
+            raw_label = ""
+        if not isinstance(raw_label, str):
+            raise PagesetError("Each button label must be text.")
+        label = raw_label.strip()
         if not label:
             continue
-        message = str(item.get("message", "") or "").strip() or None
+        if len(label) > MAX_LABEL_LENGTH:
+            raise PagesetError(
+                f"Button label {label!r} is too long "
+                f"(maximum {MAX_LABEL_LENGTH} characters)."
+            )
+        folded = label.casefold()
+        if folded in labels:
+            raise PagesetError(f"The reviewed vocabulary contains duplicate labels: {label!r}.")
+        labels.add(folded)
+        raw_message = item.get("message")
+        if raw_message is not None and not isinstance(raw_message, str):
+            raise PagesetError(f"The spoken message for {label!r} must be text.")
+        message = (raw_message or "").strip() or None
+        if message and len(message) > MAX_MESSAGE_LENGTH:
+            raise PagesetError(
+                f"The spoken message for {label!r} is too long "
+                f"(maximum {MAX_MESSAGE_LENGTH} characters)."
+            )
         if message == label:
             message = None  # speaking the label is the default; don't duplicate
         border = item.get("border_color")
         if isinstance(border, str) and border.strip():
             border = argb_from_hex(border)
-        elif not isinstance(border, int):
+        elif border is None or border == "":
             border = None
+        elif (
+            isinstance(border, bool)
+            or not isinstance(border, int)
+            or not -(1 << 31) <= border < (1 << 31)
+        ):
+            raise PagesetError(
+                f"The border color for {label!r} must be #RRGGBB or a signed 32-bit integer."
+            )
         slot = item.get("slot")
-        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
-            slot = None
+        if slot is not None and (
+            isinstance(slot, bool) or not isinstance(slot, int) or slot < 0
+        ):
+            raise PagesetError(f"The grid slot for {label!r} must be a non-negative integer.")
+        symbol = item.get("symbol", True)
+        if not isinstance(symbol, bool):
+            raise PagesetError(f"The symbol setting for {label!r} must be true or false.")
         normalized.append({"label": label, "message": message,
                            "border_color": border, "slot": slot,
-                           "symbol": item.get("symbol", True) is not False})
+                           "symbol": symbol})
     return normalized
 
 
@@ -87,8 +141,9 @@ def _parent_layout(
         )
     grid_prefix = f"{grid[0]},{grid[1]},"
     matching = [
-        l for l in layouts
-        if (l["PageLayoutSetting"] or "").startswith(grid_prefix)
+        layout_row
+        for layout_row in layouts
+        if (layout_row["PageLayoutSetting"] or "").startswith(grid_prefix)
     ]
     if matching:
         return matching[0]
@@ -106,21 +161,20 @@ def _free_slot(
     conn: sqlite3.Connection, layout: sqlite3.Row
 ) -> Tuple[int, int]:
     """First empty ``(col, row)`` cell in *layout*, row-major order."""
-    from . import schema
-
     cols, rows = schema.parse_grid(layout["PageLayoutSetting"])
     used = set()
     for row in conn.execute(
-        "SELECT GridPosition FROM ElementPlacement WHERE PageLayoutId = ?",
+        "SELECT GridPosition, GridSpan FROM ElementPlacement "
+        "WHERE PageLayoutId = ? AND Visible = 1",
         (layout["Id"],),
     ):
-        pos = row["GridPosition"]
-        if pos and "," in pos:
-            try:
-                c, r = (int(n) for n in pos.split(",", 1))
-                used.add((c, r))
-            except ValueError:
-                continue
+        col, grid_row = schema.parse_grid_position(row["GridPosition"])
+        col_span, row_span = schema.parse_grid_span(row["GridSpan"])
+        used.update(
+            (x, y)
+            for x in range(col, col + col_span)
+            for y in range(grid_row, grid_row + row_span)
+        )
     for index in range(cols * rows):
         slot = (index % cols, index // cols)
         if slot not in used:
@@ -214,10 +268,8 @@ def add_category_page(
     ``{page_id, page_unique_id, button_ids, buttons, nav_button_id, grid}``.
     """
     conn = pageset.conn
-    title = (title or "").strip()
+    title = _normalize_title(title)
     items = _normalize_items(items)
-    if not title:
-        raise PagesetError("The new page needs a title.")
     if not items:
         raise PagesetError("Cannot create a page with no words.")
 
@@ -228,25 +280,36 @@ def add_category_page(
             f"({cols * rows} cells). Split them across two pages."
         )
 
-    parent_page = None
-    if parent_page_id is not None:
-        parent_page = conn.execute(
-            "SELECT * FROM Page WHERE Id = ?", (parent_page_id,)
-        ).fetchone()
-        if parent_page is None:
-            raise PagesetError(f"Parent page Id {parent_page_id} not found.")
-
-    template_page = templates.find_template_page(conn)
-    speak_chain = templates.find_speak_chain(conn)
-    nav_chain = templates.find_nav_chain(conn) if parent_page is not None else None
-
-    now = net_ticks_now()
-    page_uuid = str(uuid.uuid4())
-    sync_hash = _random_sync_hash()
-
-    if not conn.in_transaction:
+    owns_transaction = not conn.in_transaction
+    savepoint = f"tdsnap_add_{uuid.uuid4().hex}"
+    if owns_transaction:
         conn.execute("BEGIN IMMEDIATE")
+    else:
+        conn.execute(f"SAVEPOINT {savepoint}")
     try:
+        parent_page = None
+        if parent_page_id is not None:
+            parent_page = conn.execute(
+                "SELECT * FROM Page WHERE Id = ? AND PageType = 1", (parent_page_id,)
+            ).fetchone()
+            if parent_page is None:
+                raise PagesetError(
+                    f"Vocabulary parent page Id {parent_page_id} not found."
+                )
+        if conn.execute(
+            "SELECT 1 FROM Page WHERE PageType = 1 AND Title = ? COLLATE NOCASE "
+            "LIMIT 1",
+            (title,),
+        ).fetchone():
+            raise PagesetError(f"A vocabulary page named {title!r} already exists.")
+
+        template_page = templates.find_template_page(conn)
+        speak_chain = templates.find_speak_chain(conn)
+        nav_chain = templates.find_nav_chain(conn) if parent_page is not None else None
+        now = net_ticks_now()
+        page_uuid = str(uuid.uuid4())
+        sync_hash = _random_sync_hash()
+
         page_overrides = {
             "UniqueId": page_uuid,
             "Title": title,
@@ -339,9 +402,16 @@ def add_category_page(
 
         conn.execute("UPDATE Synchronization SET PageSetTimestamp = ?", (now,))
         conn.execute("UPDATE PageSetProperties SET Timestamp = ?", (now,))
-        conn.commit()
-    except Exception:
-        conn.rollback()
+        if owns_transaction:
+            conn.commit()
+        else:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+    except BaseException:
+        if owns_transaction:
+            conn.rollback()
+        else:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
         raise
 
     return {
