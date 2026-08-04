@@ -40,8 +40,9 @@ the explicit administrator fallback for Grid 3.
 - Suggests AAC-friendly placement and optional words or phrases with local AI.
 - Verifies the completed edit and reports anything that still needs review.
 
-The guided setup can keep explanations visible for a new user or switch to a
-compact workspace for someone already familiar with the editor.
+If something goes wrong, **Copy a support report** in the footer collects the
+versions and capability flags a bug report needs. It never includes page names,
+button labels, or file names, so it is safe to paste in full.
 
 ## Private by design
 

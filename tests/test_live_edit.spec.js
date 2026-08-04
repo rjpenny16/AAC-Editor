@@ -1037,6 +1037,126 @@ for (const viewport of [
   });
 }
 
+test('leaving with planned buttons asks first', async ({ page }) => {
+  await mockTD(page);
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await expect(page.locator('.chip')).toHaveCount(1);
+
+  let asked = false;
+  page.on('dialog', (dialog) => {
+    asked = dialog.type() === 'beforeunload';
+    return dialog.dismiss();
+  });
+  await page.close({ runBeforeUnload: true });
+  await expect.poll(() => asked).toBe(true);
+});
+
+test('leaving with nothing planned does not ask', async ({ page }) => {
+  await mockTD(page);
+  await existingItems(page);
+
+  let asked = false;
+  page.on('dialog', (dialog) => {
+    asked = true;
+    return dialog.dismiss();
+  });
+  await page.close({ runBeforeUnload: true });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  expect(asked).toBe(false);
+});
+
+test('leaving after a successful edit does not ask, but composing again does', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/tdsnap/edit-plan', (route) => fulfillJson(route, {
+    ok: true, added: 1, checks: [{ name: 'TD Snap saved the change', ok: true }],
+  }));
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await page.locator('#build-btn').click();
+  await page.locator('#confirm-update-btn').click();
+  await expect(page.locator('#success-state')).toBeVisible();
+
+  // The words stay in state after a successful edit; they are in the page set
+  // now, so leaving is safe and must not prompt.
+  expect(await page.evaluate(() => hasUnsavedWork())).toBe(false);
+
+  // Starting another round makes new work unsaved again.
+  await page.locator('#another-btn').click();
+  await expect(page.locator('#wizard-items')).toBeVisible();
+  await page.locator('#word-input').fill('banana');
+  await page.locator('#word-add-btn').click();
+  expect(await page.evaluate(() => hasUnsavedWork())).toBe(true);
+});
+
+test('an unexpected failure is surfaced instead of failing silently', async ({ page }) => {
+  await mockTD(page);
+  await openEditor(page);
+  await expect(page.locator('#app-error')).toBeHidden();
+
+  await page.evaluate(() => {
+    // An unhandled rejection is the shape most of the app's async work takes.
+    Promise.reject(new Error('simulated failure'));
+  });
+
+  await expect(page.locator('#app-error')).toBeVisible();
+  await expect(page.locator('#app-error-text')).toHaveText('simulated failure');
+  await page.locator('#app-error-dismiss').click();
+  await expect(page.locator('#app-error')).toBeHidden();
+});
+
+test('the support report is shown before it is copied, and carries no page content', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/diagnostics', (route) => fulfillJson(route, {
+    ok: true,
+    report: {},
+    text: 'AAC Editor support report\n\n[app]\n  version: 2.2.0\n',
+  }));
+  await openEditor(page);
+
+  await page.locator('#support-report-btn').click();
+  await expect(page.locator('#support-dialog')).toBeVisible();
+  const report = await page.locator('#support-report-text').textContent();
+  expect(report).toContain('AAC Editor support report');
+  // 'Eating' is the mocked open page; the report must not name it.
+  expect(report).not.toContain('Eating');
+});
+
+test('recent errors travel with the support report', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/diagnostics', (route) => fulfillJson(route, {
+    ok: true,
+    report: {},
+    text: 'AAC Editor support report\n',
+  }));
+  await openEditor(page);
+  await page.evaluate(() => {
+    Promise.reject(new Error('simulated failure'));
+  });
+  await expect(page.locator('#app-error')).toBeVisible();
+
+  await page.locator('#app-error-report').click();
+  await expect(page.locator('#support-report-text')).toContainText('recent app errors');
+  await expect(page.locator('#support-report-text')).toContainText('simulated failure');
+});
+
+test('support dialog has no serious or critical accessibility violations', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/diagnostics', (route) => fulfillJson(route, {
+    ok: true, report: {}, text: 'AAC Editor support report\n',
+  }));
+  await openEditor(page);
+  await page.locator('#support-report-btn').click();
+  await expect(page.locator('#support-dialog')).toBeVisible();
+
+  const results = await new AxeBuilder({ page }).analyze();
+  const blocking = results.violations
+    .filter((violation) => ['serious', 'critical'].includes(violation.impact));
+  expect(blocking).toEqual([]);
+});
+
 test('real TD Snap edit is explicit opt-in', async ({ page }) => {
   test.skip(
     process.env.TDSNAP_LIVE_E2E !== '1',

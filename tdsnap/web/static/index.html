@@ -26,6 +26,17 @@
   <span id="app-activity-text">Working…</span>
 </div>
 
+<div id="app-error" class="alert app-error" role="alert" tabindex="-1" hidden>
+  <strong>Something in the app stopped working</strong>
+  <p id="app-error-text"></p>
+  <p class="field-hint">Your buttons are still here. Finish what you were doing if you can, or
+    reload the app — and send the report below if it keeps happening.</p>
+  <div class="app-error-actions">
+    <button type="button" id="app-error-report" class="btn btn-secondary btn-compact">Copy a support report</button>
+    <button type="button" id="app-error-dismiss" class="btn btn-ghost btn-compact">Dismiss</button>
+  </div>
+</div>
+
 <main class="shell">
   <section class="wizard-progress" aria-label="Task progress">
     <strong id="wizard-progress-label">Setup</strong>
@@ -408,8 +419,25 @@
 
 <footer class="foot">
   <p>Page-set content stays on this computer.</p>
-  <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
+  <div class="foot-actions">
+    <button type="button" id="support-report-btn" class="text-button">Copy a support report</button>
+    <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
+  </div>
 </footer>
+
+<dialog id="support-dialog" class="chip-dialog support-dialog" aria-labelledby="support-dialog-title">
+  <form method="dialog">
+    <h2 id="support-dialog-title">Support report</h2>
+    <p class="field-hint">Paste this into a bug report. It describes this computer and the
+      apps AAC Editor can see — no page names, button labels, or file names are included.</p>
+    <pre id="support-report-text" class="support-report" tabindex="0">Collecting…</pre>
+    <p id="support-copy-status" class="status-line" role="status" aria-live="polite"></p>
+    <div class="dialog-actions">
+      <button type="button" id="support-copy" class="btn btn-primary">Copy to clipboard</button>
+      <button type="submit" class="btn btn-ghost" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
 
 <section id="quit-screen" class="wizard-card quit-screen" aria-live="polite" hidden>
   <h2>The app has stopped</h2>

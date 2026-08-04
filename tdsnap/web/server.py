@@ -32,7 +32,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 from .. import __version__, builder, grid3, live, schema, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
-from . import grounding, localai, ollama, prompts
+from . import diagnostics, grounding, localai, ollama, prompts
 
 APP_ID = "aac-editor"
 DEFAULT_PORT = 8765
@@ -421,6 +421,18 @@ def config():
         {"ok": True, "token": API_TOKEN, "native": _runtime["native"],
          "elevated": grid3.is_elevated(), "version": __version__}
     )
+
+
+@app.get("/api/diagnostics")
+def diagnostics_report():
+    """Environment facts for a bug report — never page-set content.
+
+    Probing TD Snap and Grid 3 walks their accessibility trees, so this takes
+    the same lock every other live call does.
+    """
+    with _LIVE_LOCK:
+        data = diagnostics.report(_runtime["native"])
+    return jsonify({"ok": True, "report": data, "text": diagnostics.as_text(data)})
 
 
 @app.post("/api/quit")

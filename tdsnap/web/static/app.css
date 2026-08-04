@@ -627,7 +627,38 @@ summary {
   font-size: 0.875rem;
 }
 .foot p { margin: 0; }
+.foot-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
 .quit-screen { margin: 2rem auto; }
+
+/* Unexpected JavaScript failures. Fixed to the viewport so the message is
+   visible wherever the user is in the wizard when something breaks. */
+.app-error {
+  position: fixed;
+  z-index: 60;
+  inset-inline: 1rem;
+  bottom: 1rem;
+  margin-inline: auto;
+  max-width: 32rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.app-error p { margin: 0.4rem 0 0; }
+.app-error-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 0.85rem; }
+
+.support-dialog { width: min(44rem, calc(100% - 2rem)); }
+.support-report {
+  margin: 0.85rem 0 0;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface-soft);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 @media (max-width: 40rem) {
   .provider-list { grid-template-columns: 1fr; }

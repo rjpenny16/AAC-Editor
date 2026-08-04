@@ -61,6 +61,7 @@ const state = {
   sessionId: null,
   filename: "",
   edits: 0,
+  applied: false, // has the current word list already been written to the page set?
   native: false, // running inside the app's own window (pywebview)?
   elevated: false,
   apiToken: "",
@@ -70,6 +71,15 @@ const state = {
 let liveMonitor = null;
 let liveSyncing = false;
 const API_TIMEOUT_MS = 10_000;
+
+/* Set while the user is deliberately leaving, so the unsaved-work guard
+   doesn't nag on the way out of a quit they just confirmed. */
+let leavingIntentionally = false;
+
+/* The last few unexpected failures, appended to the support report. Bounded
+   so a repeating error can't grow without limit. */
+const recentErrors = [];
+const MAX_RECENT_ERRORS = 5;
 
 /* ---------- helpers ---------- */
 
@@ -2230,6 +2240,7 @@ const CHECK_SVG =
 function renderResult(title, data, operation = state.operation, parentTitle = titleOf(state.parentId)) {
   $("review-state").hidden = true;
   $("success-state").hidden = false;
+  state.applied = true;
   $("result-eyebrow").textContent = "Complete";
   const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
   $("result-heading").textContent = `Done — ${product} was updated`;
@@ -2310,6 +2321,7 @@ $("file-save-btn").addEventListener("click", async (event) => {
 
 $("another-btn").addEventListener("click", async () => {
   state.words = [];
+  state.applied = false;
   state.parentId = state.currentPage;
   state.parentFree = 1;
   state.parentTouched = false;
@@ -2380,14 +2392,18 @@ function resetConnection() {
   clearInterval(liveMonitor);
   const sessionId = state.sessionId;
   if (sessionId) {
+    // A failure here leaks the session's temp directory until the 24-hour
+    // sweep. Not worth interrupting the user for, but worth recording so a
+    // support report shows it.
     void api(`/api/pageset/${encodeURIComponent(sessionId)}/close`, { method: "POST" })
-      .catch(() => {});
+      .catch((error) => recordError("session-close", error.message));
   }
   state.mode = "live";
   state.connected = false;
   state.sessionId = null;
   state.filename = "";
   state.words = [];
+  state.applied = false;
   state.parentId = null;
   state.parentFree = null;
   state.availableSlots = null;
@@ -2416,7 +2432,11 @@ $("file-badge").addEventListener("click", resetConnection);
 /* ---------- quit (browser mode) ---------- */
 
 $("quit-btn").addEventListener("click", async () => {
-  if (!window.confirm("Quit AAC Editor?")) return;
+  const warning = hasUnsavedWork()
+    ? "Quit AAC Editor? The buttons you have planned but not yet added will be lost."
+    : "Quit AAC Editor?";
+  if (!window.confirm(warning)) return;
+  leavingIntentionally = true;
   setBusy($("quit-btn"), true, "Closing…");
   setActivity("Closing the local editor…");
   try {
@@ -2429,6 +2449,103 @@ $("quit-btn").addEventListener("click", async () => {
   document.querySelector("main").hidden = true;
   document.querySelector("footer").hidden = true;
   $("quit-screen").hidden = false;
+});
+
+/* ---------- unsaved work, unexpected errors, support report ---------- */
+
+/* Composing a page is the one thing the app holds that nothing else has a
+   copy of: it lives in state.words until an edit is applied. A reload would
+   drop it silently, so ask first.
+
+   state.words survives a successful edit — it is only cleared when the user
+   starts another one — so state.applied, not emptiness, is what says the work
+   is safely in the page set. */
+function hasUnsavedWork() {
+  return !state.applied && Boolean(state.words.length || state.pendingEdit);
+}
+
+window.addEventListener("beforeunload", (event) => {
+  if (leavingIntentionally || !hasUnsavedWork()) return;
+  // Browsers show their own wording; returnValue just opts into the prompt.
+  event.preventDefault();
+  event.returnValue = "";
+  return "";
+});
+
+function recordError(source, detail) {
+  const entry = `${new Date().toISOString()} · ${source}: ${detail}`;
+  recentErrors.push(entry);
+  if (recentErrors.length > MAX_RECENT_ERRORS) recentErrors.shift();
+}
+
+/* An uncaught exception used to leave the wizard frozen and completely
+   silent. Say so instead: the work is still in memory, and the support
+   report is one click away. */
+function showAppError(source, detail) {
+  recordError(source, detail);
+  const banner = $("app-error");
+  $("app-error-text").textContent = detail;
+  const wasHidden = banner.hidden;
+  banner.hidden = false;
+  if (wasHidden) banner.focus();
+}
+
+window.addEventListener("error", (event) => {
+  const detail = event.error?.message || event.message || "Unknown error";
+  showAppError("error", detail);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  const detail = reason?.message || String(reason || "Unknown error");
+  showAppError("unhandledrejection", detail);
+});
+
+$("app-error-dismiss").addEventListener("click", () => {
+  $("app-error").hidden = true;
+});
+
+async function showSupportReport() {
+  const dialog = $("support-dialog");
+  const output = $("support-report-text");
+  const status = $("support-copy-status");
+  status.textContent = "";
+  status.className = "status-line";
+  output.textContent = "Collecting…";
+  dialog.showModal();
+  let text;
+  try {
+    ({ text } = await api("/api/diagnostics"));
+  } catch (error) {
+    // The report is most valuable when the app is unwell, so a failed
+    // collection still has to produce something pasteable.
+    text = `AAC Editor support report\n\n[app]\n  collection_failed: ${error.message}`;
+  }
+  if (recentErrors.length) {
+    text += `\n\n[recent app errors]\n${recentErrors.map((line) => `  ${line}`).join("\n")}`;
+  }
+  output.textContent = text;
+}
+
+$("support-report-btn").addEventListener("click", showSupportReport);
+$("app-error-report").addEventListener("click", showSupportReport);
+
+$("support-copy").addEventListener("click", async () => {
+  const status = $("support-copy-status");
+  try {
+    await navigator.clipboard.writeText($("support-report-text").textContent);
+    status.textContent = "Copied. Paste it into your bug report.";
+    status.className = "status-line success";
+  } catch {
+    // Clipboard access can be refused; the text is selectable either way.
+    const range = document.createRange();
+    range.selectNodeContents($("support-report-text"));
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    status.textContent = "Couldn’t copy automatically — the report is selected, so press Ctrl+C.";
+    status.className = "status-line error";
+  }
 });
 
 /* ---------- init ---------- */
