@@ -66,4 +66,4 @@ const state = {
   leaving: false,
 };
 
-export { state, FUNCTIONS, TOPIC_FUNCTIONS, API_TIMEOUT_MS };
+export { API_TIMEOUT_MS, FUNCTIONS, TOPIC_FUNCTIONS, state };
