@@ -416,6 +416,10 @@ async function syncLivePreview() {
   // Only mirror TD Snap while editing an existing page. In new-page mode the
   // builder owns the grid, parent, and word layout — following the live page
   // would overwrite the design (e.g. collapse a topic page onto a smaller grid).
+  // A hidden tab cannot show the result, and this fires every 750 ms for the
+  // whole session — no reason to keep walking TD Snap's accessibility tree
+  // while nobody is looking at it.
+  if (document.hidden) return;
   if (liveSyncing || state.targetLoading || state.mode !== "live" ||
       state.operation !== "existing" || $("step-build").hidden) return;
   liveSyncing = true;

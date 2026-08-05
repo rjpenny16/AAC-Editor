@@ -88,6 +88,67 @@ async function newItems(page, title = 'Snacks') {
   await expect(page.locator('#wizard-items')).toBeVisible();
 }
 
+async function blockingViolations(page) {
+  const results = await new AxeBuilder({ page }).analyze();
+  return results.violations
+    .filter((violation) => ['serious', 'critical'].includes(violation.impact))
+    .map(({ id, impact, help, nodes }) => ({ id, impact, help, targets: nodes.map((n) => n.target) }));
+}
+
+// Only the connect screen used to be scanned, which left the screens where the
+// real work happens — and the modal with the destructive button — unchecked.
+test.describe('accessibility past the first screen', () => {
+  test('the word list and its chip editor are clean', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    expect(await blockingViolations(page)).toEqual([]);
+
+    await page.locator('#chipbox .chip').first().click();
+    await expect(page.locator('#chip-editor')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test('the placement editor is clean', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    await page.locator('.more-options > summary').click();
+    await page.locator('#layout-options-btn').click();
+    await expect(page.locator('#wizard-layout')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test('the review screen is clean', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#step-result')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
+test.describe('dark theme', () => {
+  test.use({ colorScheme: 'dark' });
+
+  test('has no contrast failures', async ({ page }) => {
+    // Light sensitivity is common in this user population, therapy rooms are
+    // dim, and TD Snap itself ships dark themes.
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+
+    const results = await new AxeBuilder({ page }).withTags(['wcag2aa', 'wcag21aa']).analyze();
+    const contrast = results.violations.filter((violation) => violation.id === 'color-contrast');
+    expect(contrast.map((v) => v.nodes.map((n) => n.failureSummary))).toEqual([]);
+  });
+});
+
 test('initial wizard has no serious or critical accessibility violations', async ({ page }) => {
   await openEditor(page);
   const results = await new AxeBuilder({ page }).analyze();
