@@ -22,12 +22,31 @@ file starts tracking changes in detail from 2.2.0 onward.
 - **Unexpected-error banner.** `window.onerror` and `unhandledrejection`
   handlers now surface failures that previously left the wizard frozen and
   completely silent, and offer the support report in place.
+- **Dark theme.** Follows `prefers-color-scheme`, with a contrast check in CI.
+  Light sensitivity is common among AAC users and therapy rooms are often dim.
+- **Frontend quality gates.** ESLint, Stylelint, Prettier config, and
+  `.editorconfig`, plus JavaScript unit tests (`node --test`) — none of which
+  existed for 2474 lines of JS and 700 of CSS. Wired into the browser CI job.
+- **Per-module coverage floors** (`scripts/check_coverage.py`) on the code that
+  writes to a page set. A single global percentage is bounded by the
+  Windows-only automation modules and says little about the write path.
 
 ### Changed
 
 - **A reload no longer silently discards planned buttons.** The browser now
   warns before leaving while words or phrases are composed but not yet applied.
   Quitting deliberately says what will be lost instead of asking twice.
+- **The frontend is now native ES modules** — `state`, `dom`, `api`, `phrases`,
+  `a11y`, `wizard`, `connect`, `chips`, `parents`, `preview`, `ai`, `review`,
+  `result`, `support` — instead of one 2591-line file with a single mutable
+  object every function could reach. No bundler and no build step were added.
+- Ruff now runs `I`, `B`, `SIM`, `RUF`, `S`, and `UP` rather than its minimal
+  default set. Deliberate patterns carry per-line suppressions with reasons.
+- Accessibility scanning covers the word list, chip editor, placement editor,
+  review screen, and support dialog, not just the connect screen.
+- The live TD Snap poll pauses while the tab is hidden.
+- The AI smoke test skips on a CDN transport failure rather than failing the
+  build, while still failing on a genuine download defect.
 - Failing to close an uploaded page-set session is recorded for the support
   report rather than being discarded; it previously leaked the session's temp
   directory until the 24-hour sweep with no trace.
@@ -43,6 +62,11 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Fixed
 
+- **`clone_row` could have copied NULL into every column of every cloned row.**
+  `sqlite3.Row` implements the sequence protocol, so `name in row` searches
+  values rather than column names — an edit that succeeds, validates, and only
+  shows as damage when TD Snap opens the page set. Caught by the expanded lint
+  rules, and now covered by direct tests.
 - The application logo was a 1254×1254 PNG rendered at 32 px. Resized to 128 px,
   preserving the design. With the orphaned images above, this removes about
   1.7 MB from every download.
