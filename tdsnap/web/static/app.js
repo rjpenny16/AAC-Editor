@@ -1,80 +1,18 @@
-/* AAC Editor frontend. Plain JS, no build step.
-   One-question wizard with a separate, explicit review and confirmation. */
+/* AAC Editor frontend: wiring plus the workflow not yet extracted.
+   Native ES modules, no bundler and no build step. */
 
-"use strict";
+import { state, FUNCTIONS, TOPIC_FUNCTIONS } from "./state.js";
+import { $, setBusy, setActivity, setPreviewBusy, appendNamedList } from "./dom.js";
+import { configReady, api } from "./api.js";
+import { inferPhraseFunction } from "./phrases.js";
+import { wireRadioGroups } from "./a11y.js";
 
-const $ = (id) => document.getElementById(id);
 
-/* Communicative-function color coding used on topic pages: each function
-   gets the same colored border TD Snap renders around the button. */
-const FUNCTIONS = {
-  question: { name: "Question", color: "#1E88E5" },
-  comment: { name: "Comment", color: "#F57C00" },
-  positive: { name: "Positive", color: "#43A047" },
-  negative: { name: "Negative", color: "#E53935" },
-  personal: { name: "Personal", color: "#8E24AA" },
-};
 
-const QUESTION_PHRASE = /^(who|what|when|where|why|how|which|whose|is|are|am|was|were|do|does|did|can|could|would|will|should|may|have|has)\b/i;
-const NEGATIVE_PHRASE = /\b(no|not|never|don't|doesn't|didn't|can't|cannot|won't|hate|dislike|stop|bad|boring|scary|wrong|upset|angry|sad|too loud|too busy)\b/i;
-const OWNERSHIP_PHRASE = /\b(my|mine|our|ours)\b/i;
-const PERSONAL_PHRASE = /^i\s+(am|was|have|had|went|saw|read|live|remember|tried|visited|played|watched|ate)\b/i;
-const POSITIVE_PHRASE = /\b(love|like|enjoy|favorite|great|good|fun|awesome|amazing|excited|happy|delicious|beautiful|cool|yes|agree|please|want|best)\b/i;
-
-function inferPhraseFunction(label, suggested = "") {
-  const text = String(label || "").trim().replaceAll("’", "'");
-  if (text.endsWith("?") || QUESTION_PHRASE.test(text)) return "question";
-  if (NEGATIVE_PHRASE.test(text)) return "negative";
-  if (OWNERSHIP_PHRASE.test(text)) return "personal";
-  if (POSITIVE_PHRASE.test(text)) return "positive";
-  if (PERSONAL_PHRASE.test(text)) return "personal";
-  return suggested && suggested !== "question" ? suggested : "comment";
-}
-
-const requestedProvider = new URLSearchParams(window.location.search).get("provider");
-const state = {
-  provider: ["tdsnap", "grid3", "file"].includes(requestedProvider)
-    ? requestedProvider : "tdsnap",
-  mode: "live",
-  connected: false,
-  operation: "existing", // "existing" | "new"
-  wizardStep: "connect",
-  pendingEdit: null,
-  placementAdjusted: false,
-  grid: { cols: 8, rows: 5 },
-  existingButtons: [],
-  availableSlots: null,
-  grid3Cells: [],
-  previewAspect: null,
-  gridBackground: null,
-  layoutFingerprint: null,
-  pages: [],
-  words: [], // [{label, message|null, fn|"", slot, symbol}]
-  pageStyle: "words", // "words" | "topic"
-  activeFn: "",
-  autoTopicRows: false,
-  parentId: null,
-  parentFree: null,
-  parentTouched: false,
-  recommendedParent: null,
-  currentPage: "",
-  sessionId: null,
-  filename: "",
-  edits: 0,
-  applied: false, // has the current word list already been written to the page set?
-  native: false, // running inside the app's own window (pywebview)?
-  elevated: false,
-  apiToken: "",
-  targetLoading: false,
-};
 
 let liveMonitor = null;
 let liveSyncing = false;
-const API_TIMEOUT_MS = 10_000;
 
-/* Set while the user is deliberately leaving, so the unsaved-work guard
-   doesn't nag on the way out of a quit they just confirmed. */
-let leavingIntentionally = false;
 
 /* The last few unexpected failures, appended to the support report. Bounded
    so a repeating error can't grow without limit. */
@@ -85,62 +23,6 @@ const MAX_RECENT_ERRORS = 5;
 
 /* Fetch the per-run token (and native flag) once. Every POST awaits this so
    a fast first click can't race the config request and get a 403. */
-async function fetchWithDeadline(path, options = {}, timeoutMs = API_TIMEOUT_MS) {
-  if (!timeoutMs) return fetch(path, options);
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-  if (options.signal) {
-    if (options.signal.aborted) controller.abort();
-    else options.signal.addEventListener("abort", () => controller.abort(), { once: true });
-  }
-  try {
-    return await fetch(path, { ...options, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
-const configReady = (async () => {
-  try {
-    const response = await fetchWithDeadline("/api/config");
-    const config = await response.json();
-    state.apiToken = config.token || "";
-    state.native = Boolean(config.native);
-    state.elevated = Boolean(config.elevated);
-  } catch {
-    /* keep going; the server will reject protected POSTs if it is older */
-  }
-})();
-
-async function api(path, options, timeoutMs = API_TIMEOUT_MS) {
-  await configReady;
-  options = options || {};
-  options.headers = Object.assign(
-    {},
-    options.headers,
-    state.apiToken ? { "X-TDSnap-Token": state.apiToken } : {}
-  );
-  const response = await fetchWithDeadline(path, options, timeoutMs).catch((error) => {
-    if (error.name === "AbortError") {
-      const timeout = new Error("The request took too long and was stopped.");
-      timeout.name = "TimeoutError";
-      throw timeout;
-    }
-    throw new Error("The local editor isn’t responding. Try again; if it continues, restart the app.");
-  });
-  let data = null;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error(`Unexpected response from the app (${response.status}).`);
-  }
-  if (!response.ok || data.ok === false) {
-    const error = new Error(data.error || `Request failed (${response.status}).`);
-    error.problems = data.problems || null;
-    throw error;
-  }
-  return data;
-}
 
 function headingFor(step) {
   return {
@@ -205,34 +87,6 @@ function show(step, focus = true) {
   }
 }
 
-function setBusy(button, busy, busyLabel = "") {
-  const label = button.querySelector(".btn-label") || button;
-  if (busy && !label.dataset.idleLabel) label.dataset.idleLabel = label.textContent;
-  if (busy && busyLabel) label.textContent = busyLabel;
-  if (!busy && label.dataset.idleLabel) {
-    label.textContent = label.dataset.idleLabel;
-    delete label.dataset.idleLabel;
-  }
-  button.classList.toggle("loading", busy);
-  button.disabled = busy;
-  button.setAttribute("aria-busy", String(busy));
-}
-
-function setActivity(message = "") {
-  const activity = $("app-activity");
-  $("app-activity-text").textContent = message;
-  activity.hidden = !message;
-  document.body.setAttribute("aria-busy", String(Boolean(message)));
-}
-
-function setPreviewBusy(busy, message = "Loading the page layout…") {
-  const workspace = document.querySelector(".preview-frame");
-  const loading = $("preview-loading");
-  workspace.classList.toggle("is-loading", busy);
-  workspace.setAttribute("aria-busy", String(busy));
-  $("preview-loading-text").textContent = message;
-  loading.hidden = !busy;
-}
 
 /* ---------- step 1: choose and connect to an AAC app ---------- */
 
@@ -882,7 +736,6 @@ document.querySelectorAll("#fn-palette .fn-pill").forEach((pill) =>
 const chipbox = $("chipbox");
 const wordInput = $("word-input");
 
-const TOPIC_FUNCTIONS = ["question", "comment", "positive", "negative", "personal"];
 
 function updateTopicInputRow() {
   if (!chipbox || !wordInput) return;
@@ -1026,18 +879,6 @@ function addWords(raw, forcedFn = null) {
   renderWords();
 }
 
-function appendNamedList(container, lead, items) {
-  const text = document.createElement("span");
-  text.textContent = lead;
-  container.append(text);
-  const list = document.createElement("ul");
-  items.forEach((label) => {
-    const item = document.createElement("li");
-    item.textContent = label;
-    list.append(item);
-  });
-  container.append(list);
-}
 
 function renderSkippedFeedback(duplicates, overflow) {
   const note = $("chip-note");
@@ -2436,7 +2277,7 @@ $("quit-btn").addEventListener("click", async () => {
     ? "Quit AAC Editor? The buttons you have planned but not yet added will be lost."
     : "Quit AAC Editor?";
   if (!window.confirm(warning)) return;
-  leavingIntentionally = true;
+  state.leaving = true;
   setBusy($("quit-btn"), true, "Closing…");
   setActivity("Closing the local editor…");
   try {
@@ -2465,7 +2306,7 @@ function hasUnsavedWork() {
 }
 
 window.addEventListener("beforeunload", (event) => {
-  if (leavingIntentionally || !hasUnsavedWork()) return;
+  if (state.leaving || !hasUnsavedWork()) return;
   // Browsers show their own wording; returnValue just opts into the prompt.
   event.preventDefault();
   event.returnValue = "";
@@ -2557,35 +2398,9 @@ configReady.then(() => {
   selectProvider(state.provider);
 });
 
-/* Radio-style button groups use one tab stop and arrow-key navigation. */
-document.querySelectorAll('[role="radiogroup"]').forEach((group) => {
-  const selected = group.querySelector('[role="radio"][aria-checked="true"]');
-  group.querySelectorAll('[role="radio"]').forEach((radio) => {
-    radio.tabIndex = radio === selected ? 0 : -1;
-  });
-  group.addEventListener("keydown", (event) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
-      return;
-    }
-    const radios = [...group.querySelectorAll('[role="radio"]')].filter(
-      (radio) => !radio.disabled
-    );
-    if (!radios.length) return;
-    event.preventDefault();
-    const current = Math.max(0, radios.indexOf(document.activeElement));
-    let next = current;
-    if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = radios.length - 1;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-      next = (current - 1 + radios.length) % radios.length;
-    } else {
-      next = (current + 1) % radios.length;
-    }
-    radios[next].click();
-    radios[next].focus();
-  });
-});
 
 renderWords();
 renderPreview();
 show("load");
+
+wireRadioGroups();

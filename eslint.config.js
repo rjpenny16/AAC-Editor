@@ -14,7 +14,7 @@ module.exports = [
     files: ["tdsnap/web/static/**/*.js"],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: "script",
+      sourceType: "module",
       globals: globals.browser,
     },
     rules: {
@@ -33,7 +33,7 @@ module.exports = [
     // Playwright specs and Node-side config run under CommonJS. Specs also
     // reference browser globals inside page.evaluate() callbacks, which are
     // serialized and run in the page rather than in Node.
-    files: ["tests/**/*.spec.js", "*.config.js", "eslint.config.js"],
+    files: ["tests/**/*.spec.js", "tests/js/**/*.test.js", "*.config.js", "eslint.config.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "commonjs",

@@ -123,5 +123,8 @@ jobs:
       - name: Lint the frontend
         run: npm run lint
 
+      - name: Run frontend unit tests
+        run: npm run test:unit
+
       - name: Run browser tests
         run: npm run test:e2e
