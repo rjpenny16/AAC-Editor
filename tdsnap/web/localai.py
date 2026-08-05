@@ -11,12 +11,14 @@ Override with the TDSNAP_MODEL_URL / TDSNAP_MODEL_FILE environment variables
 (useful for smaller models on weak machines, or for tests).
 """
 
+import contextlib
 import hashlib
 import os
 import shutil
 import threading
 import urllib.request
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Optional
 
 from . import prompts
 
@@ -103,9 +105,8 @@ def _validation_error(path: Optional[str] = None) -> Optional[str]:
                         digest.update(chunk)
         except OSError as exc:
             error = f"The downloaded model could not be read: {exc}"
-        if digest and error is None:
-            if digest.hexdigest().lower() != MODEL_SHA256.lower():
-                error = "The downloaded model failed its integrity check."
+        if digest and error is None and digest.hexdigest().lower() != MODEL_SHA256.lower():
+            error = "The downloaded model failed its integrity check."
     with _validation_lock:
         _validation.update(signature=signature, error=error)
     return error
@@ -151,12 +152,14 @@ def start_download() -> dict:
     def work():
         part = model_path() + ".part"
         try:
-            request = urllib.request.Request(
+            # pinned model URL; the download is size- and SHA-256-verified
+            request = urllib.request.Request(  # noqa: S310
                 MODEL_URL, headers={"User-Agent": "tdsnap-editor"}
             )
             digest = hashlib.sha256()
             first_bytes = b""
-            with urllib.request.urlopen(request, timeout=60) as response:
+            # pinned model URL; the download is size- and SHA-256-verified
+            with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
                 total = int(response.headers.get("Content-Length") or 0)
                 with _download_lock:
                     _download["total"] = total
@@ -184,10 +187,8 @@ def start_download() -> dict:
             with _download_lock:
                 _download["status"] = "ready"
         except Exception as exc:  # network errors surface in the UI
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(part)
-            except OSError:
-                pass
             with _download_lock:
                 _download.update(status="error", error=str(exc))
 
@@ -220,7 +221,7 @@ def generate_words(
     function: Optional[str] = None,
     existing: Optional[Sequence[str]] = None,
     reference: Optional[str] = None,
-) -> Tuple[List, Optional[str]]:
+) -> tuple[list, Optional[str]]:
     """Return ``(words, error)`` from the built-in model."""
     if not engine_available():
         return [], "The built-in AI engine isn't available in this install."

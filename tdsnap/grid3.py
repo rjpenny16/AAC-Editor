@@ -13,19 +13,19 @@ import os
 import sys
 import time
 import zipfile
+from collections.abc import Iterable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Optional
 from xml.etree import ElementTree as ET
 
 from .builder import _normalize_items
 from .errors import PagesetError
 from .live import _desktop_unlocked, _focus_window
 
-
 GRID3_EXE = os.path.join(
-    os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+    # the real Windows variable is spelled ProgramFiles(x86)
+    os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),  # noqa: SIM112
     "Smartbox", "Grid 3", "Grid 3.exe",
 )
 GRID3_ROOT = os.path.join(
@@ -43,9 +43,9 @@ _MAX_XML_BYTES = 16 * 1024 * 1024
 @dataclass(frozen=True)
 class Grid3Style:
     key: str = "Default"
-    background: Optional[str] = None
-    border: Optional[str] = None
-    foreground: Optional[str] = None
+    background: str | None = None
+    border: str | None = None
+    foreground: str | None = None
 
 
 @dataclass(frozen=True)
@@ -55,12 +55,12 @@ class Grid3Cell:
     column_span: int
     row_span: int
     label: str
-    image: Optional[str]
+    image: str | None
     commands: tuple[str, ...]
-    content_type: Optional[str]
-    content_subtype: Optional[str]
+    content_type: str | None
+    content_subtype: str | None
     style: Grid3Style
-    message: Optional[str]
+    message: str | None
     safe_blank: bool
 
     @property
@@ -76,12 +76,12 @@ class Grid3Grid:
     column_sizes: tuple[str, ...]
     row_sizes: tuple[str, ...]
     cells: tuple[Grid3Cell, ...]
-    background: Optional[str]
+    background: str | None
 
-    def cell_at(self, x: int, y: int) -> Optional[Grid3Cell]:
+    def cell_at(self, x: int, y: int) -> Grid3Cell | None:
         return next((cell for cell in self.cells if cell.x == x and cell.y == y), None)
 
-    def cell_for_slot(self, slot: int) -> Optional[Grid3Cell]:
+    def cell_for_slot(self, slot: int) -> Grid3Cell | None:
         # Frontend slots remain row-major; the internal stable slot above is not
         # sent over the API.
         x, y = slot % self.cols, slot // self.cols
@@ -172,7 +172,7 @@ def _walk(root, max_depth=10):
         if depth < max_depth:
             try:
                 queue.extend((child, depth + 1) for child in control.GetChildren())
-            except Exception:
+            except Exception:  # noqa: S112 - a control that vanished mid-walk is expected; skip it
                 continue
 
 
@@ -214,7 +214,7 @@ def _window(auto):
     raise PagesetError("Open Grid 3 to the grid you want to edit, then reconnect.")
 
 
-def _process_path(process_id: int) -> Optional[str]:
+def _process_path(process_id: int) -> str | None:
     if sys.platform != "win32" or not process_id:
         return None
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -249,7 +249,7 @@ def _verify_process(window) -> None:
         raise PagesetError("The detected window is not the installed Grid 3 application.")
 
 
-def _file_version(path: str) -> Optional[str]:
+def _file_version(path: str) -> str | None:
     if sys.platform != "win32":
         return None
     try:
@@ -331,7 +331,7 @@ def _active_from_title(title: str) -> ActiveGrid3:
     )
 
 
-def _text(node: Optional[ET.Element], path: str) -> Optional[str]:
+def _text(node: ET.Element | None, path: str) -> str | None:
     if node is None:
         return None
     found = node.find(path)
@@ -341,7 +341,7 @@ def _text(node: Optional[ET.Element], path: str) -> Optional[str]:
     return value or None
 
 
-def _rich_text(node: Optional[ET.Element], path: str = ".") -> Optional[str]:
+def _rich_text(node: ET.Element | None, path: str = ".") -> str | None:
     """Read Grid's formatted p/s/r text without XML indentation whitespace."""
     if node is None:
         return None
@@ -356,7 +356,7 @@ def _rich_text(node: Optional[ET.Element], path: str = ".") -> Optional[str]:
     return value or None
 
 
-def _css_color(value: Optional[str]) -> Optional[str]:
+def _css_color(value: str | None) -> str | None:
     if not value:
         return None
     value = value.strip()
@@ -407,7 +407,8 @@ class Grid3Package:
 
     def _xml(self, name: str) -> ET.Element:
         try:
-            return ET.fromstring(self._bytes(name))
+            # parses the user's own local grid set, bounded by _MAX_XML_BYTES
+            return ET.fromstring(self._bytes(name))  # noqa: S314
         except KeyError as exc:
             raise PagesetError(f"Grid set is missing {name!r}.") from exc
         except ET.ParseError as exc:
@@ -425,10 +426,10 @@ class Grid3Package:
         except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
             raise PagesetError(f"Grid set XML entry {name!r} is not readable.") from exc
 
-    def _styles(self) -> Dict[str, Grid3Style]:
+    def _styles(self) -> dict[str, Grid3Style]:
         root = self._xml("Settings0/Styles/styles.xml")
         raw = {node.get("Key", ""): node for node in root.findall("./Styles/Style")}
-        cache: Dict[str, Grid3Style] = {}
+        cache: dict[str, Grid3Style] = {}
 
         def resolve(key: str, seen=()) -> Grid3Style:
             if key in cache:
@@ -439,7 +440,7 @@ class Grid3Package:
             if node is None:
                 return Grid3Style(key=key)
             parent_key = _text(node, "BasedOnStyle")
-            parent = resolve(parent_key, seen + (key,)) if parent_key else Grid3Style()
+            parent = resolve(parent_key, (*seen, key)) if parent_key else Grid3Style()
             style = Grid3Style(
                 key=key,
                 background=_css_color(_text(node, "BackColour")) or parent.background,
@@ -560,7 +561,8 @@ def _rect(control):
         rect = control.BoundingRectangle
         if rect.right > rect.left and rect.bottom > rect.top:
             return rect
-    except Exception:
+    # best-effort geometry probe; failure falls back to stored layout
+    except Exception:  # noqa: S110
         pass
     return None
 
@@ -577,8 +579,8 @@ def _clusters(values: Iterable[int], tolerance=6) -> tuple[int, ...]:
 
 def _live_cells(
     window, grid: Grid3Grid,
-    expected: Optional[Dict[tuple[int, int], _LiveCell]] = None,
-) -> Dict[tuple[int, int], _LiveCell]:
+    expected: dict[tuple[int, int], _LiveCell] | None = None,
+) -> dict[tuple[int, int], _LiveCell]:
     """Return accessible controls mapped to XML coordinates, or fail closed."""
     if expected is not None:
         by_rect = {}
@@ -602,7 +604,7 @@ def _live_cells(
     for container, _ in _walk(window, 9):
         try:
             children = [child for child in container.GetChildren() if _rect(child)]
-        except Exception:
+        except Exception:  # noqa: S112 - a control that vanished mid-walk is expected; skip it
             continue
         children = [
             child for child in children
@@ -627,7 +629,7 @@ def _live_cells(
             "AAC Editor will not use unverified screen coordinates."
         )
     _, children, xs, ys = best
-    mapped: Dict[tuple[int, int], _LiveCell] = {}
+    mapped: dict[tuple[int, int], _LiveCell] = {}
     for child in children:
         rect = _rect(child)
         x = min(range(len(xs)), key=lambda index: abs(xs[index] - rect.left))
@@ -709,7 +711,7 @@ def status(include_layout=False) -> dict:
 def inspect_page() -> dict:
     if not is_elevated():
         raise PagesetError("Restart AAC Editor with administrator access for Grid 3.")
-    auto, window, active, grid = _active_context()
+    _auto, window, active, grid = _active_context()
     live = _live_cells(window, grid)
     live_rects = [item.rect for item in live.values()]
     grid_left = min(rect.left for rect in live_rects)

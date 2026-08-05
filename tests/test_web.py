@@ -7,20 +7,19 @@ No real HTTP server or pywebview is needed — Flask's test client and the
 plain helper functions are enough.
 """
 
+import ctypes
 import io
 import os
 import socket
 import sqlite3
 import time
-import ctypes
 import webbrowser
 from types import SimpleNamespace
 
 import pytest
 
 from tdsnap.errors import PagesetError
-from tdsnap.web import server
-from tdsnap.web import desktop
+from tdsnap.web import desktop, server
 
 
 @pytest.fixture

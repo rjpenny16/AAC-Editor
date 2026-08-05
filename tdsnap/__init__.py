@@ -8,18 +8,18 @@ SyncData), and validates the database after every write. The user's original
 file is never modified; edits land in a separate ``*.edited`` copy.
 """
 
+from .builder import add_category_page
 from .errors import PagesetError
 from .pageset import Pageset
-from .builder import add_category_page
-from .validate import validate_pageset, validate_new_page
+from .validate import validate_new_page, validate_pageset
 
 __version__ = "2.2.0"
 
 __all__ = [
-    "PagesetError",
     "Pageset",
-    "add_category_page",
-    "validate_pageset",
-    "validate_new_page",
+    "PagesetError",
     "__version__",
+    "add_category_page",
+    "validate_new_page",
+    "validate_pageset",
 ]

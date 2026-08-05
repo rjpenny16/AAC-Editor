@@ -6,10 +6,10 @@ as `python -m tdsnap.web --window`, with multiprocessing guarded for
 frozen Windows builds (llama-cpp workers would otherwise respawn the GUI).
 """
 
+import argparse
 import multiprocessing
 import os
 import sys
-import argparse
 
 
 def main() -> None:
@@ -17,9 +17,11 @@ def main() -> None:
     # Windowed builds have no console; writes to a None stream would crash
     # Flask/llama.cpp logging.
     if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w")
+        # handle must outlive this scope; it backs stdout for the frozen app
+        sys.stdout = open(os.devnull, "w")  # noqa: SIM115
     if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w")
+        # handle must outlive this scope; it backs stderr for the frozen app
+        sys.stderr = open(os.devnull, "w")  # noqa: SIM115
     from tdsnap.web.desktop import run_desktop
 
     parser = argparse.ArgumentParser(add_help=False)

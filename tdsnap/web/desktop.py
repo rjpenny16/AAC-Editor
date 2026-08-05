@@ -14,6 +14,8 @@ If pywebview isn't installed or the OS webview runtime is missing, this
 falls back to the classic browser mode so the app still works.
 """
 
+import contextlib
+import ctypes
 import json
 import os
 import subprocess
@@ -21,7 +23,6 @@ import sys
 import threading
 import time
 import urllib.request
-import ctypes
 from ctypes import wintypes
 from typing import Optional
 
@@ -119,8 +120,9 @@ def _focus_running(port: int) -> None:
     """A copy is already running: raise its window, or open a tab to it."""
     url = f"http://127.0.0.1:{port}"
     try:
-        with urllib.request.urlopen(
-            urllib.request.Request(f"{url}/api/focus", method="POST"), timeout=2
+        with urllib.request.urlopen(  # noqa: S310 - fixed http://127.0.0.1:<port> instance check
+            # fixed http://127.0.0.1:<port> instance check
+            urllib.request.Request(f"{url}/api/focus", method="POST"), timeout=2  # noqa: S310
         ) as response:
             focused = json.load(response).get("focused", False)
     except Exception:
@@ -132,18 +134,14 @@ def _focus_running(port: int) -> None:
 
 def _bring_to_front(window) -> None:
     """Best-effort raise/unminimize across pywebview backends."""
-    try:
+    with contextlib.suppress(Exception):
         window.restore()
-    except Exception:
-        pass
-    try:
+    with contextlib.suppress(Exception):
         window.show()
-    except Exception:
-        pass
     try:
         window.on_top = True
         window.on_top = False
-    except Exception:
+    except Exception:  # noqa: S110 - best-effort window cleanup during shutdown
         pass
 
 

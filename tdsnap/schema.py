@@ -6,7 +6,6 @@ hardcodes column lists: callers ask the live database what exists and adapt.
 """
 
 import sqlite3
-from typing import Dict, List, Tuple
 
 from .errors import PagesetError
 
@@ -51,7 +50,7 @@ REQUIRED_PRIMARY_KEYS = {
 }
 
 
-def tables(conn: sqlite3.Connection) -> List[str]:
+def tables(conn: sqlite3.Connection) -> list[str]:
     """Return all table names in the database."""
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
@@ -59,7 +58,7 @@ def tables(conn: sqlite3.Connection) -> List[str]:
     return [row[0] for row in rows]
 
 
-def columns(conn: sqlite3.Connection, table: str) -> List[str]:
+def columns(conn: sqlite3.Connection, table: str) -> list[str]:
     """Return the column names of *table* in declaration order."""
     if not table.replace("_", "").isalnum():
         raise PagesetError(f"Suspicious table name: {table!r}")
@@ -113,7 +112,8 @@ def require_supported_schema(conn: sqlite3.Connection) -> None:
                 f"Table {table} has primary key {actual!r}; expected {expected!r}."
             )
     for table in ("PageSetProperties", "Synchronization"):
-        count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+        # identifiers come from PRAGMA table_info, never user input
+        count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]  # noqa: S608
         if count != 1:
             raise PagesetError(f"Table {table} has {count} rows; expected exactly 1.")
 
@@ -129,45 +129,46 @@ def schema_version(conn: sqlite3.Connection) -> str:
     return (row[0] if row and row[0] else "") or ""
 
 
-def table_counts(conn: sqlite3.Connection) -> Dict[str, int]:
+def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     """Return ``{table: row count}`` for every table (used by ``inspect``)."""
     return {
-        t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+        # identifiers come from PRAGMA table_info, never user input
+        t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]  # noqa: S608
         for t in tables(conn)
     }
 
 
-def parse_grid(value: str) -> Tuple[int, int]:
+def parse_grid(value: str) -> tuple[int, int]:
     """Parse a ``"cols,rows"`` string (also the prefix of PageLayoutSetting)."""
     try:
         parts = value.split(",")
         cols, rows = int(parts[0]), int(parts[1])
-    except (AttributeError, IndexError, ValueError):
-        raise PagesetError(f"Unparseable grid dimension: {value!r}")
+    except (AttributeError, IndexError, ValueError) as exc:
+        raise PagesetError(f"Unparseable grid dimension: {value!r}") from exc
     if cols < 1 or rows < 1:
         raise PagesetError(f"Grid dimension out of range: {value!r}")
     return cols, rows
 
 
-def parse_grid_position(value: str) -> Tuple[int, int]:
+def parse_grid_position(value: str) -> tuple[int, int]:
     """Parse a zero-based ``"col,row"`` placement coordinate."""
     try:
         parts = value.split(",")
         col, row = int(parts[0]), int(parts[1])
-    except (AttributeError, IndexError, ValueError):
-        raise PagesetError(f"Unparseable grid position: {value!r}")
+    except (AttributeError, IndexError, ValueError) as exc:
+        raise PagesetError(f"Unparseable grid position: {value!r}") from exc
     if len(parts) != 2 or col < 0 or row < 0:
         raise PagesetError(f"Grid position out of range: {value!r}")
     return col, row
 
 
-def parse_grid_span(value: str) -> Tuple[int, int]:
+def parse_grid_span(value: str) -> tuple[int, int]:
     """Parse an exact, positive ``"column_span,row_span"`` value."""
     try:
         parts = value.split(",")
         col_span, row_span = int(parts[0]), int(parts[1])
-    except (AttributeError, IndexError, ValueError):
-        raise PagesetError(f"Unparseable grid span: {value!r}")
+    except (AttributeError, IndexError, ValueError) as exc:
+        raise PagesetError(f"Unparseable grid span: {value!r}") from exc
     if len(parts) != 2 or col_span < 1 or row_span < 1:
         raise PagesetError(f"Grid span out of range: {value!r}")
     return col_span, row_span

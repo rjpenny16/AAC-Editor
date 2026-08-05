@@ -10,7 +10,7 @@
 import argparse
 import sqlite3
 import sys
-from typing import List, Optional
+from typing import Optional
 
 from . import builder, schema, validate
 from .errors import PagesetError
@@ -163,7 +163,7 @@ def _cmd_inspect(args) -> int:
     return 0
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="tdsnap",
         description="Safely edit a TD Snap page set (.sps/.spb). The original "

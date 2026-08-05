@@ -14,6 +14,7 @@ session corrupted, and the download endpoint always serves the last good
 state.
 """
 
+import contextlib
 import json
 import os
 import secrets
@@ -145,10 +146,8 @@ def _session_storage_bytes(exclude: str = "") -> int:
                 continue
             for root, _, files in os.walk(entry.path):
                 for name in files:
-                    try:
+                    with contextlib.suppress(OSError):
                         total += os.path.getsize(os.path.join(root, name))
-                    except OSError:
-                        pass
     return total
 
 
@@ -177,10 +176,8 @@ def _session_dir(session_id: str) -> str:
         release_session(session_id)
         raise PagesetError("Unknown or expired session; re-upload the file.")
     session["last_access"] = time.time()
-    try:
+    with contextlib.suppress(OSError):
         os.utime(session["dir"], None)
-    except OSError:
-        pass
     return session["dir"]
 
 
@@ -351,10 +348,8 @@ def save_current_as(session_id: str, dest_path: str) -> None:
         shutil.copyfile(current, temporary)
         os.replace(temporary, dest_path)
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.remove(temporary)
-        except OSError:
-            pass
 
 
 @app.errorhandler(PagesetError)
@@ -849,8 +844,10 @@ def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
     if instance_running(port):
         url = f"http://127.0.0.1:{port}"
         try:
-            with urllib.request.urlopen(
-                urllib.request.Request(f"{url}/api/focus", method="POST"),
+            # fixed http://127.0.0.1:<port> instance check
+            with urllib.request.urlopen(  # noqa: S310
+                # fixed http://127.0.0.1:<port> instance check
+                urllib.request.Request(f"{url}/api/focus", method="POST"),  # noqa: S310
                 timeout=2,
             ) as response:
                 focused = json.load(response).get("focused", False)

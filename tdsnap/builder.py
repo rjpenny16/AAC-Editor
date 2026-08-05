@@ -17,7 +17,7 @@ prints them for debugging.
 import random
 import sqlite3
 import uuid
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 from . import schema, templates
 from .colors import BORDER_THICKNESS, argb_from_hex
@@ -25,7 +25,7 @@ from .errors import PagesetError
 from .pageset import Pageset
 from .ticks import net_ticks_now
 
-Item = Union[str, Dict[str, object]]
+Item = Union[str, dict[str, object]]
 MAX_TITLE_LENGTH = 60
 MAX_LABEL_LENGTH = 60
 MAX_MESSAGE_LENGTH = 200
@@ -44,7 +44,7 @@ def _normalize_title(title: str) -> str:
     return title
 
 
-def _normalize_items(items: List[Item]) -> List[Dict[str, object]]:
+def _normalize_items(items: list[Item]) -> list[dict[str, object]]:
     """Accept plain labels or richer button dictionaries.
 
     ``message`` (optional) is the full sentence to speak while ``label`` stays
@@ -124,7 +124,7 @@ def _random_sync_hash() -> int:
 
 
 def _parent_layout(
-    conn: sqlite3.Connection, parent_page_id: int, grid: Tuple[int, int]
+    conn: sqlite3.Connection, parent_page_id: int, grid: tuple[int, int]
 ) -> sqlite3.Row:
     """Return the PageLayout of *parent_page_id* to place the nav button in.
 
@@ -159,7 +159,7 @@ def _parent_layout(
 
 def _free_slot(
     conn: sqlite3.Connection, layout: sqlite3.Row
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """First empty ``(col, row)`` cell in *layout*, row-major order."""
     cols, rows = schema.parse_grid(layout["PageLayoutSetting"])
     used = set()
@@ -187,17 +187,17 @@ def _free_slot(
 
 def _insert_cell(
     conn: sqlite3.Connection,
-    chain: Dict[str, sqlite3.Row],
+    chain: dict[str, sqlite3.Row],
     *,
     page_id: int,
     layout_id: int,
-    slot: Tuple[int, int],
+    slot: tuple[int, int],
     label: str,
     command_flags: int,
     serialized_commands: str,
     message: Optional[str] = None,
     border_color: Optional[int] = None,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Clone one full cell (reference, button, commands, placement).
 
     Returns ``(button_id, reference_id)``. ``message`` makes it a phrase
@@ -256,9 +256,9 @@ def _insert_cell(
 def add_category_page(
     pageset: Pageset,
     title: str,
-    items: List[Item],
+    items: list[Item],
     parent_page_id: Optional[int],
-) -> Dict[str, object]:
+) -> dict[str, object]:
     """Add a page of speaking buttons and (optionally) link it from a parent.
 
     Items may be plain labels or ``{label, message, border_color}`` dicts

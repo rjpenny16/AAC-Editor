@@ -17,7 +17,7 @@ import statistics
 import sys
 import time
 from collections import deque
-from contextlib import closing
+from contextlib import closing, suppress
 from ctypes import wintypes
 from dataclasses import dataclass
 
@@ -245,7 +245,7 @@ def launch():
     if status(False).get("running"):
         return {"launched": False}
     try:
-        os.startfile(TD_SNAP_APP)
+        os.startfile(TD_SNAP_APP)  # noqa: S606 - launches the fixed TD Snap package AppUserModelId
     except OSError as exc:
         raise PagesetError(
             "TD Snap could not be opened automatically. Open it from Start, then try again."
@@ -257,8 +257,8 @@ def _focus_window(window):
     """Keep raw grid clicks from landing on a window covering TD Snap."""
     try:
         window.SetFocus()
-    except (AttributeError, OSError):
-        raise PagesetError("TD Snap could not be brought to the foreground.")
+    except (AttributeError, OSError) as exc:
+        raise PagesetError("TD Snap could not be brought to the foreground.") from exc
     time.sleep(0.2)
 
 
@@ -424,7 +424,7 @@ def _page_route(start, target, visible_labels=()):
             destination = edge[1]
             if destination.casefold() not in seen:
                 seen.add(destination.casefold())
-                queue.append((destination, route + [edge]))
+                queue.append((destination, [*route, edge]))
     return []
 
 
@@ -775,7 +775,9 @@ def _empty_cell(window, grid, allow_scroll=True):
         before = fingerprint
         _activate(max(down, key=lambda c: c.BoundingRectangle.left))
         _wait_for(
-            lambda: _fingerprint(_page_group(window)) != before,
+            # Bound now, not on call: _wait_for consumes this within the same
+            # iteration today, but binding keeps it correct if that changes.
+            lambda before=before: _fingerprint(_page_group(window)) != before,
             "TD Snap did not move to the next grid screen.",
         )
 
@@ -887,7 +889,8 @@ def _navigate_to_parent(window, parent):
         else:
             _open_page_button(window, button, destination)
         _wait_for(
-            lambda: _page_name(window).casefold() == destination.casefold(),
+            lambda destination=destination: _page_name(window).casefold()
+            == destination.casefold(),
             f"TD Snap did not open {destination!r} while navigating to {parent!r}.",
             timeout=10,
         )
@@ -949,12 +952,14 @@ def _click_empty_icon(auto, window, cell, x_offset, y_offset, expected_text):
             f"TD Snap did not show {expected_text!r}.",
             timeout=2,
         )
-    except PagesetError:
+    except PagesetError as exc:
         if _fingerprint(_page_group(window)) != before:
             _undo_if_needed(window)
         else:
             auto.SendKeys("{Esc}", waitTime=0.1)
-        raise PagesetError("TD Snap's empty-cell action could not be selected.")
+        raise PagesetError(
+            "TD Snap's empty-cell action could not be selected."
+        ) from exc
 
 
 def _set_value(control, value):
@@ -1040,10 +1045,8 @@ def _restore_page_fingerprint(window, baseline, maximum):
 
 def _rollback_new_page(auto, window, parent, parent_baseline, page_baseline, maximum):
     """Restore both a provisional child page and its parent link."""
-    try:
+    with suppress(AttributeError, OSError):
         auto.SendKeys("{Esc}", waitTime=0.05)
-    except (AttributeError, OSError):
-        pass
     current = _page_name(window)
     if current.casefold() != parent.casefold():
         if page_baseline is not None:
@@ -1348,8 +1351,8 @@ def status(include_pages=True):
         pages = _active_pageset_pages(result["page"], _named_page_buttons(group))
         if not pages:
             detected = _named_page_buttons(group) if group.Name == DEFAULT_PARENT else []
-            pages = [DEFAULT_PARENT] + detected
-        result["pages"] = list(dict.fromkeys([result["page"]] + pages))
+            pages = [DEFAULT_PARENT, *detected]
+        result["pages"] = list(dict.fromkeys([result["page"], *pages]))
     return result
 
 

@@ -8,7 +8,8 @@ human-readable message instead of raising.
 
 import ipaddress
 import json
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Optional
 from urllib.error import URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -62,10 +63,11 @@ def normalize_host(host: str) -> str:
     return urlunsplit((parts.scheme.lower(), netloc, "", "", ""))
 
 
-def _request_bytes(request: Request, timeout: int) -> Tuple[int, bytes]:
+def _request_bytes(request: Request, timeout: int) -> tuple[int, bytes]:
     """Open a bounded HTTP response and return its status and body."""
     try:
-        response = urlopen(request, timeout=timeout)
+        # host passed through normalize_host: loopback http(s) only
+        response = urlopen(request, timeout=timeout)  # noqa: S310
     except URLError as exc:
         # HTTPError has a status-bearing response body; other URL errors do not.
         if not hasattr(exc, "code"):
@@ -81,11 +83,11 @@ def _request_bytes(request: Request, timeout: int) -> Tuple[int, bytes]:
     return int(status_code), raw
 
 
-def status(host: str = DEFAULT_HOST) -> Dict:
+def status(host: str = DEFAULT_HOST) -> dict:
     """Return ``{reachable, models, message}`` for the Ollama server at *host*."""
     try:
         host = normalize_host(host)
-        request = Request(
+        request = Request(  # noqa: S310 - host passed through normalize_host: loopback http(s) only
             f"{host}/api/tags",
             headers={"Accept": "application/json"},
         )
@@ -128,7 +130,7 @@ def generate_words(
     function: Optional[str] = None,
     existing: Optional[Sequence[str]] = None,
     reference: Optional[str] = None,
-) -> Tuple[List, Optional[str]]:
+) -> tuple[list, Optional[str]]:
     """Return ``(words, error)``; on any failure words is [] and error explains."""
     try:
         host = normalize_host(host)
@@ -147,7 +149,7 @@ def generate_words(
         "options": {"num_predict": 800, "temperature": 0.7},
     }
     try:
-        request = Request(
+        request = Request(  # noqa: S310 - host passed through normalize_host: loopback http(s) only
             f"{host}/api/chat",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json", "Accept": "application/json"},

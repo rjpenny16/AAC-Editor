@@ -1,13 +1,12 @@
-from pathlib import Path
 import os
 import subprocess
 import sys
+from pathlib import Path
 from xml.etree import ElementTree
 
 import pytest
 
 import tdsnap
-
 
 ROOT = Path(__file__).parents[1]
 

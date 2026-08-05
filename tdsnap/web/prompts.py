@@ -2,7 +2,8 @@
 
 import json
 import re
-from typing import Optional, Sequence
+from collections.abc import Sequence
+from typing import Optional
 
 WORDS_SCHEMA = {
     "type": "object",
@@ -106,7 +107,8 @@ _POSITIVE = re.compile(
 
 def phrase_function(label: str, suggested: Optional[str] = None) -> str:
     """Correct high-confidence phrase types before TD Snap row placement."""
-    text = str(label or "").strip().replace("’", "'")
+    # curly apostrophe is normalized deliberately
+    text = str(label or "").strip().replace("’", "'")  # noqa: RUF001
     if text.endswith("?") or _QUESTION.search(text):
         return "question"
     if _NEGATIVE.search(text):
