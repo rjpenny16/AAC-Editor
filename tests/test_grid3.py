@@ -1,13 +1,12 @@
+import ctypes
 import os
 import zipfile
-import ctypes
 from types import SimpleNamespace
 
 import pytest
 
 from tdsnap import grid3
 from tdsnap.errors import PagesetError
-
 
 SETTINGS = """<Settings><GridSetFileFormatVersion>{version}</GridSetFileFormatVersion></Settings>"""
 STYLES = """<StyleData><Styles>

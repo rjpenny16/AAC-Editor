@@ -19,8 +19,8 @@ def argb_from_hex(value: str) -> int:
         raise PagesetError(f"Not a color: {value!r} (expected #RRGGBB)")
     try:
         number = int(text, 16)
-    except ValueError:
-        raise PagesetError(f"Not a color: {value!r} (expected #RRGGBB)")
+    except ValueError as exc:
+        raise PagesetError(f"Not a color: {value!r} (expected #RRGGBB)") from exc
     return number - 0x1_0000_0000 if number > 0x7FFF_FFFF else number
 
 

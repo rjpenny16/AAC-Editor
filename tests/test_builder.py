@@ -273,9 +273,10 @@ def test_title_and_item_collection_boundaries(seeded_pageset):
 
 
 def test_argb_encoding():
+    import pytest as _pytest
+
     from tdsnap.colors import argb_from_hex, hex_from_argb
     from tdsnap.errors import PagesetError
-    import pytest as _pytest
 
     # The gray border TD Snap uses on its own toolbar buttons.
     assert argb_from_hex("#888A8C") == -7828852

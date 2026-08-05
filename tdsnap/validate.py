@@ -14,13 +14,12 @@ Three layers:
 import hashlib
 import sqlite3
 import uuid as uuid_module
-from typing import Dict, List
 
 from . import schema
 from .errors import PagesetError
 
 
-def sqlite_checks(conn: sqlite3.Connection) -> List[str]:
+def sqlite_checks(conn: sqlite3.Connection) -> list[str]:
     """Return problems reported by SQLite itself (empty list = clean)."""
     problems = []
     result = conn.execute("PRAGMA integrity_check").fetchone()[0]
@@ -35,7 +34,7 @@ def sqlite_checks(conn: sqlite3.Connection) -> List[str]:
     return problems
 
 
-def validate_pageset(conn: sqlite3.Connection) -> Dict[str, List[str]]:
+def validate_pageset(conn: sqlite3.Connection) -> dict[str, list[str]]:
     """Scan any page set for the linkage rules TD Snap relies on.
 
     Returns ``{"problems": [...], "warnings": [...]}``. Problems are states no
@@ -45,7 +44,7 @@ def validate_pageset(conn: sqlite3.Connection) -> Dict[str, List[str]]:
     if it *adds* warnings. Read-only, safe on a user's untouched export.
     """
     problems = list(sqlite_checks(conn))
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     def count(query: str, *params) -> int:
         return conn.execute(query, params).fetchone()[0]
@@ -143,7 +142,7 @@ def validate_pageset(conn: sqlite3.Connection) -> Dict[str, List[str]]:
         "JOIN PageLayout pl ON pl.Id = ep.PageLayoutId WHERE ep.Visible = 1"
     ):
         try:
-            cols, rows = schema.parse_grid(row["PageLayoutSetting"])
+            _cols, _rows = schema.parse_grid(row["PageLayoutSetting"])
             col, grid_row = schema.parse_grid_position(row["GridPosition"])
             col_span, row_span = schema.parse_grid_span(row["GridSpan"])
         except PagesetError:
@@ -188,7 +187,7 @@ def validate_pageset(conn: sqlite3.Connection) -> Dict[str, List[str]]:
     return {"problems": problems, "warnings": warnings}
 
 
-def new_warnings(before: Dict[str, List[str]], after: Dict[str, List[str]]) -> List[str]:
+def new_warnings(before: dict[str, list[str]], after: dict[str, list[str]]) -> list[str]:
     """Warnings present after an edit that weren't there before it."""
     return [w for w in after["warnings"] if w not in before["warnings"]]
 
@@ -201,7 +200,7 @@ def _is_guid(value) -> bool:
         return False
 
 
-def validate_new_page(conn: sqlite3.Connection, report: Dict) -> List[str]:
+def validate_new_page(conn: sqlite3.Connection, report: dict) -> list[str]:
     """Check the complete chain for a page just built by ``add_category_page``."""
     problems = []
     page_uuid = report["page_unique_id"]
@@ -334,12 +333,13 @@ EXPECTED_CHANGED_TABLES = frozenset(
 )
 
 
-def table_snapshot(conn: sqlite3.Connection) -> Dict[str, Dict[str, object]]:
+def table_snapshot(conn: sqlite3.Connection) -> dict[str, dict[str, object]]:
     """Hash every table and retain keyed rows for tables the writer may touch."""
     snapshot = {}
     for table in schema.tables(conn):
         digest = hashlib.sha256()
-        cursor = conn.execute(f'SELECT * FROM "{table}" ORDER BY rowid')
+        # identifiers come from PRAGMA table_info, never user input
+        cursor = conn.execute(f'SELECT * FROM "{table}" ORDER BY rowid')  # noqa: S608
         columns = tuple(description[0] for description in cursor.description)
         key_name = (
             "name" if table == "sqlite_sequence" else
@@ -366,8 +366,8 @@ def table_snapshot(conn: sqlite3.Connection) -> Dict[str, Dict[str, object]]:
 
 
 def diff_snapshots(
-    before: Dict[str, Dict[str, object]], after: Dict[str, Dict[str, object]]
-) -> List[str]:
+    before: dict[str, dict[str, object]], after: dict[str, dict[str, object]]
+) -> list[str]:
     """Return the names of tables whose contents differ between snapshots."""
     changed = []
     for table in sorted(set(before) | set(after)):
@@ -377,8 +377,8 @@ def diff_snapshots(
 
 
 def check_roundtrip(
-    before: Dict[str, Dict[str, object]], after: Dict[str, Dict[str, object]]
-) -> List[str]:
+    before: dict[str, dict[str, object]], after: dict[str, dict[str, object]]
+) -> list[str]:
     """Reject unexpected table changes and mutations to pre-existing rows."""
     problems = []
     unexpected = [

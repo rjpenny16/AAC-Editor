@@ -51,10 +51,11 @@ jobs:
       - name: Lint
         run: ruff check tdsnap tests packaging scripts
 
-      - name: Test with coverage floor
+      - name: Test with coverage floors
         run: |
           coverage run -m pytest
           coverage report
+          python scripts/check_coverage.py
 
       - name: Audit project dependencies
         run: python -m pip_audit .
@@ -119,6 +120,12 @@ jobs:
           pip install .
           npm ci
           npx playwright install --with-deps chromium
+
+      - name: Lint the frontend
+        run: npm run lint
+
+      - name: Run frontend unit tests
+        run: npm run test:unit
 
       - name: Run browser tests
         run: npm run test:e2e

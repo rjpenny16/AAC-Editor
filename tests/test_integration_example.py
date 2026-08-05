@@ -9,12 +9,11 @@ import json
 import shutil
 
 import pytest
+from conftest import require_example
 
 from tdsnap import validate
 from tdsnap.builder import add_category_page
 from tdsnap.pageset import Pageset
-
-from conftest import require_example
 
 WORDS = [
     "Chips", "Apple", "Banana", "Crackers", "Yogurt", "Cheese",

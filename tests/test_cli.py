@@ -1,7 +1,7 @@
 """Command-line interface: the add round trip and scratch-file hygiene."""
 
-import os
 import hashlib
+import os
 import pathlib
 import sqlite3
 

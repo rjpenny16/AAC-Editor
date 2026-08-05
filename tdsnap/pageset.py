@@ -5,11 +5,12 @@ original can never be corrupted. ``save_as`` writes the finished result to a
 separate ``*.edited`` file for re-import into TD Snap.
 """
 
+import contextlib
 import os
 import shutil
 import sqlite3
 import tempfile
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from . import schema
 from .errors import PagesetError
@@ -77,10 +78,8 @@ class Pageset:
         except BaseException:
             if self.conn is not None:
                 self.conn.close()
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(working_copy)
-            except OSError:
-                pass
             raise
 
     # -- context manager -------------------------------------------------
@@ -98,10 +97,8 @@ class Pageset:
         finally:
             self.conn = None
             if self._cleanup:
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(self.working_path)
-                except OSError:
-                    pass
 
     # -- reading ----------------------------------------------------------
 
@@ -109,7 +106,7 @@ class Pageset:
     def schema_version(self) -> str:
         return schema.schema_version(self.conn)
 
-    def list_pages(self) -> List[Tuple[int, str]]:
+    def list_pages(self) -> list[tuple[int, str]]:
         """Return ``(Id, title)`` for every user-visible vocabulary page."""
         rows = self.conn.execute(
             "SELECT Id, COALESCE(NULLIF(Title, ''), 'Page ' || Id) AS DisplayName "
@@ -135,7 +132,7 @@ class Pageset:
             )
         return matches[0]
 
-    def grid_dimension(self) -> Tuple[int, int]:
+    def grid_dimension(self) -> tuple[int, int]:
         """Return the page set's ``(cols, rows)`` grid.
 
         Prefers ``PageSetProperties.GridDimension``; falls back to the most
@@ -197,8 +194,6 @@ class Pageset:
             shutil.copyfile(self.working_path, temporary)
             os.replace(temporary, dest_path)
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(temporary)
-            except OSError:
-                pass
         return dest_path

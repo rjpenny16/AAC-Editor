@@ -88,6 +88,67 @@ async function newItems(page, title = 'Snacks') {
   await expect(page.locator('#wizard-items')).toBeVisible();
 }
 
+async function blockingViolations(page) {
+  const results = await new AxeBuilder({ page }).analyze();
+  return results.violations
+    .filter((violation) => ['serious', 'critical'].includes(violation.impact))
+    .map(({ id, impact, help, nodes }) => ({ id, impact, help, targets: nodes.map((n) => n.target) }));
+}
+
+// Only the connect screen used to be scanned, which left the screens where the
+// real work happens — and the modal with the destructive button — unchecked.
+test.describe('accessibility past the first screen', () => {
+  test('the word list and its chip editor are clean', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    expect(await blockingViolations(page)).toEqual([]);
+
+    await page.locator('#chipbox .chip').first().click();
+    await expect(page.locator('#chip-editor')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test('the placement editor is clean', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    await page.locator('.more-options > summary').click();
+    await page.locator('#layout-options-btn').click();
+    await expect(page.locator('#wizard-layout')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test('the review screen is clean', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#step-result')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
+test.describe('dark theme', () => {
+  test.use({ colorScheme: 'dark' });
+
+  test('has no contrast failures', async ({ page }) => {
+    // Light sensitivity is common in this user population, therapy rooms are
+    // dim, and TD Snap itself ships dark themes.
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+
+    const results = await new AxeBuilder({ page }).withTags(['wcag2aa', 'wcag21aa']).analyze();
+    const contrast = results.violations.filter((violation) => violation.id === 'color-contrast');
+    expect(contrast.map((v) => v.nodes.map((n) => n.failureSummary))).toEqual([]);
+  });
+});
+
 test('initial wizard has no serious or critical accessibility violations', async ({ page }) => {
   await openEditor(page);
   const results = await new AxeBuilder({ page }).analyze();
@@ -1036,6 +1097,145 @@ for (const viewport of [
     }
   });
 }
+
+test('leaving with planned buttons asks first', async ({ page }) => {
+  await mockTD(page);
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await expect(page.locator('.chip')).toHaveCount(1);
+
+  let asked = false;
+  page.on('dialog', (dialog) => {
+    asked = dialog.type() === 'beforeunload';
+    return dialog.dismiss();
+  });
+  await page.close({ runBeforeUnload: true });
+  await expect.poll(() => asked).toBe(true);
+});
+
+test('leaving with nothing planned does not ask', async ({ page }) => {
+  await mockTD(page);
+  await existingItems(page);
+
+  let asked = false;
+  page.on('dialog', (dialog) => {
+    asked = true;
+    return dialog.dismiss();
+  });
+  await page.close({ runBeforeUnload: true });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  expect(asked).toBe(false);
+});
+
+async function applyOneEdit(page, word = 'apple') {
+  await page.route('**/api/tdsnap/edit-plan', (route) => fulfillJson(route, {
+    ok: true, added: 1, checks: [{ name: 'TD Snap saved the change', ok: true }],
+  }));
+  await existingItems(page);
+  await page.locator('#word-input').fill(word);
+  await page.locator('#word-add-btn').click();
+  await page.locator('#build-btn').click();
+  await page.locator('#confirm-update-btn').click();
+  await expect(page.locator('#success-state')).toBeVisible();
+}
+
+async function closeAndReportPrompt(page) {
+  let asked = false;
+  page.on('dialog', (dialog) => {
+    if (dialog.type() === 'beforeunload') asked = true;
+    return dialog.dismiss();
+  });
+  await page.close({ runBeforeUnload: true });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  return asked;
+}
+
+test('leaving after a successful edit does not ask', async ({ page }) => {
+  // The words stay in state after a successful edit; they are in the page set
+  // by then, so leaving is safe and must not prompt.
+  await mockTD(page);
+  await applyOneEdit(page);
+  expect(await closeAndReportPrompt(page)).toBe(false);
+});
+
+test('composing again after a successful edit asks', async ({ page }) => {
+  await mockTD(page);
+  await applyOneEdit(page);
+
+  await page.locator('#another-btn').click();
+  await expect(page.locator('#wizard-items')).toBeVisible();
+  await page.locator('#word-input').fill('banana');
+  await page.locator('#word-add-btn').click();
+
+  expect(await closeAndReportPrompt(page)).toBe(true);
+});
+
+test('an unexpected failure is surfaced instead of failing silently', async ({ page }) => {
+  await mockTD(page);
+  await openEditor(page);
+  await expect(page.locator('#app-error')).toBeHidden();
+
+  await page.evaluate(() => {
+    // An unhandled rejection is the shape most of the app's async work takes.
+    Promise.reject(new Error('simulated failure'));
+  });
+
+  await expect(page.locator('#app-error')).toBeVisible();
+  await expect(page.locator('#app-error-text')).toHaveText('simulated failure');
+  await page.locator('#app-error-dismiss').click();
+  await expect(page.locator('#app-error')).toBeHidden();
+});
+
+test('the support report is shown before it is copied, and carries no page content', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/diagnostics', (route) => fulfillJson(route, {
+    ok: true,
+    report: {},
+    text: 'AAC Editor support report\n\n[app]\n  version: 2.2.0\n',
+  }));
+  await openEditor(page);
+
+  await page.locator('#support-report-btn').click();
+  await expect(page.locator('#support-dialog')).toBeVisible();
+  const report = await page.locator('#support-report-text').textContent();
+  expect(report).toContain('AAC Editor support report');
+  // 'Eating' is the mocked open page; the report must not name it.
+  expect(report).not.toContain('Eating');
+});
+
+test('recent errors travel with the support report', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/diagnostics', (route) => fulfillJson(route, {
+    ok: true,
+    report: {},
+    text: 'AAC Editor support report\n',
+  }));
+  await openEditor(page);
+  await page.evaluate(() => {
+    Promise.reject(new Error('simulated failure'));
+  });
+  await expect(page.locator('#app-error')).toBeVisible();
+
+  await page.locator('#app-error-report').click();
+  await expect(page.locator('#support-report-text')).toContainText('recent app errors');
+  await expect(page.locator('#support-report-text')).toContainText('simulated failure');
+});
+
+test('support dialog has no serious or critical accessibility violations', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/diagnostics', (route) => fulfillJson(route, {
+    ok: true, report: {}, text: 'AAC Editor support report\n',
+  }));
+  await openEditor(page);
+  await page.locator('#support-report-btn').click();
+  await expect(page.locator('#support-dialog')).toBeVisible();
+
+  const results = await new AxeBuilder({ page }).analyze();
+  const blocking = results.violations
+    .filter((violation) => ['serious', 'critical'].includes(violation.impact));
+  expect(blocking).toEqual([]);
+});
 
 test('real TD Snap edit is explicit opt-in', async ({ page }) => {
   test.skip(

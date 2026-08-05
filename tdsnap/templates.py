@@ -9,7 +9,8 @@ the template.
 
 import json
 import sqlite3
-from typing import Any, Dict, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from . import schema
 from .errors import PagesetError
@@ -38,7 +39,7 @@ def clone_row(
     conn: sqlite3.Connection,
     table: str,
     template: Mapping[str, Any],
-    overrides: Dict[str, Any],
+    overrides: dict[str, Any],
 ) -> int:
     """Insert a copy of *template* into *table* and return the new row id.
 
@@ -57,21 +58,27 @@ def clone_row(
             f"Cannot set columns that don't exist on {table}: {sorted(unknown)}"
         )
 
-    values = {c: template[c] if c in template.keys() else None for c in cols}
+    # `.keys()` is load-bearing. sqlite3.Row implements the sequence protocol,
+    # so `c in template` searches the row's *values*, not its column names, and
+    # would quietly copy NULL into every column — an edit that "succeeds" and
+    # only shows up as damage when TD Snap opens the page set.
+    values = {c: template[c] if c in template.keys() else None for c in cols}  # noqa: SIM118
     values.update(overrides)
 
     placeholders = ", ".join("?" for _ in cols)
     column_list = ", ".join(f'"{c}"' for c in cols)
+    # table and column_list come from PRAGMA table_info; every value is bound
+    # as a parameter rather than interpolated.
     cursor = conn.execute(
-        f'INSERT INTO "{table}" ({column_list}) VALUES ({placeholders})',
+        f'INSERT INTO "{table}" ({column_list}) VALUES ({placeholders})',  # noqa: S608
         [values[c] for c in cols],
     )
     return cursor.lastrowid
 
 
 def filtered_overrides(
-    conn: sqlite3.Connection, table: str, desired: Dict[str, Any]
-) -> Dict[str, Any]:
+    conn: sqlite3.Connection, table: str, desired: dict[str, Any]
+) -> dict[str, Any]:
     """Drop override keys that this file's schema doesn't have.
 
     Used for nice-to-have fields (e.g. ``SymbolColorDataId`` appeared in a
@@ -104,7 +111,7 @@ def find_template_page(conn: sqlite3.Connection) -> sqlite3.Row:
 
 def _find_chain(
     conn: sqlite3.Connection, command_flags: int, needs_page_link: bool
-) -> Dict[str, sqlite3.Row]:
+) -> dict[str, sqlite3.Row]:
     """Return a real ``{button, reference}`` pair with *command_flags*."""
     link_clause = (
         "AND EXISTS (SELECT 1 FROM ButtonPageLink l WHERE l.ButtonId = b.Id) "
@@ -112,7 +119,8 @@ def _find_chain(
         else ""
     )
     row = conn.execute(
-        "SELECT b.Id AS ButtonId, er.Id AS RefId FROM Button b "
+        # link_clause is a module constant; command_flags is bound.
+        "SELECT b.Id AS ButtonId, er.Id AS RefId FROM Button b "  # noqa: S608
         "JOIN ElementReference er ON b.ElementReferenceId = er.Id "
         "JOIN CommandSequence cs ON cs.ButtonId = b.Id "
         f"WHERE b.CommandFlags = ? AND b.Label IS NOT NULL {link_clause}"
@@ -134,11 +142,11 @@ def _find_chain(
     return {"button": button, "reference": reference}
 
 
-def find_speak_chain(conn: sqlite3.Connection) -> Dict[str, sqlite3.Row]:
+def find_speak_chain(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     """A real speaking button + its ElementReference, to clone for word cells."""
     return _find_chain(conn, COMMAND_FLAGS_SPEAK, needs_page_link=False)
 
 
-def find_nav_chain(conn: sqlite3.Connection) -> Dict[str, sqlite3.Row]:
+def find_nav_chain(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     """A real page-link button + its ElementReference, to clone for nav cells."""
     return _find_chain(conn, COMMAND_FLAGS_NAVIGATE, needs_page_link=True)

@@ -16,7 +16,6 @@ lookups (privacy / fully-offline installs).
 import json
 import os
 import re
-from typing import List
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -35,11 +34,12 @@ def enabled(requested: bool = False) -> bool:
 
 def _get(params: dict) -> dict:
     params = {"format": "json", "formatversion": "2", **params}
-    request = Request(
+    request = Request(  # noqa: S310 - URL is built from the _API constant; scheme is fixed https
         f"{_API}?{urlencode(params)}",
         headers={"User-Agent": "tdsnap-editor", "Accept": "application/json"},
     )
-    with urlopen(request, timeout=_TIMEOUT) as response:
+    # URL is built from the _API constant; scheme is fixed https
+    with urlopen(request, timeout=_TIMEOUT) as response:  # noqa: S310
         raw = response.read(2_000_001)
     if len(raw) > 2_000_000:
         raise ValueError("Wikipedia response was too large.")
@@ -49,7 +49,7 @@ def _get(params: dict) -> dict:
     return data
 
 
-def _search_titles(query: str, limit: int = 3) -> List[str]:
+def _search_titles(query: str, limit: int = 3) -> list[str]:
     data = _get({
         "action": "query", "list": "search",
         "srsearch": query, "srlimit": limit,
