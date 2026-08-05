@@ -11,6 +11,7 @@ CI runs it in the release workflow and the soft-fail integration job.
 
 import importlib
 import os
+import re
 import time
 
 import pytest
@@ -18,6 +19,19 @@ import pytest
 pytestmark = pytest.mark.skipif(
     os.environ.get("TDSNAP_AI_SMOKE") != "1",
     reason="set TDSNAP_AI_SMOKE=1 to run the real-model smoke test",
+)
+
+# Fetching ~400 MB from a third-party CDN fails for reasons that say nothing
+# about this code: rate limits, 5xx, DNS, a dropped connection. Those skip.
+# Anything else — above all a failed integrity check, a wrong size, or a file
+# that is not GGUF — is a real defect in the download path and must fail.
+TRANSPORT_FAILURE = re.compile(
+    r"HTTP Error (?:429|5\d\d)"
+    r"|timed out|timeout"
+    r"|name resolution|nodename nor servname|getaddrinfo"
+    r"|[Cc]onnection (?:reset|refused|aborted)"
+    r"|Remote end closed"
+    r"|URLError",
 )
 
 
@@ -43,7 +57,12 @@ def smoke_localai(tmp_path_factory):
         if state["status"] in ("ready", "error"):
             break
         time.sleep(2)
-    assert localai.download_state()["status"] == "ready", localai.download_state()
+    final = localai.download_state()
+    if final["status"] != "ready":
+        error = str(final.get("error") or "")
+        if TRANSPORT_FAILURE.search(error):
+            pytest.skip(f"could not fetch the model from the CDN: {error}")
+        pytest.fail(f"model download failed: {final}")
     return localai
 
 

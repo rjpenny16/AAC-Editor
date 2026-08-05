@@ -283,3 +283,35 @@ def test_download_refused_when_disk_is_full(isolated_model, monkeypatch):
     assert "disk space" in state["error"]
     # Clear the sticky error so later tests see a clean slate.
     localai._download.update(status="idle", done=0, total=0, error=None)
+
+
+# --- the smoke test's transport/defect classifier -------------------------
+#
+# It decides whether a failed model download skips the build or fails it, so
+# getting it wrong either hides a real defect or makes CI flaky.
+
+@pytest.mark.parametrize("error", [
+    "HTTP Error 429: Too Many Requests",
+    "HTTP Error 503: Service Unavailable",
+    "<urlopen error [Errno -3] Temporary failure in name resolution>",
+    "The read operation timed out",
+    "[Errno 104] Connection reset by peer",
+    "Remote end closed connection without response",
+])
+def test_transport_failures_skip_the_smoke_test(error):
+    from tests.test_ai_smoke import TRANSPORT_FAILURE
+
+    assert TRANSPORT_FAILURE.search(error), f"{error!r} should skip, not fail"
+
+
+@pytest.mark.parametrize("error", [
+    "The model download failed its integrity check.",
+    "The model download has the wrong size.",
+    "The download is not a GGUF model.",
+    "HTTP Error 404: Not Found",
+    "Not enough disk space for the model.",
+])
+def test_real_defects_still_fail_the_smoke_test(error):
+    from tests.test_ai_smoke import TRANSPORT_FAILURE
+
+    assert not TRANSPORT_FAILURE.search(error), f"{error!r} must fail, not skip"

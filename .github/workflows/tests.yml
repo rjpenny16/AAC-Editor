@@ -51,10 +51,11 @@ jobs:
       - name: Lint
         run: ruff check tdsnap tests packaging scripts
 
-      - name: Test with coverage floor
+      - name: Test with coverage floors
         run: |
           coverage run -m pytest
           coverage report
+          python scripts/check_coverage.py
 
       - name: Audit project dependencies
         run: python -m pip_audit .

@@ -45,7 +45,10 @@ branch = true
 source = ["tdsnap"]
 
 [tool.coverage.report]
-fail_under = 55
+# Global floor. It is bounded by the Windows UI Automation modules, which a
+# Linux CI box cannot execute at all, so scripts/check_coverage.py enforces
+# real per-module floors on the code that writes to a page set.
+fail_under = 60
 show_missing = true
 skip_covered = true
 
