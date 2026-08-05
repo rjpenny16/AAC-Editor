@@ -120,5 +120,8 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
+      - name: Lint the frontend
+        run: npm run lint
+
       - name: Run browser tests
         run: npm run test:e2e

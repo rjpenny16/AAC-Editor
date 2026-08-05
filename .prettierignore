@@ -1,0 +1,7 @@
+node_modules
+test-results
+playwright-report
+package-lock.json
+# Formatting is applied to the frontend as it is split into modules.
+CHANGELOG.md
+ROADMAP.md

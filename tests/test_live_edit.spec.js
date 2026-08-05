@@ -1067,28 +1067,47 @@ test('leaving with nothing planned does not ask', async ({ page }) => {
   expect(asked).toBe(false);
 });
 
-test('leaving after a successful edit does not ask, but composing again does', async ({ page }) => {
-  await mockTD(page);
+async function applyOneEdit(page, word = 'apple') {
   await page.route('**/api/tdsnap/edit-plan', (route) => fulfillJson(route, {
     ok: true, added: 1, checks: [{ name: 'TD Snap saved the change', ok: true }],
   }));
   await existingItems(page);
-  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-input').fill(word);
   await page.locator('#word-add-btn').click();
   await page.locator('#build-btn').click();
   await page.locator('#confirm-update-btn').click();
   await expect(page.locator('#success-state')).toBeVisible();
+}
 
+async function closeAndReportPrompt(page) {
+  let asked = false;
+  page.on('dialog', (dialog) => {
+    if (dialog.type() === 'beforeunload') asked = true;
+    return dialog.dismiss();
+  });
+  await page.close({ runBeforeUnload: true });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  return asked;
+}
+
+test('leaving after a successful edit does not ask', async ({ page }) => {
   // The words stay in state after a successful edit; they are in the page set
-  // now, so leaving is safe and must not prompt.
-  expect(await page.evaluate(() => hasUnsavedWork())).toBe(false);
+  // by then, so leaving is safe and must not prompt.
+  await mockTD(page);
+  await applyOneEdit(page);
+  expect(await closeAndReportPrompt(page)).toBe(false);
+});
 
-  // Starting another round makes new work unsaved again.
+test('composing again after a successful edit asks', async ({ page }) => {
+  await mockTD(page);
+  await applyOneEdit(page);
+
   await page.locator('#another-btn').click();
   await expect(page.locator('#wizard-items')).toBeVisible();
   await page.locator('#word-input').fill('banana');
   await page.locator('#word-add-btn').click();
-  expect(await page.evaluate(() => hasUnsavedWork())).toBe(true);
+
+  expect(await closeAndReportPrompt(page)).toBe(true);
 });
 
 test('an unexpected failure is surfaced instead of failing silently', async ({ page }) => {
