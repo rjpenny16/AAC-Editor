@@ -8,11 +8,26 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 let inferPhraseFunction;
 
 test.before(async () => {
   ({ inferPhraseFunction } = await import("../../tdsnap/web/static/phrases.js"));
+});
+
+test("golden cases agree with tdsnap/web/prompts.py's phrase_function", () => {
+  const fixturePath = path.join(__dirname, "..", "fixtures", "phrase_function_cases.json");
+  const cases = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+  assert.ok(cases.length > 0, "the shared fixture must not be empty");
+  for (const { label, suggested, expected } of cases) {
+    assert.equal(
+      inferPhraseFunction(label, suggested),
+      expected,
+      `inferPhraseFunction(${JSON.stringify(label)}, ${JSON.stringify(suggested)})`
+    );
+  }
 });
 
 test("a trailing question mark wins", () => {

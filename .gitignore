@@ -59,10 +59,12 @@ td_snap_coordinates.json
 *.spb
 *.sps
 
-# Test fixtures: only the schema snapshot (text) is committed;
-# real page sets are proprietary Tobii content and must never be.
+# Test fixtures: only the schema snapshot (text) and the golden phrase-
+# classifier cases are committed; real page sets are proprietary Tobii
+# content and must never be.
 tests/fixtures/*
 !tests/fixtures/*.sql
+!tests/fixtures/phrase_function_cases.json
 
 # Web app working copies
 .tdsnap-sessions/

@@ -58,6 +58,30 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Changed
 
+- **Shared Windows UI Automation helper layer** (`tdsnap/uia.py`). `live.py`
+  (TD Snap) and `grid3.py` (Grid 3) each drove the same control tree
+  independently and had already diverged: walk depth (9 vs 10), cluster
+  tolerance (8 vs 6), and retry policy on activating a busy control (30s
+  retry vs none). Each divergence was reconciled deliberately — not by
+  keeping whichever file was older — and is pinned by a test; see the new
+  module's docstring for the reasoning behind each choice, and for the three
+  same-named helpers deliberately *not* merged because the two products
+  genuinely do them differently.
+- **The phrase-function classifier has one source of truth for its test
+  contract.** `tdsnap/web/prompts.py`'s `phrase_function` and
+  `static/phrases.js`'s `inferPhraseFunction` mirrored five regexes by hand
+  with nothing asserting they agreed. `tests/fixtures/phrase_function_cases.json`
+  is now run against both implementations, so an edit to one without the
+  other fails CI. Fixed one real disagreement found in the process: the JS
+  side accepted any truthy `suggested` value as a fallback function, while
+  Python only accepted one of the five known functions — a caller passing
+  something else now falls back to "comment" in both, not just Python.
+- **Function border colors are validated server-side.** The five clinical
+  topic-page colors (question/comment/positive/negative/personal) used to be
+  whatever `border_color` a request sent, converted without question. The
+  write path now rejects any color that isn't one of
+  `colors.FUNCTION_BORDER_COLORS` — this is a clinical convention, not a UI
+  preference, so nothing else is accepted regardless of source.
 - **A reload no longer silently discards planned buttons.** The browser now
   warns before leaving while words or phrases are composed but not yet applied.
   Quitting deliberately says what will be lost instead of asking twice.

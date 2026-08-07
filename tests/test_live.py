@@ -294,7 +294,9 @@ def test_grid_uses_saved_dimensions_for_a_completely_blank_page(tmp_path, monkey
     assert (len(grid.xs), len(grid.ys), grid.xs[0], grid.ys[0]) == (7, 7, 50, 50)
 
 
-def test_activate_retries_while_td_snap_is_busy(monkeypatch):
+def test_activate_delegates_to_uia_with_td_snap_messages(monkeypatch):
+    """The retry/fallback logic itself is pinned in tests/test_uia.py; this
+    only proves TD Snap's wrapper wires the shared helper up correctly."""
     class BusyError(Exception):
         hresult = -2147220992
 
@@ -308,11 +310,14 @@ def test_activate_retries_while_td_snap_is_busy(monkeypatch):
 
     pattern = Pattern()
     control = SimpleNamespace(GetInvokePattern=lambda: pattern)
-    monkeypatch.setattr(live.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(live.uia.time, "sleep", lambda _seconds: None)
 
     live._activate(control)
 
     assert pattern.calls == 2
+
+    with pytest.raises(PagesetError, match="TD Snap changed while the edit was running"):
+        live._activate(None)
 
 
 def test_open_page_accepts_td_snap_internal_page_name(monkeypatch):

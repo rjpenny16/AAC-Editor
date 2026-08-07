@@ -20,7 +20,7 @@ import uuid
 from typing import Optional, Union
 
 from . import schema, templates
-from .colors import BORDER_THICKNESS, argb_from_hex
+from .colors import BORDER_THICKNESS, argb_from_hex, is_allowed_border_color
 from .errors import PagesetError
 from .pageset import Pageset
 from .ticks import net_ticks_now
@@ -49,10 +49,12 @@ def _normalize_items(items: list[Item]) -> list[dict[str, object]]:
 
     ``message`` (optional) is the full sentence to speak while ``label`` stays
     short on the button — how real TD Snap quick-fire phrase buttons work.
-    ``border_color`` (optional) is '#RRGGBB' or a signed ARGB int, the
-    color-coding convention used on topic pages. ``slot`` is an optional
-    zero-based grid index chosen in the visual preview. ``symbol`` controls
-    whether live editing should make a best-effort symbol search.
+    ``border_color`` (optional) is '#RRGGBB' or a signed ARGB int, and must
+    match one of ``colors.FUNCTION_BORDER_COLORS`` — the five-color topic-page
+    convention is clinical, not a UI preference, so nothing else is accepted.
+    ``slot`` is an optional zero-based grid index chosen in the visual
+    preview. ``symbol`` controls whether live editing should make a
+    best-effort symbol search.
     """
     if not isinstance(items, list):
         raise PagesetError("Words must be provided as a list.")
@@ -103,6 +105,13 @@ def _normalize_items(items: list[Item]) -> list[dict[str, object]]:
         ):
             raise PagesetError(
                 f"The border color for {label!r} must be #RRGGBB or a signed 32-bit integer."
+            )
+        # The five function colors are a clinical convention (see colors.py),
+        # not a UI preference — never write whatever color a request sends.
+        if border is not None and not is_allowed_border_color(border):
+            raise PagesetError(
+                f"The border color for {label!r} is not one of the supported "
+                "communicative-function colors."
             )
         slot = item.get("slot")
         if slot is not None and (
