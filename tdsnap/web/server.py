@@ -27,13 +27,14 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from typing import Optional
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
 from .. import __version__, builder, grid3, live, schema, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
-from . import diagnostics, grounding, localai, ollama, prompts
+from . import diagnostics, grounding, localai, ollama, prompts, settings
 
 APP_ID = "aac-editor"
 DEFAULT_PORT = 8765
@@ -134,6 +135,115 @@ def _validated_existing(value) -> list:
     ]
 
 
+# Communicative functions a draft or topic-page item may carry; mirrors
+# FUNCTIONS in static/state.js. "" means "no function" (a plain word button).
+_DRAFT_FUNCTIONS = {"", "question", "comment", "positive", "negative", "personal"}
+
+# Known preference keys the frontend remembers, and how each is validated.
+# Unknown keys are dropped rather than rejected, so an older server tolerates
+# a newer frontend's preferences file without failing the whole save.
+_PREFERENCE_SCHEMA = {
+    "provider": {"choices": {"tdsnap", "grid3", "file"}, "max_len": 20},
+    "ai_engine": {"choices": {"ollama", "local"}, "max_len": 20},
+    "ollama_host": {"max_len": 200},
+    "ollama_model": {"max_len": 120},
+    "ai_grounding": {"bool": True},
+}
+
+
+def _validated_preferences(value) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise PagesetError("'preferences' must be an object.")
+    result = {}
+    for key, raw in value.items():
+        spec = _PREFERENCE_SCHEMA.get(key)
+        if spec is None:
+            continue
+        if spec.get("bool"):
+            if isinstance(raw, bool):
+                result[key] = raw
+            continue
+        if not isinstance(raw, str):
+            continue
+        text = raw.strip()[: spec.get("max_len", 200)]
+        if "choices" in spec and text not in spec["choices"]:
+            continue
+        result[key] = text
+    return result
+
+
+def _validated_draft_items(value) -> list:
+    if not isinstance(value, list):
+        raise PagesetError("'draft.items' must be a list.")
+    if len(value) > MAX_ITEMS:
+        raise PagesetError(f"A draft can hold no more than {MAX_ITEMS} buttons.")
+    items = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise PagesetError("Each draft item must be an object.")
+        label = _bounded_text(item.get("label"), "draft item label", MAX_LABEL_CHARS, required=True)
+        message = _bounded_text(item.get("message"), "draft item message", MAX_MESSAGE_CHARS)
+        fn = item.get("fn") or ""
+        if fn not in _DRAFT_FUNCTIONS:
+            raise PagesetError("Each draft item's function is invalid.")
+        slot = item.get("slot")
+        if slot is not None and (
+            isinstance(slot, bool) or not isinstance(slot, int) or slot < 0
+        ):
+            raise PagesetError("Each draft item's slot must be a non-negative integer.")
+        items.append(
+            {
+                "label": label,
+                "message": message or None,
+                "fn": fn,
+                "slot": slot,
+                "symbol": bool(item.get("symbol", True)),
+            }
+        )
+    return items
+
+
+def _validated_draft(value) -> Optional[dict]:
+    """Bound and shape a draft, or drop it entirely if there's nothing in it.
+
+    A draft with no items isn't worth resuming, so it collapses to ``None``
+    rather than being stored and offered back to the user as empty.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise PagesetError("'draft' must be an object or null.")
+    items = _validated_draft_items(value.get("items", []))
+    if not items:
+        return None
+    provider = value.get("provider")
+    if provider not in {"tdsnap", "grid3", "file", None}:
+        raise PagesetError("'draft.provider' is invalid.")
+    operation = value.get("operation")
+    if operation not in {"existing", "new", None}:
+        raise PagesetError("'draft.operation' is invalid.")
+    page_style = value.get("page_style")
+    if page_style not in {"words", "topic", None}:
+        raise PagesetError("'draft.page_style' is invalid.")
+    active_fn = value.get("active_fn") or ""
+    if active_fn not in _DRAFT_FUNCTIONS:
+        raise PagesetError("'draft.active_fn' is invalid.")
+    return {
+        "provider": provider,
+        "operation": operation,
+        "page_style": page_style,
+        "active_fn": active_fn,
+        "target_page": _bounded_text(
+            value.get("target_page"), "draft.target_page", MAX_PAGE_NAME_CHARS
+        ),
+        "title": _bounded_text(value.get("title"), "draft.title", MAX_TITLE_CHARS),
+        "items": items,
+        "saved_at": time.time(),
+    }
+
+
 def _session_storage_bytes(exclude: str = "") -> int:
     total = 0
     try:
@@ -167,9 +277,68 @@ def cleanup_sessions() -> None:
         shutil.rmtree(session["dir"], ignore_errors=True)
 
 
+def _write_session_meta(session_dir: str, filename: str, baseline_warnings: list, edits: int) -> None:
+    """Persist the bit of session state that isn't already in the sqlite copy.
+
+    ``original``/``current`` on disk survive a server restart on their own;
+    only the filename, baseline warnings, and edit count need a home. Written
+    best-effort — a failure here degrades a restart back to today's "re-upload
+    the file" rather than breaking the edit that triggered it.
+    """
+    payload = {"filename": filename, "baseline_warnings": baseline_warnings, "edits": edits}
+    try:
+        handle, temp_path = tempfile.mkstemp(prefix=".meta-", dir=session_dir)
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as temp_file:
+                json.dump(payload, temp_file)
+            os.replace(temp_path, os.path.join(session_dir, "meta.json"))
+        finally:
+            with contextlib.suppress(OSError):
+                os.remove(temp_path)
+    except OSError:
+        pass
+
+
+def _rehydrate_session(session_id: str):
+    """Reconstruct an in-memory session record from its on-disk directory.
+
+    ``_sessions`` lives in process memory, so a Flask restart — a crash, a
+    port conflict, or a launcher killing a stale instance — used to turn
+    every open file-mode session into "Unknown or expired session" even
+    though the edited copy was sitting right there on disk. Returns ``None``
+    (and lets the caller raise the usual error) when the directory, the
+    edited copy, or its metadata is missing.
+    """
+    session_dir = os.path.join(_SESSION_ROOT, session_id)
+    current = os.path.join(session_dir, "current")
+    meta_path = os.path.join(session_dir, "meta.json")
+    if not os.path.isfile(current) or not os.path.isfile(meta_path):
+        return None
+    try:
+        with open(meta_path, encoding="utf-8") as handle:
+            meta = json.load(handle)
+        filename = meta["filename"]
+        baseline_warnings = meta.get("baseline_warnings", [])
+        edits = int(meta.get("edits", 0))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    session = {
+        "dir": session_dir,
+        "filename": filename,
+        "baseline_warnings": baseline_warnings,
+        "edits": edits,
+        "last_access": time.time(),
+        "lock": threading.Lock(),
+    }
+    with _sessions_lock:
+        return _sessions.setdefault(session_id, session)
+
+
 def _session_dir(session_id: str) -> str:
     with _sessions_lock:
         session = _sessions.get(session_id)
+    if session is None:
+        session = _rehydrate_session(session_id)
     if session is None:
         raise PagesetError("Unknown or expired session; re-upload the file.")
     if time.time() - session.get("last_access", 0) > SESSION_MAX_AGE:
@@ -303,6 +472,7 @@ def _register_session(session_id: str, session_dir: str, filename: str) -> dict:
             "last_access": time.time(),
             "lock": threading.Lock(),  # one edit at a time per session
         }
+    _write_session_meta(session_dir, filename, baseline["warnings"], 0)
     return {
         "ok": True,
         "session_id": session_id,
@@ -329,10 +499,8 @@ def open_path(path: str) -> dict:
 
 def edited_filename(session_id: str) -> str:
     """Suggested name for the edited copy."""
-    session = _sessions.get(session_id)
-    if session is None:
-        raise PagesetError("Unknown or expired session; re-upload the file.")
-    base, ext = os.path.splitext(session["filename"])
+    _session_dir(session_id)  # raises, and rehydrates from disk, as needed
+    base, ext = os.path.splitext(_sessions[session_id]["filename"])
     return f"{base}.edited{ext or '.sps'}"
 
 
@@ -393,7 +561,9 @@ def _require_loopback_host():
 
 @app.before_request
 def _require_api_token():
-    protected = request.method == "POST" or request.path.startswith("/api/ai/")
+    protected = (
+        request.method in ("POST", "PUT", "DELETE") or request.path.startswith("/api/ai/")
+    )
     if request.method == "OPTIONS" or not protected or request.path in {
         "/api/focus", "/api/tdsnap/page", "/api/tdsnap/edit-plan"
     }:
@@ -428,6 +598,32 @@ def diagnostics_report():
     with _LIVE_LOCK:
         data = diagnostics.report(_runtime["native"])
     return jsonify({"ok": True, "report": data, "text": diagnostics.as_text(data)})
+
+
+@app.get("/api/settings")
+def get_settings():
+    """Remembered preferences and any recoverable draft — never page-set content."""
+    data = settings.load()
+    return jsonify({"ok": True, "preferences": data["preferences"], "draft": data["draft"]})
+
+
+@app.put("/api/settings")
+def put_settings():
+    """Save preferences and/or a draft. Only reached when the user changes a
+    preference or is composing something worth recovering — a fresh install
+    never calls this, so it never creates the file."""
+    payload = _json_payload()
+    preferences = _validated_preferences(payload.get("preferences"))
+    draft = _validated_draft(payload.get("draft"))
+    settings.save(preferences, draft)
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/settings")
+def delete_settings():
+    """Clear all saved data — the disclosure panel's "Clear all" control."""
+    settings.clear()
+    return jsonify({"ok": True})
 
 
 @app.post("/api/quit")
@@ -592,10 +788,8 @@ def add_page(session_id):
         raise PagesetError("'parent_page_id' is required.")
     parent_page_id = _bounded_int(parent_page_id, "parent_page_id", 1, 2**63 - 1)
 
-    session = _sessions.get(session_id)
-    if session is None:
-        raise PagesetError("Unknown or expired session; re-upload the file.")
-    current = _current_path(session_id)
+    current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
+    session = _sessions[session_id]
     scratch = os.path.join(session["dir"], "scratch")
 
     # One edit at a time per session: concurrent requests would share the
@@ -626,6 +820,9 @@ def add_page(session_id):
             ), 422
         ps.save_as(current, allow_source_overwrite=True)
         session["edits"] += 1
+        _write_session_meta(
+            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
+        )
     return jsonify(
         {
             "ok": True,
@@ -648,10 +845,10 @@ def close_pageset(session_id):
 
 @app.get("/api/pageset/<session_id>/download")
 def download(session_id):
-    session = _sessions.get(session_id)
-    current = _current_path(session_id)
-    if session is None or not os.path.exists(current):
+    current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
+    if not os.path.exists(current):
         raise PagesetError("Nothing to download; re-upload the file.")
+    session = _sessions[session_id]
     base, ext = os.path.splitext(session["filename"])
     return send_file(
         current,

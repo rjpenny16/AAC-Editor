@@ -64,6 +64,13 @@ for a suggestion, AAC Editor sends only that page title or category to
 Wikipedia; button labels, page sets, and generated suggestions remain local.
 Administrators can hard-disable grounding with `TDSNAP_WEB_GROUNDING=0`.
 
+Nothing is written to disk until you save something. Remembering your last
+AAC app, your Ollama connection, and an unfinished page (so a crash or a
+reload can offer to resume it) all live in one `settings.json` in the same
+per-user data folder the built-in AI model uses — never uploaded, never
+synced. **What AAC Editor saves**, in the app's footer, lists exactly what's
+stored in plain language, and **Clear all saved data** deletes the file.
+
 ## Quick start
 
 1. Open TD Snap and the page set you want to edit.

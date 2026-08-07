@@ -10,6 +10,7 @@ import { state } from "./state.js";
 import { $ } from "./dom.js";
 import { autoFormatTopicRows, renderWords, updateTopicInputRow } from "./chips.js";
 import { loadTargetLayout } from "./connect.js";
+import { clearDraft, takePendingResume } from "./draft.js";
 import { loadParentCapacity, titleOf, updatePlacementRecommendation } from "./parents.js";
 
 /* ---------- helpers ---------- */
@@ -49,10 +50,25 @@ function updateProgress(step) {
   $("wizard-announcer").textContent = label;
 }
 
+/* Every provider reaches the items step by a different path (tdsnap: live
+   connect → operation → destination; grid3: straight from connect; file:
+   connect → title → destination) so this is the one place robust to all of
+   them — applied once, the moment a resumed draft has somewhere to land. */
+function applyPendingDraftResume() {
+  const draft = takePendingResume();
+  if (!draft) return;
+  state.words = draft.items.map((item) => ({ ...item }));
+  if (draft.page_style) setPageStyle(draft.page_style);
+  if (draft.active_fn) setActiveFn(draft.active_fn, false);
+  renderWords();
+  void clearDraft();
+}
+
 function show(step, focus = true) {
   if (step === "load") step = "connect";
   state.wizardStep = step;
   document.body.dataset.step = step;
+  if (step === "items") applyPendingDraftResume();
 
   const buildSteps = ["operation", "title", "destination", "items", "layout", "placement"];
   $("step-load").hidden = step !== "connect";

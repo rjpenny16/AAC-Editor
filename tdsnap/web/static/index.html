@@ -38,6 +38,15 @@
   </div>
 </div>
 
+<div id="draft-banner" class="alert app-error" role="status" tabindex="-1" hidden>
+  <strong id="draft-banner-text"></strong>
+  <p class="field-hint">This was saved on this computer only, and nothing has been sent anywhere.</p>
+  <div class="app-error-actions">
+    <button type="button" id="draft-resume-btn" class="btn btn-secondary btn-compact">Resume</button>
+    <button type="button" id="draft-discard-btn" class="btn btn-ghost btn-compact">Discard</button>
+  </div>
+</div>
+
 <main class="shell">
   <section class="wizard-progress" aria-label="Task progress">
     <strong id="wizard-progress-label">Setup</strong>
@@ -228,6 +237,7 @@
               <input id="word-input" type="text" autocomplete="off" spellcheck="false" placeholder="For example, help" maxlength="60" aria-label="Word or phrase to add" aria-describedby="chip-note items-error">
             </div>
             <button type="button" id="word-add-btn" class="btn btn-secondary">Add</button>
+            <button type="button" id="undo-remove-btn" class="btn btn-ghost btn-compact" hidden>Undo</button>
           </div>
           <div id="chip-note" class="status-line" role="status" aria-live="polite" aria-atomic="true"></div>
           <p id="items-error" class="step-error" data-error-for="items" role="alert" tabindex="-1" hidden></p>
@@ -421,10 +431,26 @@
 <footer class="foot">
   <p>Page-set content stays on this computer.</p>
   <div class="foot-actions">
+    <button type="button" id="settings-panel-btn" class="text-button">What AAC Editor saves</button>
     <button type="button" id="support-report-btn" class="text-button">Copy a support report</button>
     <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
   </div>
 </footer>
+
+<dialog id="settings-panel" class="chip-dialog support-dialog" aria-labelledby="settings-panel-title">
+  <form method="dialog">
+    <h2 id="settings-panel-title">What AAC Editor saves</h2>
+    <p class="field-hint">Nothing is stored until you save a preference or start composing a
+      page. Everything below lives in one file on this computer only — never uploaded, never
+      synced.</p>
+    <dl id="settings-panel-list" class="settings-list"></dl>
+    <p id="settings-panel-status" class="status-line" role="status" aria-live="polite"></p>
+    <div class="dialog-actions">
+      <button type="button" id="settings-clear-btn" class="btn btn-danger">Clear all saved data</button>
+      <button type="submit" class="btn btn-ghost" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="support-dialog" class="chip-dialog support-dialog" aria-labelledby="support-dialog-title">
   <form method="dialog">
