@@ -58,10 +58,8 @@ def test_parse_items():
         {"label": "The story has magic", "function": "comment"},
         {"label": "I love this", "function": "positive"},
     ]
-    assert prompts.phrase_function("I do not like spiders", "positive") == "negative"
-    assert prompts.phrase_function("I read it with Mom", "comment") == "personal"
-    assert prompts.phrase_function("I am excited", "personal") == "positive"
-    assert prompts.phrase_function("My favorite is Chipotle", "positive") == "personal"
+    # phrase_function's own behavior is pinned in test_prompts.py against the
+    # golden cases shared with tests/js/phrases.test.js.
     assert prompts.response_schema("phrases") is prompts.PHRASES_SCHEMA
 
 

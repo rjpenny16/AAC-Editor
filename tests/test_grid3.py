@@ -150,6 +150,48 @@ def test_fingerprint_changes_when_active_grid_package_changes(grid_root):
     assert before != after
 
 
+def test_activate_delegates_to_uia_with_grid3_messages(monkeypatch):
+    """The retry/fallback logic itself is pinned in tests/test_uia.py; this
+    only proves Grid 3's wrapper wires the shared helper up correctly."""
+    class BusyError(Exception):
+        hresult = -2147220992
+
+    class Pattern:
+        calls = 0
+
+        def Invoke(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise BusyError
+
+    pattern = Pattern()
+    control = SimpleNamespace(GetInvokePattern=lambda: pattern)
+    monkeypatch.setattr(grid3.uia.time, "sleep", lambda _seconds: None)
+
+    grid3._activate(control)
+
+    assert pattern.calls == 2
+
+    with pytest.raises(PagesetError, match="Grid 3's editor controls changed during the edit"):
+        grid3._activate(None)
+
+
+def test_wait_for_ignores_transient_package_errors(monkeypatch):
+    """grid3.py's _wait_for swallows OSError/BadZipFile/KeyError; uia.py's
+    shared wait_for does not by default (see tests/test_uia.py) — this pins
+    that Grid 3-specific ignore list stays wired up."""
+    monkeypatch.setattr(grid3.uia.time, "sleep", lambda _seconds: None)
+    calls = iter([KeyError("mid-write"), "ready"])
+
+    def flaky():
+        value = next(calls)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    assert grid3._wait_for(flaky, "never") == "ready"
+
+
 def test_ui_access_token_allows_grid3_without_administrator(monkeypatch):
     closed = []
 

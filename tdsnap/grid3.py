@@ -11,14 +11,13 @@ import glob
 import hashlib
 import os
 import sys
-import time
 import zipfile
-from collections.abc import Iterable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from . import uia
 from .builder import _normalize_items
 from .errors import PagesetError
 from .live import _desktop_unlocked, _focus_window
@@ -152,28 +151,22 @@ def is_elevated() -> bool:
 
 
 def _automation():
-    if sys.platform != "win32":
-        raise PagesetError("Live Grid 3 editing is available on Windows only.")
-    try:
-        import uiautomation as auto
-    except ImportError as exc:
-        raise PagesetError(
-            "Windows automation is not installed. Reinstall AAC Editor."
-        ) from exc
-    auto.SetGlobalSearchTimeout(2)
-    return auto
+    return uia.automation(
+        "Live Grid 3 editing is available on Windows only.",
+        "Windows automation is not installed. Reinstall AAC Editor.",
+    )
 
 
-def _walk(root, max_depth=10):
-    queue = [(root, 0)]
-    while queue:
-        control, depth = queue.pop(0)
-        yield control, depth
-        if depth < max_depth:
-            try:
-                queue.extend((child, depth + 1) for child in control.GetChildren())
-            except Exception:  # noqa: S112 - a control that vanished mid-walk is expected; skip it
-                continue
+# See tdsnap/uia.py's module docstring for why each of these shares its
+# implementation with live.py's helper of the same name, and why the
+# retry/tolerance/depth chosen there is correct for Grid 3 too.
+_walk = uia.walk
+
+
+def _activate(control) -> None:
+    return uia.activate(
+        control, missing_message="Grid 3's editor controls changed during the edit."
+    )
 
 
 def _native_windows(title_prefix: str) -> list[int]:
@@ -214,30 +207,7 @@ def _window(auto):
     raise PagesetError("Open Grid 3 to the grid you want to edit, then reconnect.")
 
 
-def _process_path(process_id: int) -> str | None:
-    if sys.platform != "win32" or not process_id:
-        return None
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.QueryFullProcessImageNameW.argtypes = [
-        wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
-        ctypes.POINTER(wintypes.DWORD),
-    ]
-    kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-    process = kernel32.OpenProcess(0x1000, False, process_id)
-    if not process:
-        return None
-    try:
-        path = ctypes.create_unicode_buffer(32768)
-        size = wintypes.DWORD(len(path))
-        if kernel32.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(size)):
-            return path.value
-    finally:
-        kernel32.CloseHandle(process)
-    return None
+_process_path = uia.process_image_path
 
 
 def _verify_process(window) -> None:
@@ -567,14 +537,7 @@ def _rect(control):
     return None
 
 
-def _clusters(values: Iterable[int], tolerance=6) -> tuple[int, ...]:
-    groups: list[list[int]] = []
-    for value in sorted(values):
-        if not groups or value - round(sum(groups[-1]) / len(groups[-1])) > tolerance:
-            groups.append([value])
-        else:
-            groups[-1].append(value)
-    return tuple(round(sum(group) / len(group)) for group in groups)
+_clusters = uia.clusters
 
 
 def _live_cells(
@@ -787,28 +750,14 @@ def _wait_for_edit_mode(window) -> None:
     )
 
 
-def _activate(control) -> None:
-    if control is None:
-        raise PagesetError("Grid 3's editor controls changed during the edit.")
-    getter = getattr(control, "GetInvokePattern", None)
-    pattern = getter() if getter else None
-    if pattern:
-        pattern.Invoke()
-    else:
-        control.Click(simulateMove=False)
-
-
-def _wait_for(callback, message, timeout=8):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            value = callback()
-        except (OSError, zipfile.BadZipFile, KeyError):
-            value = None
-        if value:
-            return value
-        time.sleep(0.15)
-    raise PagesetError(message)
+def _wait_for(callback, message, timeout=uia.WAIT_DEFAULT_TIMEOUT):
+    # Grid 3's callbacks read a grid-set package mid-edit, which can raise
+    # these transiently while Grid 3 is still writing the file; TD Snap's
+    # callbacks only ever touch the live control tree, so this ignore list
+    # is Grid 3-specific rather than something tdsnap/uia.py hard-codes.
+    return uia.wait_for(
+        callback, message, timeout, ignore=(OSError, zipfile.BadZipFile, KeyError)
+    )
 
 
 def _semantic(grid: Grid3Grid) -> dict:

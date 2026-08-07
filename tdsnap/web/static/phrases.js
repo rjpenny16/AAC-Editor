@@ -4,8 +4,12 @@
  * server assigns a function to AI suggestions, and the client assigns one to
  * anything the user types or pastes. Both must agree, or the same phrase lands
  * in a different colored row depending on where it came from. Changing a
- * pattern here means changing it there too.
+ * pattern here means changing it there too — tests/fixtures/phrase_function_cases.json
+ * is run against both implementations so a disagreement fails CI instead of
+ * shipping quietly.
  */
+
+const PHRASE_FUNCTIONS = ["question", "comment", "positive", "negative", "personal"];
 
 const QUESTION_PHRASE = /^(who|what|when|where|why|how|which|whose|is|are|am|was|were|do|does|did|can|could|would|will|should|may|have|has)\b/i;
 const NEGATIVE_PHRASE = /\b(no|not|never|don't|doesn't|didn't|can't|cannot|won't|hate|dislike|stop|bad|boring|scary|wrong|upset|angry|sad|too loud|too busy)\b/i;
@@ -20,7 +24,7 @@ function inferPhraseFunction(label, suggested = "") {
   if (OWNERSHIP_PHRASE.test(text)) return "personal";
   if (POSITIVE_PHRASE.test(text)) return "positive";
   if (PERSONAL_PHRASE.test(text)) return "personal";
-  return suggested && suggested !== "question" ? suggested : "comment";
+  return PHRASE_FUNCTIONS.includes(suggested) && suggested !== "question" ? suggested : "comment";
 }
 
 export { inferPhraseFunction };

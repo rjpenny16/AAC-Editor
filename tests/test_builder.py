@@ -251,6 +251,8 @@ def test_nested_transaction_remains_caller_owned(seeded_pageset):
         ([{"label": 1}], "label must be text"),
         ([{"label": "x", "message": 1}], "message.*must be text"),
         ([{"label": "x", "border_color": 1 << 40}], "signed 32-bit"),
+        ([{"label": "x", "border_color": "#123456"}], "communicative-function colors"),
+        ([{"label": "x", "border_color": 0}], "communicative-function colors"),  # black, not a function color
         ([{"label": "x", "slot": -1}], "non-negative integer"),
         ([{"label": "x", "symbol": "yes"}], "true or false"),
         (["same", "SAME"], "duplicate labels"),
@@ -284,6 +286,23 @@ def test_argb_encoding():
     assert argb_from_hex("#1E88E5") == argb_from_hex("1E88E5")
     with _pytest.raises(PagesetError):
         argb_from_hex("#12")
+
+
+def test_every_function_color_is_accepted_and_only_those():
+    """The five clinical function colors (mirrored from state.js's FUNCTIONS
+    map) are the only borders the write path accepts — see colors.py and
+    ROADMAP.md's Phase 3."""
+    from tdsnap.colors import FUNCTION_BORDER_COLORS, argb_from_hex
+
+    for function, color in FUNCTION_BORDER_COLORS.items():
+        [item] = _normalize_items([{"label": function, "border_color": color}])
+        assert item["border_color"] == argb_from_hex(color)
+
+    # A color one bit off any allowed value is rejected, not merely a wildly
+    # different one — this is a real allowlist, not a loose sanity check.
+    near_miss = argb_from_hex(FUNCTION_BORDER_COLORS["question"]) + 1
+    with pytest.raises(PagesetError, match="communicative-function colors"):
+        _normalize_items([{"label": "x", "border_color": near_miss}])
 
 
 def test_error_paths(seeded_pageset):

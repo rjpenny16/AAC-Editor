@@ -21,6 +21,7 @@ from contextlib import closing, suppress
 from ctypes import wintypes
 from dataclasses import dataclass
 
+from . import uia
 from .builder import _normalize_items
 from .errors import PagesetError
 
@@ -103,26 +104,27 @@ def _desktop_unlocked() -> bool:
 
 
 def _automation():
-    if sys.platform != "win32":
-        raise PagesetError("Direct TD Snap editing is available on Windows only.")
-    try:
-        import uiautomation as auto
-    except ImportError as exc:
-        raise PagesetError(
-            "Windows automation is not installed. Reinstall the app or run "
-            "'pip install uiautomation'."
-        ) from exc
-    auto.SetGlobalSearchTimeout(2)
-    return auto
+    return uia.automation(
+        "Direct TD Snap editing is available on Windows only.",
+        "Windows automation is not installed. Reinstall the app or run "
+        "'pip install uiautomation'.",
+    )
 
 
-def _walk(root, max_depth=9):
-    queue = [(root, 0)]
-    while queue:
-        control, depth = queue.pop(0)
-        yield control, depth
-        if depth < max_depth:
-            queue.extend((child, depth + 1) for child in control.GetChildren())
+# See tdsnap/uia.py's module docstring for why each of these shares its
+# implementation with grid3.py's helper of the same name, and why the
+# retry/tolerance/depth chosen there is correct for TD Snap too.
+_walk = uia.walk
+_clusters = uia.clusters
+_wait_for = uia.wait_for
+
+
+def _activate(control):
+    return uia.activate(
+        control,
+        missing_message="TD Snap changed while the edit was running.",
+        busy_message="TD Snap stayed busy while activating a control.",
+    )
 
 
 def _matches(control, *, name=None, automation_id=None, control_type=None):
@@ -157,42 +159,6 @@ def _find_text(root, text):
     )
 
 
-def _activate(control):
-    if control is None:
-        raise PagesetError("TD Snap changed while the edit was running.")
-    getter = getattr(control, "GetInvokePattern", None)
-    pattern = getter() if getter else None
-    if pattern:
-        deadline = time.monotonic() + 30
-        while True:
-            try:
-                pattern.Invoke()
-                return
-            except Exception as exc:
-                # UIA_E_ELEMENTNOTENABLED is transient while TD Snap processes images.
-                if getattr(exc, "hresult", None) != -2147220992:
-                    raise
-                if time.monotonic() >= deadline:
-                    raise PagesetError("TD Snap stayed busy while activating a control.") from exc
-                time.sleep(0.15)
-    getter = getattr(control, "GetSelectionItemPattern", None)
-    pattern = getter() if getter else None
-    if pattern:
-        pattern.Select()
-        return
-    control.Click(simulateMove=False)
-
-
-def _wait_for(callback, message, timeout=6):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        value = callback()
-        if value:
-            return value
-        time.sleep(0.15)
-    raise PagesetError(message)
-
-
 def _window(auto):
     window = auto.WindowControl(searchDepth=1, Name="TD Snap")
     if not window.Exists(1):
@@ -201,32 +167,7 @@ def _window(auto):
     return window
 
 
-def _process_app_id(process_id):
-    """Return the Windows package application ID for a process, if available."""
-    if sys.platform != "win32" or not process_id:
-        return None
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    getter = getattr(kernel32, "GetApplicationUserModelId", None)
-    if getter is None:
-        return None
-    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    getter.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.UINT), wintypes.LPWSTR]
-    getter.restype = wintypes.LONG
-    process = kernel32.OpenProcess(0x1000, False, process_id)
-    if not process:
-        return None
-    try:
-        length = wintypes.UINT()
-        if getter(process, ctypes.byref(length), None) != 122 or not length.value:
-            return None
-        application_id = ctypes.create_unicode_buffer(length.value)
-        if getter(process, ctypes.byref(length), application_id) == 0:
-            return application_id.value
-    finally:
-        kernel32.CloseHandle(process)
-    return None
+_process_app_id = uia.process_app_user_model_id
 
 
 def _verify_process(window):
@@ -426,16 +367,6 @@ def _page_route(start, target, visible_labels=()):
                 seen.add(destination.casefold())
                 queue.append((destination, [*route, edge]))
     return []
-
-
-def _clusters(values, tolerance=8):
-    groups = []
-    for value in sorted(values):
-        if not groups or value - statistics.mean(groups[-1]) > tolerance:
-            groups.append([value])
-        else:
-            groups[-1].append(value)
-    return tuple(round(statistics.mean(group)) for group in groups)
 
 
 def _stored_sparse_grid(group, buttons, width, height):
