@@ -10,6 +10,7 @@ import { $, setBusy, setActivity, setPreviewBusy } from "./dom.js";
 import { api } from "./api.js";
 import { firstAvailableSlot, renderWords } from "./chips.js";
 import { parentFilter, parentSelect, renderParents } from "./parents.js";
+import { savePreference } from "./settings.js";
 import { clearBuildError, setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
 
 /* Owned here because connect.js is the only writer, and a module-level `let`
@@ -97,9 +98,13 @@ function selectProvider(provider) {
   $("live-status").textContent = "";
 }
 
-$("provider-tdsnap").addEventListener("click", () => selectProvider("tdsnap"));
-$("provider-grid3").addEventListener("click", () => selectProvider("grid3"));
-$("provider-file").addEventListener("click", () => selectProvider("file"));
+function selectProviderAndRemember(provider) {
+  selectProvider(provider);
+  void savePreference("provider", provider);
+}
+$("provider-tdsnap").addEventListener("click", () => selectProviderAndRemember("tdsnap"));
+$("provider-grid3").addEventListener("click", () => selectProviderAndRemember("grid3"));
+$("provider-file").addEventListener("click", () => selectProviderAndRemember("file"));
 $("connection-retry").addEventListener("click", () => $("live-connect-btn").click());
 $("connection-help-btn").addEventListener("click", () => {
   const details = $("connection-help-details");

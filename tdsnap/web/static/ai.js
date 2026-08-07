@@ -13,6 +13,7 @@ import { firstAvailableSlot, functionForSlot, renderWords } from "./chips.js";
 import { setActivity } from "./dom.js";
 import { titleOf } from "./parents.js";
 import { inferPhraseFunction } from "./phrases.js";
+import { savePreference } from "./settings.js";
 import { FUNCTIONS } from "./state.js";
 
 /* ---------- step 2: AI engines ---------- */
@@ -90,10 +91,19 @@ async function checkAiWithFeedback() {
   }
 }
 
-$("ai-host").addEventListener("change", checkAiWithFeedback);
+$("ai-host").addEventListener("change", () => {
+  checkAiWithFeedback();
+  void savePreference("ollama_host", $("ai-host").value);
+});
 $("ai-check-btn").addEventListener("click", checkAiWithFeedback);
 $("ai-model").addEventListener("input", () => {
   $("ai-model").dataset.userEdited = "1";
+});
+$("ai-model").addEventListener("change", () => {
+  void savePreference("ollama_model", $("ai-model").value);
+});
+$("ai-grounding").addEventListener("change", () => {
+  void savePreference("ai_grounding", $("ai-grounding").checked);
 });
 
 $("ai-download-btn").addEventListener("click", async () => {

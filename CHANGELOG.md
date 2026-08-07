@@ -30,6 +30,31 @@ file starts tracking changes in detail from 2.2.0 onward.
 - **Per-module coverage floors** (`scripts/check_coverage.py`) on the code that
   writes to a page set. A single global percentage is bounded by the
   Windows-only automation modules and says little about the write path.
+- **Opt-in settings store.** A single `settings.json` in the same per-user data
+  folder the built-in AI model already uses, written only the first time
+  something is actually saved — a fresh install creates no file. Backed by
+  `tdsnap.web.settings` and `GET`/`PUT`/`DELETE /api/settings`, behind the same
+  API-token, loopback-host, and custom-header guards as every other mutation.
+  Writes are atomic (temp file, then `os.replace`), and a corrupt file is
+  renamed aside and the app starts clean rather than failing to launch.
+- **Draft autosave and recovery.** The in-progress item list is autosaved
+  while composing; on the next launch, a banner offers *"You have an
+  unfinished page for X — resume or discard?"* so a crash, a killed tab, or an
+  accidental reload doesn't have to mean starting over.
+- **Remembered preferences.** The last AAC app chosen, the Ollama host and
+  model, and the Wikipedia-grounding checkbox are restored on the next
+  launch instead of being re-entered every time.
+- **In-composition undo.** Removing a chip and "Arrange automatically" — the
+  two composition actions with no other way back — can now be undone with an
+  **Undo** button or Ctrl/Cmd+Z while adding buttons.
+- **A Settings disclosure.** **What AAC Editor saves**, in the footer, lists
+  everything stored in plain language and offers **Clear all saved data**.
+- **A server restart no longer orphans an open file-mode session.** Sessions
+  used to live only in process memory, so a crash, a port conflict, or a
+  launcher killing a stale instance turned every open upload into "Unknown or
+  expired session; re-upload the file" even though the edited copy was still
+  on disk. The session directory now carries enough metadata to reconstruct
+  itself.
 
 ### Changed
 

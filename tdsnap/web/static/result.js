@@ -8,8 +8,9 @@
 import { state } from "./state.js";
 import { $, setBusy, setActivity } from "./dom.js";
 import { api } from "./api.js";
-import { renderWords } from "./chips.js";
+import { clearUndoHistory, renderWords } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor } from "./connect.js";
+import { clearDraft } from "./draft.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
 import { recordError } from "./support.js";
 import { setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
@@ -42,6 +43,8 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
   $("review-state").hidden = true;
   $("success-state").hidden = false;
   state.applied = true;
+  clearUndoHistory();
+  void clearDraft();
   $("result-eyebrow").textContent = "Complete";
   const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
   $("result-heading").textContent = `Done — ${product} was updated`;
@@ -191,6 +194,7 @@ $("another-btn").addEventListener("click", async () => {
 
 function resetConnection() {
   stopLiveMonitor();
+  clearUndoHistory();
   const sessionId = state.sessionId;
   if (sessionId) {
     // A failure here leaks the session's temp directory until the 24-hour

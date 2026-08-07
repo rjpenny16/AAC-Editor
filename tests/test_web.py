@@ -9,6 +9,7 @@ plain helper functions are enough.
 
 import ctypes
 import io
+import json
 import os
 import socket
 import sqlite3
@@ -411,3 +412,161 @@ def test_cleanup_sessions_removes_registered_copies(tmp_path, monkeypatch):
 
     assert server._sessions == {}
     assert not session_dir.exists()
+
+
+# ---------- settings ----------
+
+
+def test_settings_start_empty_and_read_needs_no_token(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.get("/api/settings")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data == {"ok": True, "preferences": {}, "draft": None}
+
+
+def test_settings_write_requires_token(client):
+    response = client.put("/api/settings", json={"preferences": {"provider": "grid3"}})
+    assert response.status_code == 403
+    response = client.delete("/api/settings")
+    assert response.status_code == 403
+
+
+def test_settings_roundtrip_and_clear(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    put = client.put(
+        "/api/settings",
+        json={
+            "preferences": {
+                "provider": "grid3", "ai_engine": "ollama",
+                "ollama_host": "http://localhost:11434", "ai_grounding": True,
+                "unknown_key": "dropped",
+            },
+            "draft": None,
+        },
+        headers=token_headers(),
+    )
+    assert put.status_code == 200
+
+    data = client.get("/api/settings").get_json()
+    assert data["preferences"] == {
+        "provider": "grid3", "ai_engine": "ollama",
+        "ollama_host": "http://localhost:11434", "ai_grounding": True,
+    }
+    assert data["draft"] is None
+
+    assert client.delete("/api/settings", headers=token_headers()).get_json()["ok"]
+    assert client.get("/api/settings").get_json()["preferences"] == {}
+
+
+def test_settings_rejects_bad_preference_choices_but_keeps_valid_keys(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {"provider": "not-a-real-provider", "ollama_model": "llama3.2"}},
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    data = client.get("/api/settings").get_json()
+    assert data["preferences"] == {"ollama_model": "llama3.2"}
+
+
+def test_settings_draft_with_no_items_is_dropped(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": {"items": [], "provider": "tdsnap"}},
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    assert client.get("/api/settings").get_json()["draft"] is None
+
+
+def test_settings_draft_roundtrips_composition_state(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    draft = {
+        "provider": "tdsnap",
+        "operation": "existing",
+        "page_style": "topic",
+        "active_fn": "question",
+        "target_page": "Snacks",
+        "title": "",
+        "items": [{"label": "apple", "message": None, "fn": "question", "slot": 2, "symbol": True}],
+    }
+    response = client.put(
+        "/api/settings", json={"preferences": {}, "draft": draft}, headers=token_headers()
+    )
+    assert response.status_code == 200
+    stored = client.get("/api/settings").get_json()["draft"]
+    assert stored["target_page"] == "Snacks"
+    assert stored["items"] == draft["items"]
+    assert "saved_at" in stored
+
+
+def test_settings_rejects_malformed_draft_items(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": {"items": [{"label": "x", "fn": "not-a-function"}]}},
+        headers=token_headers(),
+    )
+    assert response.status_code == 400
+
+
+# ---------- session survivability ----------
+
+
+def test_session_survives_a_server_restart(client, seeded_source):
+    data = upload(client, seeded_source).get_json()
+    session_id = data["session_id"]
+    assert os.path.exists(os.path.join(server._SESSION_ROOT, session_id, "meta.json"))
+
+    # Simulate a process restart: the in-memory dict is gone, the disk isn't.
+    server._sessions.clear()
+
+    response = client.get(f"/api/pageset/{session_id}/pages")
+    assert response.status_code == 200
+    assert session_id in server._sessions
+    assert server._sessions[session_id]["filename"] == "test.sps"
+
+
+def test_session_download_survives_a_restart(client, seeded_source):
+    data = upload(client, seeded_source).get_json()
+    session_id = data["session_id"]
+    server._sessions.clear()
+
+    response = client.get(f"/api/pageset/{session_id}/download")
+    assert response.status_code == 200
+    assert "test.edited.sps" in response.headers["Content-Disposition"]
+
+
+def test_session_edit_after_restart_updates_persisted_edit_count(client, seeded_source):
+    data = upload(client, seeded_source).get_json()
+    session_id = data["session_id"]
+    parent = next(p for p in data["pages"] if p["title"] == "Home Page")
+    server._sessions.clear()
+
+    built = client.post(
+        f"/api/pageset/{session_id}/page",
+        json={"title": "Snacks", "items": ["apple"], "parent_page_id": parent["id"]},
+        headers=token_headers(),
+    ).get_json()
+    assert built["ok"] and built["edits"] == 1
+
+    with open(os.path.join(server._SESSION_ROOT, session_id, "meta.json"), encoding="utf-8") as handle:
+        meta = json.load(handle)
+    assert meta["edits"] == 1
+
+
+def test_rehydrate_returns_none_without_meta_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "_SESSION_ROOT", str(tmp_path))
+    session_dir = tmp_path / "orphan"
+    session_dir.mkdir()
+    (session_dir / "current").write_bytes(b"not really sqlite")
+    assert server._rehydrate_session("orphan") is None
+
+
+def test_unknown_session_still_errors_without_a_directory(client):
+    response = client.get("/api/pageset/does-not-exist/pages")
+    assert response.status_code == 400
+    assert "Unknown or expired session" in response.get_json()["error"]

@@ -9,6 +9,7 @@ import { $, appendNamedList } from "./dom.js";
 import { inferPhraseFunction } from "./phrases.js";
 import { titleOf } from "./parents.js";
 import { renderPlacementOrder, renderPreview } from "./preview.js";
+import { createUndoStack } from "./undo.js";
 import { clearStepError, setActiveFn } from "./wizard.js";
 
 /* ---------- step 2: words (chip editor) ---------- */
@@ -16,6 +17,33 @@ import { clearStepError, setActiveFn } from "./wizard.js";
 const chipbox = $("chipbox");
 const wordInput = $("word-input");
 
+/* Removing a chip and "Arrange automatically" are the two actions here that
+   discard something — a label, a message, a function assignment — with no
+   other way back. Everything else (typing, editing a chip's text) is either
+   non-destructive or already reversible by typing again. */
+const undoStack = createUndoStack();
+
+function snapshotWords() {
+  return state.words.map((item) => ({ ...item }));
+}
+
+function undoLastRemoval() {
+  if (!undoStack.canUndo()) return false;
+  state.words = undoStack.pop();
+  renderWords();
+  return true;
+}
+
+const undoBtn = $("undo-remove-btn");
+if (undoBtn) {
+  undoBtn.addEventListener("click", undoLastRemoval);
+  chipbox.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      undoLastRemoval();
+    }
+  });
+}
 
 function updateTopicInputRow() {
   if (!chipbox || !wordInput) return;
@@ -64,6 +92,7 @@ wordInput.addEventListener("keydown", (event) => {
     event.preventDefault();
     takeWordInput();
   } else if (event.key === "Backspace" && !wordInput.value && state.words.length) {
+    undoStack.push(snapshotWords());
     state.words.pop();
     renderWords();
   }
@@ -112,6 +141,7 @@ function functionForSlot(slot) {
 }
 
 function autoFormatTopicRows() {
+  if (state.words.length) undoStack.push(snapshotWords());
   state.words.forEach((item) => {
     item.fn = inferPhraseFunction(item.message || item.label, item.fn);
     item.slot = null;
@@ -227,6 +257,7 @@ function renderWords() {
     remove.setAttribute("aria-label", `Remove ${item.label}`);
     remove.textContent = "×";
     remove.addEventListener("click", () => {
+      undoStack.push(snapshotWords());
       state.words.splice(index, 1);
       $("chip-note").textContent = "";
       renderWords();
@@ -258,8 +289,16 @@ function renderWords() {
       ? ""
       : "Type a word, press Enter — or paste a comma-separated list";
   updateTopicInputRow();
+  if (undoBtn) undoBtn.hidden = !undoStack.canUndo();
   renderPreview();
   renderPlacementOrder();
+}
+
+/* Called when a session/connection resets and the old undo history no
+   longer applies to anything on screen (see resetConnection in connect.js). */
+function clearUndoHistory() {
+  undoStack.clear();
+  if (undoBtn) undoBtn.hidden = true;
 }
 
 /* ---------- step 2: chip editor dialog ---------- */
@@ -314,6 +353,7 @@ chipDialog.addEventListener("close", () => {
   const action = chipDialog.returnValue;
   if (editingIndex === null) return;
   if (action === "remove") {
+    undoStack.push(snapshotWords());
     state.words.splice(editingIndex, 1);
   } else if (action === "save") {
     const label = $("edit-label").value.trim();
@@ -336,4 +376,7 @@ chipDialog.addEventListener("close", () => {
   renderWords();
 });
 
-export { autoFormatTopicRows, firstAvailableSlot, functionForSlot, renderWords, takeWordInput, updateTopicInputRow };
+export {
+  autoFormatTopicRows, clearUndoHistory, firstAvailableSlot, functionForSlot,
+  renderWords, takeWordInput, undoLastRemoval, updateTopicInputRow,
+};

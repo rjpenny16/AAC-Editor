@@ -59,6 +59,30 @@ async function mockTD(page, options = {}) {
   });
 }
 
+/* Settings are backed by a real per-machine file, so tests mock the endpoint
+   rather than hitting it — the same store persisting across page.goto calls
+   in one test lets a test simulate "the next launch" without a real restart. */
+async function mockSettings(page, initial = {}) {
+  const store = { preferences: initial.preferences || {}, draft: initial.draft || null };
+  await page.route('**/api/settings', (route) => {
+    const method = route.request().method();
+    if (method === 'GET') return fulfillJson(route, { ok: true, ...store });
+    if (method === 'PUT') {
+      const body = route.request().postDataJSON() || {};
+      store.preferences = body.preferences || {};
+      store.draft = body.draft || null;
+      return fulfillJson(route, { ok: true });
+    }
+    if (method === 'DELETE') {
+      store.preferences = {};
+      store.draft = null;
+      return fulfillJson(route, { ok: true });
+    }
+    return route.continue();
+  });
+  return store;
+}
+
 async function openEditor(page) {
   await page.goto(BASE_URL);
   await expect(page.locator('#step-load')).toBeVisible();
@@ -94,6 +118,16 @@ async function blockingViolations(page) {
     .filter((violation) => ['serious', 'critical'].includes(violation.impact))
     .map(({ id, impact, help, nodes }) => ({ id, impact, help, targets: nodes.map((n) => n.target) }));
 }
+
+// Settings are backed by a real file on the machine running the suite, and
+// the webServer above is one long-lived process for the whole file — without
+// this, one test's autosaved draft would leak into every test after it. Every
+// test gets an empty, isolated mock by default; tests that exercise settings
+// specifically call mockSettings(page, {...}) again to override it, and the
+// most recently registered route wins.
+test.beforeEach(async ({ page }) => {
+  await mockSettings(page);
+});
 
 // Only the connect screen used to be scanned, which left the screens where the
 // real work happens — and the modal with the destructive button — unchecked.
@@ -1235,6 +1269,131 @@ test('support dialog has no serious or critical accessibility violations', async
   const blocking = results.violations
     .filter((violation) => ['serious', 'critical'].includes(violation.impact));
   expect(blocking).toEqual([]);
+});
+
+test.describe('never lose work: settings, drafts, and undo', () => {
+  const draft = {
+    provider: 'tdsnap',
+    operation: 'existing',
+    page_style: 'words',
+    active_fn: '',
+    target_page: 'Eating',
+    title: '',
+    items: [
+      { label: 'Apple', message: null, fn: '', slot: 0, symbol: true },
+      { label: 'Banana', message: null, fn: '', slot: 1, symbol: true },
+    ],
+    saved_at: 1700000000,
+  };
+
+  test('the recovery banner offers an unfinished page, and resuming restores its buttons', async ({ page }) => {
+    await mockSettings(page, { draft });
+    await mockTD(page);
+    await openEditor(page);
+
+    const banner = page.locator('#draft-banner');
+    await expect(banner).toBeVisible();
+    await expect(page.locator('#draft-banner-text')).toContainText('Eating');
+
+    await page.locator('#draft-resume-btn').click();
+    await expect(banner).toBeHidden();
+
+    await page.locator('#live-connect-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#chipbox .chip-body').filter({ hasText: 'Apple' })).toBeVisible();
+    await expect(page.locator('#chipbox .chip-body').filter({ hasText: 'Banana' })).toBeVisible();
+  });
+
+  test('discarding the recovery banner clears the stored draft and starts empty', async ({ page }) => {
+    const store = await mockSettings(page, { draft });
+    await mockTD(page);
+    await openEditor(page);
+
+    await expect(page.locator('#draft-banner')).toBeVisible();
+    await page.locator('#draft-discard-btn').click();
+    await expect(page.locator('#draft-banner')).toBeHidden();
+    await expect.poll(() => store.draft).toBeNull();
+
+    await page.locator('#live-connect-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(0);
+  });
+
+  test('the recovery banner has no serious or critical accessibility violations', async ({ page }) => {
+    await mockSettings(page, { draft });
+    await mockTD(page);
+    await openEditor(page);
+    await expect(page.locator('#draft-banner')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test('the settings panel lists what is saved and Clear removes it, including a draft', async ({ page }) => {
+    await mockSettings(page, {
+      preferences: { provider: 'grid3', ollama_host: 'http://localhost:11434' },
+      draft,
+    });
+    await mockTD(page);
+    await openEditor(page);
+    await page.locator('#draft-discard-btn').click(); // out of the way for this test
+
+    await page.locator('#settings-panel-btn').click();
+    const dialog = page.locator('#settings-panel');
+    await expect(dialog).toBeVisible();
+    await expect(page.locator('#settings-panel-list')).toContainText('grid3');
+    await expect(page.locator('#settings-panel-list')).toContainText('localhost:11434');
+    expect(await blockingViolations(page)).toEqual([]);
+
+    await page.locator('#settings-clear-btn').click();
+    await expect(page.locator('#settings-panel-status')).toContainText('Cleared');
+    await expect(page.locator('#settings-panel-list')).toContainText('Nothing saved yet');
+  });
+
+  test('the last chosen AAC app is remembered, and falls back once nothing is stored', async ({ page }) => {
+    const store = await mockSettings(page, { preferences: { provider: 'grid3' } });
+    await mockTD(page);
+    await page.goto(BASE_URL); // no ?provider= query string
+    await expect(page.locator('#provider-grid3')).toHaveClass(/selected/);
+
+    // Nothing stored (e.g. after Clear all saved data) falls back to the default.
+    store.preferences = {};
+    store.draft = null;
+    await page.goto(BASE_URL);
+    await expect(page.locator('#provider-tdsnap')).toHaveClass(/selected/);
+  });
+
+  test('removing a chip can be undone', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('Apple, Banana');
+    await page.locator('#word-input').press('Enter');
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#undo-remove-btn')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Remove Apple' }).click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await expect(page.locator('#undo-remove-btn')).toBeVisible();
+
+    await page.locator('#undo-remove-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#chipbox .chip-body').filter({ hasText: 'Apple' })).toBeVisible();
+    await expect(page.locator('#undo-remove-btn')).toBeHidden();
+  });
+
+  test('undo is scoped to the current session and does not resurrect a stale removal', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('Apple');
+    await page.locator('#word-input').press('Enter');
+    await page.getByRole('button', { name: 'Remove Apple' }).click();
+    await expect(page.locator('#undo-remove-btn')).toBeVisible();
+
+    await page.locator('#file-badge').click(); // also calls resetConnection, and is reachable from any step
+    await expect(page.locator('#step-load')).toBeVisible();
+    await page.locator('#live-connect-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await expect(page.locator('#undo-remove-btn')).toBeHidden();
+  });
 });
 
 test('real TD Snap edit is explicit opt-in', async ({ page }) => {

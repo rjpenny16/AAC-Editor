@@ -700,6 +700,10 @@ summary {
 .app-error-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 0.85rem; }
 
 .support-dialog { width: min(44rem, calc(100% - 2rem)); }
+.settings-list { margin: 0.85rem 0 0; }
+.settings-list dt { font-weight: 600; margin-top: 0.75rem; }
+.settings-list dt:first-child { margin-top: 0; }
+.settings-list dd { margin: 0.15rem 0 0; color: var(--ink-soft); font-size: 0.875rem; }
 .support-report {
   margin: 0.85rem 0 0;
   max-height: 22rem;
