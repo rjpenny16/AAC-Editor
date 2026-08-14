@@ -23,10 +23,10 @@ The gaps are elsewhere, and three of them are serious:
    no autosave, no recovery. Composing a large topic page — labels, spoken messages, function
    assignments, drag placements — and then reloading loses all of it. This is the clearest
    user-facing failure mode in the product and it is small to fix.
-2. **The app is add-only.** The live vocabulary is `add_to_existing_page` and `add_topic_page`.
-   Fixing a typo, retiring a word, moving a button, or choosing a symbol is still hand work — the
-   exact work this tool exists to eliminate. There is also no user-initiated undo once an edit lands
-   in the real page set; only failure-path rollback exists.
+2. ~~**The app is add-only.**~~ *Phase 4a closed the first half of this: TD Snap live can now change
+   and remove a speaking button.* Moving a button and choosing its symbol are still hand work
+   (Phase 4c), and there is still no user-initiated undo once an edit lands in the real page set;
+   only failure-path rollback exists (Phase 4b).
 3. **`live.py` and `grid3.py` each carry their own copy of the UI-Automation helper layer.** Twelve
    identically-named functions exist in both files and have already diverged in behaviour. Building
    Grid 3 parity on top of that multiplies the divergence.
@@ -218,11 +218,18 @@ The largest gap between what users need and what the app does. It reuses the saf
 built; the server currently answers anything but `add_to_existing_page` with *"This edit operation is
 not supported yet."*
 
-### 4a — Change and remove (TD Snap live)
+### 4a — Change and remove (TD Snap live) — **shipped**
 
-New operations `change_button(page, slot, label?, message?)` and `remove_button(page, slot)`, reusing
-the existing spine unchanged: fingerprint checked before and after, the global live lock,
-`_verify_added_buttons` generalized to `_verify_page_state`, and `_restore_page_fingerprint` rollback.
+Landed as one `apply_page_edits(page, items, changes, removals, fingerprint)` spine rather than two
+separate operations, so a single review, fingerprint guard, edit-mode session, and rollback covers an
+edit that adds, changes, and removes at once — removals first, since they free the cells an addition
+may have been placed in. `_verify_added_buttons` became `_verify_page_state` (added, changed,
+removed, *and* the cells the edit never named), and `_restore_page_fingerprint` became a thin wrapper
+over the content-aware `_restore_page_state`. Eligibility and prior content are read from the page
+set's stored command sequences, because the accessibility tree renders a page link and a speaking
+button identically. Still outstanding for this milestone: the `TDSNAP_LIVE_E2E=1` run on real
+hardware, which is the only thing that can confirm the delete-action discovery against a live TD Snap
+editing panel.
 
 > **The new danger.** Every operation to date has been additive, so rollback could mean *"undo until
 > the page matches the pre-edit fingerprint."* Destructive edits need the **content** captured too:

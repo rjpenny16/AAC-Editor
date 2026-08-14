@@ -9,6 +9,7 @@ import { state } from "./state.js";
 import { $, setBusy, setActivity, setPreviewBusy } from "./dom.js";
 import { api } from "./api.js";
 import { firstAvailableSlot, renderWords } from "./chips.js";
+import { emptyEdits, reconcile } from "./edits.js";
 import { parentFilter, parentSelect, renderParents } from "./parents.js";
 import { savePreference } from "./settings.js";
 import { clearBuildError, setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
@@ -158,6 +159,8 @@ async function useFileSession(data) {
   state.parentTouched = false;
   state.words = [];
   state.existingButtons = [];
+  state.pageEdits = emptyEdits();
+  state.canEditExisting = false;
   state.availableSlots = null;
   state.layoutFingerprint = null;
   state.edits = 0;
@@ -382,6 +385,16 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     state.gridBackground = data.background || null;
     state.layoutFingerprint = data.fingerprint;
     state.parentFree = data.free_slots.length;
+    // Changing or removing needs the page set's stored content: without it
+    // there is nothing to restore from if the edit fails part-way. A page set
+    // AAC Editor cannot fully identify keeps working for adding buttons.
+    state.canEditExisting = state.provider === "tdsnap" && state.mode === "live" &&
+      state.operation === "existing" && data.content_readable === true;
+    // Drop any pending edit whose button moved, was renamed, or stopped being
+    // eligible while the live page was being followed.
+    state.pageEdits = state.canEditExisting
+      ? reconcile(state.pageEdits, state.existingButtons)
+      : emptyEdits();
     const occupied = new Set(state.existingButtons.map((button) => button.slot));
     state.words.forEach((item) => {
       if (occupied.has(item.slot) || !state.availableSlots.includes(item.slot)) {
@@ -401,6 +414,8 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     state.availableSlots = null;
     state.grid3Cells = [];
     state.layoutFingerprint = null;
+    state.canEditExisting = false;
+    state.pageEdits = emptyEdits();
     $("parent-capacity").classList.add("error");
     $("parent-capacity").textContent = "The layout could not be loaded.";
     renderWords();

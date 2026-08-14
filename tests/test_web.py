@@ -570,3 +570,37 @@ def test_unknown_session_still_errors_without_a_directory(client):
     response = client.get("/api/pageset/does-not-exist/pages")
     assert response.status_code == 400
     assert "Unknown or expired session" in response.get_json()["error"]
+
+
+def test_edit_plan_bounds_changes_and_removals_before_the_write_path(client):
+    """Nothing reaches TD Snap without being shaped and bounded first.
+
+    The endpoint is the only place a change or a removal can be requested, so
+    a malformed slot has to stop here rather than in the middle of an edit.
+    """
+    def send(payload):
+        return client.post(
+            "/api/tdsnap/edit-plan",
+            json={"operation": "edit_page", "page": "Eating", "fingerprint": "v1",
+                  **payload},
+            headers={**token_headers(), "X-TDSnap-Editor": "1"},
+        )
+
+    assert send({"changes": [{"slot": -1, "label": "x"}]}).status_code == 400
+    assert send({"changes": [{"slot": True, "label": "x"}]}).status_code == 400
+    assert send({"changes": [{"slot": 0, "label": "x" * 61}]}).status_code == 400
+    assert send({"changes": [{"slot": 0, "label": "  "}]}).status_code == 400
+    assert send({"changes": "not a list"}).status_code == 400
+    assert send({"removals": [-1]}).status_code == 400
+    assert send({"removals": [1.5]}).status_code == 400
+    assert send({"removals": "not a list"}).status_code == 400
+    assert send({"operation": "delete_page"}).status_code == 400
+
+    # An empty message is a real request ("go back to speaking the label"), so
+    # it has to survive validation rather than being dropped as falsy.
+    assert server._validated_changes([{"slot": 0, "message": ""}]) == [
+        {"slot": 0, "message": ""}
+    ]
+    assert server._validated_changes([{"slot": 0, "label": " apple "}]) == [
+        {"slot": 0, "label": "apple"}
+    ]

@@ -23,8 +23,17 @@ const MAX_RECENT_ERRORS = 5;
    state.words survives a successful edit — it is only cleared when the user
    starts another one — so state.applied, not emptiness, is what says the work
    is safely in the page set. */
+/* Pending changes and removals count as unsaved work too. They are never
+   autosaved — a change is pinned to one page's reviewed fingerprint, and
+   offering it back on a later launch would mean replaying it against a page
+   that may have moved on — so the leave-warning is the only thing standing
+   between the user and losing them. */
 function hasUnsavedWork() {
-  return !state.applied && Boolean(state.words.length || state.pendingEdit);
+  const edits = state.pageEdits || { changes: [], removals: [] };
+  return !state.applied && Boolean(
+    state.words.length || state.pendingEdit ||
+    edits.changes.length || edits.removals.length
+  );
 }
 
 window.addEventListener("beforeunload", (event) => {

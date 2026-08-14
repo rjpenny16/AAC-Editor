@@ -627,6 +627,34 @@ summary {
 .preview .cell.existing { color: #52647d; border-style: solid; background: #e7edf4; }
 .preview .cell.coded { border: 3px solid var(--fn-color); }
 .preview .cell.drop-target { outline: 3px solid var(--focus); }
+
+/* An existing button this edit may touch. "Eligible" is an invitation while
+   "changed" and "removing" are commitments, so the two committed states carry
+   a word in the corner as well as a color — the difference has to survive a
+   reader who cannot tell the border colors apart. */
+.preview .cell.existing.editable { border-style: dashed; border-color: var(--line-strong); cursor: pointer; }
+.preview .cell.existing.editable:hover { border-color: var(--accent); background: var(--accent-soft); }
+.preview .cell.marked-changed,
+.preview .cell.marked-removed { color: var(--ink); cursor: pointer; }
+.preview .cell.marked-changed { border: 3px solid var(--accent); background: var(--accent-soft); }
+.preview .cell.marked-removed { border: 3px solid var(--danger); background: var(--danger-soft); }
+.preview .cell.marked-removed .cell-label { text-decoration: line-through; }
+.preview .cell.marked-changed::after,
+.preview .cell.marked-removed::after {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.preview .cell.marked-changed::after { content: "changed"; color: var(--accent); }
+.preview .cell.marked-removed::after { content: "removing"; color: var(--danger); }
+.pending-edits { font-weight: 700; }
+.chip-editor-note { margin: 0 0 0.75rem; }
+.review-removals .review-items li { border-color: var(--danger); background: var(--danger-soft); }
 .preview .empty-note { grid-column: 1 / -1; min-height: 8rem; }
 .cell-symbol { display: inline-flex; color: #58708f; }
 .cell-symbol svg { width: 1.5rem; height: 1.5rem; }

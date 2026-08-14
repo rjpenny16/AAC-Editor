@@ -124,6 +124,48 @@ def _validated_items(value) -> list:
     return value
 
 
+def _validated_changes(value) -> list:
+    """Bound ``[{slot, label?, message?}]`` before it reaches the write path.
+
+    ``label``/``message`` absent means "leave that as it is"; an empty message
+    means "go back to speaking the label", so ``None`` and ``""`` are kept
+    distinct here rather than collapsed the way ``_validated_items`` does.
+    """
+    if not isinstance(value, list):
+        raise PagesetError("'changes' must be a list of button changes.")
+    if len(value) > MAX_ITEMS:
+        raise PagesetError(f"No more than {MAX_ITEMS} buttons can be changed at once.")
+    changes = []
+    for change in value:
+        if not isinstance(change, dict):
+            raise PagesetError("Each change must be a {slot, label, message} object.")
+        slot = change.get("slot")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            raise PagesetError("Each changed button slot must be a non-negative integer.")
+        entry = {"slot": slot}
+        if change.get("label") is not None:
+            entry["label"] = _bounded_text(
+                change.get("label"), "label", MAX_LABEL_CHARS, required=True
+            )
+        if change.get("message") is not None:
+            entry["message"] = _bounded_text(
+                change.get("message"), "message", MAX_MESSAGE_CHARS
+            )
+        changes.append(entry)
+    return changes
+
+
+def _validated_removals(value) -> list:
+    if not isinstance(value, list):
+        raise PagesetError("'removals' must be a list of button slots.")
+    if len(value) > MAX_ITEMS:
+        raise PagesetError(f"No more than {MAX_ITEMS} buttons can be removed at once.")
+    for slot in value:
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            raise PagesetError("Each removed button slot must be a non-negative integer.")
+    return value
+
+
 def _validated_existing(value) -> list:
     if not isinstance(value, list):
         raise PagesetError("'existing' must be a list of button labels.")
@@ -675,15 +717,22 @@ def live_execute_plan():
     if request.headers.get("X-TDSnap-Editor") != "1":
         raise PagesetError("Direct TD Snap edits must start in this app.")
     payload = _json_payload()
-    if payload.get("operation") != "add_to_existing_page":
+    # "edit_page" carries additions, changes, and removals together, so one
+    # review and one rollback cover the whole edit. The older add-only name
+    # stays accepted and behaves identically.
+    if payload.get("operation") not in {"add_to_existing_page", "edit_page"}:
         raise PagesetError("This edit operation is not supported yet.")
     items = _validated_items(payload.get("items", []))
+    changes = _validated_changes(payload.get("changes", []))
+    removals = _validated_removals(payload.get("removals", []))
     page = _bounded_text(
         payload.get("page"), "page", MAX_PAGE_NAME_CHARS, required=True
     )
     fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
     with _LIVE_LOCK:
-        report = live.add_to_existing_page(page, items, fingerprint or None)
+        report = live.apply_page_edits(
+            page, items, changes, removals, fingerprint or None
+        )
     return jsonify({"ok": True, **report})
 
 

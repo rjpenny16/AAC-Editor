@@ -11,6 +11,7 @@ import { api } from "./api.js";
 import { clearUndoHistory, renderWords } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor } from "./connect.js";
 import { clearDraft } from "./draft.js";
+import { emptyEdits } from "./edits.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
 import { recordError } from "./support.js";
 import { setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
@@ -26,6 +27,9 @@ const CHECK_LABELS = {
   target_page: "The chosen page was updated",
   content: "Every requested speaking button is present",
   positions: "Every new button is in the reviewed space",
+  changed_content: "Every changed button says what you asked for",
+  removed_buttons: "Every removed button is gone",
+  untouched_buttons: "Nothing else on the page changed",
   symbols: "Matching symbols were added when available",
   topic_format: "Topic-page row colors were applied in TD Snap",
   grid3_edit: "Grid 3 saved the change",
@@ -38,6 +42,14 @@ const CHECK_SVG =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
   'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M20 6 9 17l-5-5"/></svg>';
+
+function editedCounts(data) {
+  return [
+    data.buttons ? `${data.buttons} added` : "",
+    data.changed ? `${data.changed} changed` : "",
+    data.removed ? `${data.removed} removed` : "",
+  ].filter(Boolean).join(", ");
+}
 
 function renderResult(title, data, operation = state.operation, parentTitle = titleOf(state.parentId)) {
   $("review-state").hidden = true;
@@ -61,10 +73,13 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
     saveButton.removeAttribute("href");
     saveButton.removeAttribute("download");
   }
-  $("result-sub").textContent = operation === "existing"
-    ? `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to ` +
-      `“${title}” without changing its existing ${state.provider === "grid3" ? "cells" : "vocabulary"}.`
-    : `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, and “${parentTitle}” now links to it.`;
+  const touched = (data.changed || 0) + (data.removed || 0);
+  $("result-sub").textContent = operation !== "existing"
+    ? `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, and “${parentTitle}” now links to it.`
+    : touched
+      ? `“${title}” was updated: ${editedCounts(data)}. Nothing else on the page changed.`
+      : `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to ` +
+        `“${title}” without changing its existing ${state.provider === "grid3" ? "cells" : "vocabulary"}.`;
 
   const checks = $("checks");
   checks.innerHTML = "";
@@ -125,6 +140,7 @@ $("file-save-btn").addEventListener("click", async (event) => {
 
 $("another-btn").addEventListener("click", async () => {
   state.words = [];
+  state.pageEdits = emptyEdits();
   state.applied = false;
   state.parentId = state.currentPage;
   state.parentFree = 1;
@@ -208,6 +224,8 @@ function resetConnection() {
   state.sessionId = null;
   state.filename = "";
   state.words = [];
+  state.pageEdits = emptyEdits();
+  state.canEditExisting = false;
   state.applied = false;
   state.parentId = null;
   state.parentFree = null;

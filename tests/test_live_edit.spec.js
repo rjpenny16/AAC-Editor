@@ -1396,6 +1396,273 @@ test.describe('never lose work: settings, drafts, and undo', () => {
   });
 });
 
+
+/* Changing and removing what is already on the page.
+ *
+ * The safety rules matter more here than anywhere else in the suite: an
+ * addition can be undone by deleting a chip, while a change or a removal
+ * reaches into vocabulary somebody already relies on. These tests pin that
+ * nothing is written before the review names it, that a button AAC Editor
+ * must not touch says why, and that the request carries only the fields that
+ * actually moved.
+ */
+test.describe('changing and removing existing buttons', () => {
+  const EDITABLE_PAGE = {
+    buttons: [
+      {
+        slot: 0, label: 'aple', message: 'I want an aple', function: null,
+        symbol: true, editable: true, locked_reason: null,
+      },
+      {
+        slot: 1, label: 'pear', message: null, function: null,
+        symbol: true, editable: true, locked_reason: null,
+      },
+      {
+        slot: 2, label: 'Games', message: null, function: null, symbol: true,
+        editable: false,
+        locked_reason: 'This button opens another page, so AAC Editor leaves it alone.',
+      },
+    ],
+    free_slots: [3, 4, 5],
+    content_readable: true,
+    fingerprint: 'eating-v1',
+  };
+
+  async function editablePage(page, overrides = {}) {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating', { ...EDITABLE_PAGE, ...overrides }),
+    });
+  }
+
+  async function openExisting(page, label) {
+    await page.locator('#edit-existing-btn').click();
+    await expect(page.locator('#wizard-placement')).toBeVisible();
+    await page.locator('#preview .cell.existing').filter({ hasText: label }).click();
+    await expect(page.locator('#chip-editor')).toBeVisible();
+  }
+
+  test('a locked button says why, and cannot be selected', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+
+    const locked = page.locator('#preview .cell.existing').filter({ hasText: 'Games' });
+    await expect(locked).toHaveAttribute(
+      'title', 'This button opens another page, so AAC Editor leaves it alone.',
+    );
+    await expect(locked).toHaveAttribute('aria-label', /existing and locked\. This button opens another page/);
+    await expect(locked).not.toHaveAttribute('role', 'button');
+    await locked.click();
+    await expect(page.locator('#chip-editor')).toBeHidden();
+  });
+
+  test('the way in is hidden when the page set content cannot be read', async ({ page }) => {
+    await editablePage(page, {
+      content_readable: false,
+      buttons: EDITABLE_PAGE.buttons.map((button) => ({
+        ...button,
+        editable: false,
+        locked_reason: 'AAC Editor couldn’t read what this button holds today.',
+      })),
+    });
+    await connect(page);
+
+    await expect(page.locator('#edit-existing-btn')).toBeHidden();
+  });
+
+  test('a change and a removal are named in review and sent as one edit', async ({ page }) => {
+    let submitted = null;
+    let editCalls = 0;
+    await editablePage(page);
+    await page.route('**/api/tdsnap/edit-plan', (route) => {
+      editCalls += 1;
+      submitted = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true,
+        page: 'Eating',
+        buttons: 1,
+        changed: 1,
+        removed: 1,
+        warnings: [],
+        checks: {
+          td_snap_edit: 'pass', target_page: 'pass', content: 'pass',
+          positions: 'pass', changed_content: 'pass', removed_buttons: 'pass',
+          untouched_buttons: 'pass',
+        },
+      });
+    });
+
+    await connect(page);
+    await openExisting(page, 'aple');
+    await expect(page.locator('#chip-editor-title')).toHaveText('Change this button');
+    await expect(page.locator('#chip-editor-note')).toContainText('On the page now: “aple”');
+    // The change operation never rewrites a topic-page row, so the dialog
+    // does not offer one for a button that already exists.
+    await expect(page.locator('#edit-fn-field')).toBeHidden();
+    await expect(page.locator('#edit-label')).toHaveValue('aple');
+    await expect(page.locator('#edit-message')).toHaveValue('I want an aple');
+    await page.locator('#edit-label').fill('apple');
+    await page.locator('#edit-save').click();
+    await expect(page.locator('#preview .cell.marked-changed')).toHaveCount(1);
+
+    await page.locator('#preview .cell.existing').filter({ hasText: 'pear' }).click();
+    await page.locator('#edit-remove').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
+
+    await page.locator('#placement-back-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await expect(page.locator('#edit-existing-summary')).toHaveText(
+      'Pending: change 1 and remove 1 button on eating.',
+    );
+    await page.locator('#word-input').fill('banana');
+    await page.locator('#word-add-btn').click();
+    await page.locator('#build-btn').click();
+
+    await expect(page.locator('#review-action')).toHaveText(
+      'Add 1, change 1 and remove 1 button on Eating',
+    );
+    await expect(page.locator('#confirm-update-label')).toHaveText(
+      'Add 1, change 1 and remove 1 button on Eating',
+    );
+    await expect(page.locator('#review-changes li')).toHaveText([
+      'aple“aple” becomes “apple”',
+    ]);
+    await expect(page.locator('#review-removals li')).toHaveText(['pear']);
+    expect(editCalls).toBe(0);
+
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-heading')).toHaveText('Done — TD Snap was updated');
+    expect(editCalls).toBe(1);
+    expect(submitted).toMatchObject({
+      operation: 'edit_page',
+      page: 'Eating',
+      fingerprint: 'eating-v1',
+      changes: [{ slot: 0, label: 'apple' }],
+      removals: [1],
+    });
+    expect(submitted.items.map((item) => item.label)).toEqual(['banana']);
+    await expect(page.locator('#result-sub')).toHaveText(
+      '“Eating” was updated: 1 added, 1 changed, 1 removed. Nothing else on the page changed.',
+    );
+    await expect(page.locator('#checks li')).toContainText([
+      'TD Snap saved the change',
+      'The chosen page was updated',
+      'Every requested speaking button is present',
+      'Every new button is in the reviewed space',
+      'Every changed button says what you asked for',
+      'Every removed button is gone',
+      'Nothing else on the page changed',
+    ]);
+  });
+
+  test('a pending change can be taken back, leaving nothing to confirm', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await openExisting(page, 'aple');
+    await page.locator('#edit-remove').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
+
+    await page.locator('#preview .cell.existing').filter({ hasText: 'aple' }).click();
+    await expect(page.locator('#edit-revert')).toBeVisible();
+    await page.locator('#edit-revert').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(0);
+
+    await page.locator('#placement-back-btn').click();
+    await expect(page.locator('#edit-existing-summary')).toBeHidden();
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#items-error')).toHaveText(
+      'Add at least one word or phrase before continuing.',
+    );
+  });
+
+  test('a removal alone is enough to review and confirm', async ({ page }) => {
+    let submitted = null;
+    await editablePage(page);
+    await page.route('**/api/tdsnap/edit-plan', (route) => {
+      submitted = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true, page: 'Eating', buttons: 0, changed: 0, removed: 1,
+        warnings: [], checks: { td_snap_edit: 'pass', removed_buttons: 'pass' },
+      });
+    });
+
+    await connect(page);
+    await openExisting(page, 'pear');
+    await page.locator('#edit-remove').click();
+    await page.locator('#placement-back-btn').click();
+    await page.locator('#build-btn').click();
+
+    await expect(page.locator('#review-action')).toHaveText('Remove 1 button on Eating');
+    await expect(page.locator('#review-items-wrap')).toBeHidden();
+    await expect(page.locator('#review-changes-wrap')).toBeHidden();
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-heading')).toHaveText('Done — TD Snap was updated');
+    expect(submitted).toMatchObject({ operation: 'edit_page', items: [], removals: [1] });
+  });
+
+  test('renaming onto a label already on the page is refused before review', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await openExisting(page, 'aple');
+    await page.locator('#edit-label').fill('pear');
+    await page.locator('#edit-save').click();
+
+    await expect(page.locator('#chip-editor')).toBeVisible();
+    await expect(page.locator('#preview .cell.marked-changed')).toHaveCount(0);
+  });
+
+  test('the editor works with a keyboard alone', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+    const target = page.locator('#preview .cell.existing').filter({ hasText: 'aple' });
+    await target.focus();
+    await target.press('Enter');
+
+    await expect(page.locator('#chip-editor')).toBeVisible();
+    await page.locator('#edit-label').fill('apple');
+    await page.locator('#edit-save').click();
+    await expect(page.locator('#preview .cell.marked-changed')).toHaveCount(1);
+  });
+
+  test('leaving with a pending removal asks first', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await openExisting(page, 'pear');
+    await page.locator('#edit-remove').click();
+    await page.locator('#placement-back-btn').click();
+
+    // A pending removal is never autosaved, so the leave prompt is the only
+    // thing between the user and losing it.
+    const prompted = await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(prompted).toBe(true);
+  });
+
+  test('the change editor has no serious or critical accessibility violations', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+    expect(await blockingViolations(page)).toEqual([]);
+
+    await page.locator('#preview .cell.existing').filter({ hasText: 'aple' }).click();
+    await expect(page.locator('#chip-editor')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+    await page.locator('#edit-save').click();
+
+    await page.locator('#preview .cell.existing').filter({ hasText: 'pear' }).click();
+    await page.locator('#edit-remove').click();
+    await page.locator('#placement-back-btn').click();
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-removals li')).toHaveCount(1);
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
 test('real TD Snap edit is explicit opt-in', async ({ page }) => {
   test.skip(
     process.env.TDSNAP_LIVE_E2E !== '1',

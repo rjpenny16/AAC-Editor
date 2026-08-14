@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from types import SimpleNamespace
 
@@ -488,7 +489,7 @@ def test_existing_page_remeasures_grid_in_edit_mode(monkeypatch):
     monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
     monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
     monkeypatch.setattr(live, "_exit_edit_mode", lambda _window: None)
-    monkeypatch.setattr(live, "_verify_added_buttons", lambda _window, _items: None)
+    monkeypatch.setattr(live, "_verify_page_state", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         live, "_add_button",
         lambda _auto, _window, cell, *_args: added.update(cell=cell) or {
@@ -543,8 +544,8 @@ def test_existing_page_failure_restores_reviewed_baseline(monkeypatch):
 
     monkeypatch.setattr(live, "_add_button", add)
     monkeypatch.setattr(
-        live, "_restore_page_fingerprint",
-        lambda _window, baseline, maximum: state.update(
+        live, "_restore_page_state",
+        lambda _window, baseline, content, maximum: state.update(
             restored=(baseline, maximum)
         ),
     )
@@ -661,9 +662,10 @@ def test_live_web_endpoints(monkeypatch):
     )
     monkeypatch.setattr(
         live,
-        "add_to_existing_page",
-        lambda page, items, fingerprint: {
-            "page": page, "buttons": len(items),
+        "apply_page_edits",
+        lambda page, items, changes, removals, fingerprint: {
+            "page": page, "buttons": len(items), "changed": len(changes),
+            "removed": len(removals),
             "checks": {"td_snap_edit": "pass", "positions": "pass"},
             "warnings": [],
         },
@@ -699,6 +701,18 @@ def test_live_web_endpoints(monkeypatch):
     ).get_json()
     assert existing["ok"] is True
     assert existing["buttons"] == 1
+    edited = client.post(
+        "/api/tdsnap/edit-plan",
+        json={
+            "operation": "edit_page", "page": "Eating", "fingerprint": "abc",
+            "items": [{"label": "Pizza", "slot": 1}],
+            "changes": [{"slot": 0, "label": "Apples"}],
+            "removals": [2],
+        },
+        headers={"X-TDSnap-Editor": "1"},
+    ).get_json()
+    assert edited["ok"] is True
+    assert (edited["buttons"], edited["changed"], edited["removed"]) == (1, 1, 1)
 
 
 def test_live_launches_td_snap_once(monkeypatch):
@@ -709,3 +723,498 @@ def test_live_launches_td_snap_once(monkeypatch):
 
     assert live.launch() == {"launched": True}
     assert opened == [live.TD_SNAP_APP]
+
+
+# ---------------------------------------------------------------------------
+# Changing and removing existing buttons
+#
+# The rules these pin are the ones that make a destructive edit safe to offer:
+# only a plain speaking button is ever rewritten, prior content is captured
+# before anything is touched, and a rollback is not believed until the content
+# is back — not merely the shape.
+
+
+def _pageset_with_page(tmp_path, monkeypatch, buttons, title="Eating"):
+    """Build a minimal page set holding *buttons* on one vocabulary page.
+
+    Each button is ``(label, message, command_flags, commands, links)``.
+    """
+    user = (tmp_path / "Packages" / "TobiiDynavox.Snap_test" /
+            "LocalState" / "Users" / "user")
+    user.mkdir(parents=True)
+    with sqlite3.connect(user / "Settings.ssf") as conn:
+        conn.execute("CREATE TABLE UserSettings (PageSetGuid TEXT)")
+        conn.execute("INSERT INTO UserSettings VALUES ('active')")
+    with sqlite3.connect(user / "active.sps") as conn:
+        conn.execute("CREATE TABLE Page (Id INTEGER, Title TEXT, PageType INTEGER)")
+        conn.execute("CREATE TABLE ElementReference (Id INTEGER, PageId INTEGER)")
+        conn.execute(
+            "CREATE TABLE Button (Id INTEGER, Label TEXT, Message TEXT, "
+            "CommandFlags INTEGER, BorderColor INTEGER, LibrarySymbolId INTEGER, "
+            "ElementReferenceId INTEGER)"
+        )
+        conn.execute("CREATE TABLE CommandSequence (SerializedCommands TEXT, ButtonId INTEGER)")
+        conn.execute("CREATE TABLE ButtonPageLink (ButtonId INTEGER, PageUniqueId TEXT)")
+        conn.execute("INSERT INTO Page VALUES (1, ?, 1)", (title,))
+        conn.execute("INSERT INTO ElementReference VALUES (1, 1)")
+        for index, spec in enumerate(buttons, start=1):
+            label, message, flags, commands, links = spec[:5]
+            border = spec[5] if len(spec) > 5 else None
+            conn.execute(
+                "INSERT INTO Button VALUES (?, ?, ?, ?, ?, ?, 1)",
+                (index, label, message, flags, border, 0),
+            )
+            conn.execute("INSERT INTO CommandSequence VALUES (?, ?)", (commands, index))
+            if links:
+                conn.execute("INSERT INTO ButtonPageLink VALUES (?, 'other')", (index,))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+
+SPEAK = live.templates.SPEAK_COMMANDS
+NAVIGATE = live.templates.navigate_commands("other")
+
+
+def test_stored_content_separates_speaking_buttons_from_everything_else(
+    tmp_path, monkeypatch
+):
+    _pageset_with_page(tmp_path, monkeypatch, [
+        ("apple", "I want an apple", 8, SPEAK, 0, live.colors.argb_from_hex("#43A047")),
+        ("Games", None, 9, NAVIGATE, 1),
+        ("Clear", None, 8, '{"$type":"1","$values":[{"$type":"9"}]}', 0),
+        ("Two things", None, 8,
+         '{"$type":"1","$values":[{"$type":"3"},{"$type":"9"}]}', 0),
+    ])
+
+    content = live._stored_page_content("Eating")
+
+    assert content["apple"]["kind"] == "speak"
+    assert content["apple"]["message"] == "I want an apple"
+    assert content["apple"]["function"] == "positive"
+    # A page link and an action are indistinguishable from a speaking button in
+    # the accessibility tree; only the stored command sequence tells them apart.
+    assert content["games"]["kind"] == "navigate"
+    assert content["clear"]["kind"] == "action"
+    assert content["two things"]["kind"] == "action"
+
+
+def test_a_label_used_twice_on_one_page_is_never_guessed_at(tmp_path, monkeypatch):
+    _pageset_with_page(tmp_path, monkeypatch, [
+        ("apple", "first", 8, SPEAK, 0),
+        ("apple", "second", 8, SPEAK, 0),
+        ("pear", None, 8, SPEAK, 0),
+    ])
+
+    content = live._stored_page_content("Eating")
+
+    assert "apple" not in content
+    assert content["pear"]["kind"] == "speak"
+
+
+def test_stored_content_is_none_when_the_page_cannot_be_identified(tmp_path, monkeypatch):
+    _pageset_with_page(tmp_path, monkeypatch, [("apple", None, 8, SPEAK, 0)])
+
+    assert live._stored_page_content("Not A Page") is None
+    assert live._stored_page_content("") is None
+
+
+def test_inspect_page_says_which_buttons_can_be_edited_and_why_not(tmp_path, monkeypatch):
+    _pageset_with_page(tmp_path, monkeypatch, [
+        ("apple", "I want an apple", 8, SPEAK, 0),
+        ("Games", None, 9, NAVIGATE, 1),
+    ])
+    grid = live.Grid((10, 20), (30,), 8, 8)
+    group = SimpleNamespace(GetChildren=lambda: [], Name="Eating")
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_grid", lambda _group: grid)
+    monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
+    monkeypatch.setattr(live, "_page_layout", lambda *_args: [
+        {"slot": 0, "label": "apple"}, {"slot": 1, "label": "Games"},
+    ])
+
+    result = live.inspect_page()
+
+    assert result["content_readable"] is True
+    apple, games = result["buttons"]
+    assert (apple["editable"], apple["message"]) == (True, "I want an apple")
+    assert games["editable"] is False
+    assert games["locked_reason"] == live.LOCK_REASONS["navigate"]
+
+
+def test_inspect_page_locks_everything_when_content_cannot_be_read(monkeypatch):
+    grid = live.Grid((10,), (30,), 8, 8)
+    group = SimpleNamespace(GetChildren=lambda: [], Name="Eating")
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_grid", lambda _group: grid)
+    monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
+    monkeypatch.setattr(live, "_page_layout", lambda *_args: [{"slot": 0, "label": "apple"}])
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: None)
+
+    result = live.inspect_page()
+
+    assert result["content_readable"] is False
+    assert result["buttons"][0]["editable"] is False
+    assert result["buttons"][0]["locked_reason"] == live.LOCK_REASONS["unreadable"]
+
+
+def test_changes_and_removals_are_bounded_before_anything_runs():
+    assert live._normalize_removals([2, 0, 2]) == [0, 2]
+    with pytest.raises(PagesetError, match="non-negative cell number"):
+        live._normalize_removals([-1])
+    with pytest.raises(PagesetError, match="non-negative cell number"):
+        live._normalize_removals([True])
+    with pytest.raises(PagesetError, match="new label or a new spoken message"):
+        live._normalize_changes([{"slot": 1}])
+    with pytest.raises(PagesetError, match="changed twice"):
+        live._normalize_changes([{"slot": 1, "label": "a"}, {"slot": 1, "label": "b"}])
+    with pytest.raises(PagesetError, match="still needs a label"):
+        live._normalize_changes([{"slot": 1, "label": "   "}])
+    assert live._normalize_changes([{"slot": 1, "message": ""}]) == [
+        {"slot": 1, "label": None, "message": ""}
+    ]
+
+
+def test_a_destructive_edit_is_refused_without_prior_content(monkeypatch):
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: None)
+
+    with pytest.raises(PagesetError, match="couldn't read this page set's saved"):
+        live._prior_content("Eating", [{"slot": 0, "label": "x", "message": None}], [], {0: "apple"})
+
+
+def test_a_locked_button_is_named_and_refused_before_the_edit_starts(monkeypatch):
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: {
+        "games": {"label": "Games", "message": None, "kind": "navigate"},
+    })
+
+    with pytest.raises(PagesetError, match=re.escape("'Games' can't be edited. This button opens")):
+        live._prior_content("Eating", [], [0], {0: "Games"})
+
+
+def test_a_button_that_moved_since_review_is_refused(monkeypatch):
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: {})
+
+    with pytest.raises(PagesetError, match="no longer where they were"):
+        live._prior_content("Eating", [], [7], {0: "apple"})
+
+
+def _fake_control(name):
+    return SimpleNamespace(Name=name, ControlTypeName="ButtonControl")
+
+
+def test_rollback_keeps_undoing_while_a_message_is_still_wrong(monkeypatch):
+    """The regression that content-aware rollback exists for.
+
+    Rewriting a spoken message changes neither a button's name nor its
+    position, so a fingerprint-only rollback matched its baseline immediately
+    and reported the page restored while the message stayed rewritten.
+    """
+    state = {"undos": 0, "message": "the new message"}
+    undo = SimpleNamespace(IsEnabled=True)
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_page_group", lambda _window: object())
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("unchanged",))
+    monkeypatch.setattr(live, "_find", lambda *_args, **_kwargs: undo)
+    monkeypatch.setattr(live, "_named_slots", lambda _window: {0: _fake_control("apple")})
+    monkeypatch.setattr(
+        live, "_spoken_message", lambda _window, _control: (True, state["message"])
+    )
+    monkeypatch.setattr(live.time, "sleep", lambda _seconds: None)
+
+    def press():
+        state["undos"] += 1
+        if state["undos"] == 3:
+            state["message"] = "I want an apple"
+
+    monkeypatch.setattr(live, "_activate", lambda _control: press())
+
+    live._restore_page_state(
+        object(), ("unchanged",), {0: {"label": "apple", "message": "I want an apple"}}, 8
+    )
+
+    assert state["undos"] == 3
+
+
+def test_rollback_reports_failure_when_the_prior_content_never_comes_back(monkeypatch):
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_page_group", lambda _window: object())
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("unchanged",))
+    monkeypatch.setattr(live, "_find", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(live, "_named_slots", lambda _window: {0: _fake_control("apple")})
+    monkeypatch.setattr(live, "_spoken_message", lambda _window, _control: (True, "wrong"))
+
+    with pytest.raises(PagesetError, match="could not verify restoration"):
+        live._restore_page_state(
+            object(), ("unchanged",), {0: {"label": "apple", "message": "right"}}, 2
+        )
+
+
+def test_verification_fails_when_a_button_the_edit_never_named_changed(monkeypatch):
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_named_slots", lambda _window: {
+        0: _fake_control("apple"), 1: _fake_control("banana"),
+    })
+
+    live._verify_page_state(object(), [], [], {0: "apple", 1: "banana"})
+    with pytest.raises(PagesetError, match="which this edit was not meant to touch"):
+        live._verify_page_state(object(), [], [], {0: "apple", 1: "pear"})
+
+
+def test_verification_fails_when_a_removed_button_is_still_there(monkeypatch):
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_named_slots", lambda _window: {0: _fake_control("apple")})
+
+    with pytest.raises(PagesetError, match="did not verify the removal of 'apple'"):
+        live._verify_page_state(object(), [], [0], {})
+
+
+def test_a_removal_stops_when_td_snap_exposes_no_delete_action(monkeypatch):
+    monkeypatch.setattr(live, "_select_button", lambda *_args: object())
+    monkeypatch.setattr(live, "_expand_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_delete_action", lambda _window: None)
+
+    with pytest.raises(PagesetError, match="did not expose a way to delete 'apple'"):
+        live._remove_button(object(), object(), live.Cell(1, 2, 3, 4), "apple")
+
+
+def test_the_delete_action_is_found_by_id_or_by_name():
+    def control(name="", automation_id="", control_type="ButtonControl"):
+        return SimpleNamespace(
+            Name=name, AutomationId=automation_id, ControlTypeName=control_type,
+            IsEnabled=True, GetChildren=lambda: [],
+            BoundingRectangle=SimpleNamespace(left=0, top=0, right=40, bottom=20),
+        )
+
+    by_id = control(automation_id="DeleteButton")
+    window = control()
+    window.GetChildren = lambda: [control(name="Cancel"), by_id]
+    assert live._delete_action(window) is by_id
+
+    named = control(name="Delete Button")
+    window.GetChildren = lambda: [control(name="Cancel"), named]
+    assert live._delete_action(window) is named
+
+    window.GetChildren = lambda: [control(name="Cancel")]
+    assert live._delete_action(window) is None
+
+
+def test_the_editor_must_already_hold_the_reviewed_label_before_it_is_rewritten():
+    def field(value):
+        return SimpleNamespace(
+            ControlTypeName="EditControl", AutomationId="TextBox", IsEnabled=True,
+            GetValuePattern=lambda value=value: SimpleNamespace(Value=value),
+            GetChildren=lambda: [],
+        )
+
+    wanted = field("aple")
+    window = SimpleNamespace(
+        ControlTypeName="PaneControl", AutomationId="", IsEnabled=True,
+        GetValuePattern=lambda: None,
+        GetChildren=lambda: [field("something else"), wanted],
+    )
+
+    assert live._filled_label_field(window, "aple") is wanted
+    assert live._filled_label_field(window, "pear") is None
+
+
+def test_an_edit_removes_changes_and_adds_in_that_order(monkeypatch):
+    grid = live.Grid((10, 20, 30), (40,), 8, 8)
+    performed = []
+    group = SimpleNamespace(GetChildren=lambda: [])
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_focus_window", lambda _window: None)
+    monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("before",))
+    monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
+    monkeypatch.setattr(live, "_grid", lambda _group: grid)
+    # The layout as reviewed, then as it stands once the edit has run.
+    layouts = iter((
+        [{"slot": 0, "label": "aple"}, {"slot": 1, "label": "old"}],
+        [{"slot": 0, "label": "apple"}, {"slot": 2, "label": "pear"}],
+    ))
+    monkeypatch.setattr(live, "_page_layout", lambda *_args: next(layouts))
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: {
+        "aple": {"label": "aple", "message": "I want an aple", "kind": "speak"},
+        "old": {"label": "old", "message": None, "kind": "speak"},
+    })
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_exit_edit_mode", lambda _window: None)
+    monkeypatch.setattr(
+        live, "_remove_button",
+        lambda _auto, _window, _cell, label: performed.append(("remove", label)),
+    )
+    monkeypatch.setattr(
+        live, "_change_button",
+        lambda _auto, _window, _cell, current, label, message: performed.append(
+            ("change", current, label, message)
+        ),
+    )
+    monkeypatch.setattr(
+        live, "_add_button",
+        lambda _auto, _window, _cell, label, *_args: performed.append(("add", label)) or {
+            "symbol": False, "border": True,
+        },
+    )
+    verified = {}
+    monkeypatch.setattr(
+        live, "_verify_page_state",
+        lambda _window, expected, removed, untouched: verified.update(
+            expected=expected, removed=removed, untouched=untouched
+        ),
+    )
+
+    report = live.apply_page_edits(
+        "Eating",
+        [{"label": "pear", "slot": 2, "symbol": False}],
+        [{"slot": 0, "label": "apple", "message": "I want an apple"}],
+        [1],
+        "v1",
+    )
+
+    assert performed == [
+        ("remove", "old"),
+        ("change", "aple", "apple", "I want an apple"),
+        ("add", "pear"),
+    ]
+    assert (report["buttons"], report["changed"], report["removed"]) == (1, 1, 1)
+    assert report["checks"]["changed_content"] == "pass"
+    assert report["checks"]["removed_buttons"] == "pass"
+    assert report["checks"]["untouched_buttons"] == "pass"
+    assert verified["removed"] == [1]
+    assert verified["untouched"] == {}
+    assert {item["label"] for item in verified["expected"]} == {"pear", "apple"}
+
+
+def test_an_edit_that_would_leave_two_buttons_sharing_a_label_is_refused(monkeypatch):
+    grid = live.Grid((10, 20), (30,), 8, 8)
+    group = SimpleNamespace(GetChildren=lambda: [])
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_focus_window", lambda _window: None)
+    monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("before",))
+    monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
+    monkeypatch.setattr(live, "_grid", lambda _group: grid)
+    monkeypatch.setattr(live, "_page_layout", lambda *_args: [
+        {"slot": 0, "label": "aple"}, {"slot": 1, "label": "pear"},
+    ])
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: {
+        "aple": {"label": "aple", "message": None, "kind": "speak"},
+        "pear": {"label": "pear", "message": None, "kind": "speak"},
+    })
+
+    with pytest.raises(PagesetError, match="end up with the same label: pear"):
+        live.apply_page_edits("Eating", [], [{"slot": 0, "label": "pear"}], [], "v1")
+
+
+def test_a_removed_cell_frees_its_space_for_a_new_button(monkeypatch):
+    grid = live.Grid((10, 20), (30,), 8, 8)
+    group = SimpleNamespace(GetChildren=lambda: [])
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_focus_window", lambda _window: None)
+    monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("before",))
+    monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
+    monkeypatch.setattr(live, "_grid", lambda _group: grid)
+    layouts = iter((
+        [{"slot": 0, "label": "aple"}],
+        [{"slot": 0, "label": "apple"}],
+    ))
+    monkeypatch.setattr(live, "_page_layout", lambda *_args: next(layouts))
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: {
+        "aple": {"label": "aple", "message": None, "kind": "speak"},
+    })
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_exit_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_remove_button", lambda *_args: None)
+    monkeypatch.setattr(live, "_verify_page_state", lambda *_args, **_kwargs: None)
+    added = {}
+    monkeypatch.setattr(
+        live, "_add_button",
+        lambda _auto, _window, cell, label, *_args: added.update(cell=cell, label=label) or {
+            "symbol": False, "border": True,
+        },
+    )
+
+    report = live.apply_page_edits(
+        "Eating", [{"label": "apple", "slot": 0, "symbol": False}], [], [0], "v1"
+    )
+
+    assert added["label"] == "apple"
+    assert (report["buttons"], report["removed"]) == (1, 1)
+
+
+def test_a_failed_change_restores_the_content_it_captured(monkeypatch):
+    grid = live.Grid((10, 20), (30,), 8, 8)
+    restored = {}
+    group = SimpleNamespace(GetChildren=lambda: [])
+    monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(live, "_automation", lambda: object())
+    monkeypatch.setattr(live, "_window", lambda _auto: object())
+    monkeypatch.setattr(live, "_focus_window", lambda _window: None)
+    monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
+    monkeypatch.setattr(live, "_page_group", lambda _window: group)
+    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("before",))
+    monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
+    monkeypatch.setattr(live, "_grid", lambda _group: grid)
+    monkeypatch.setattr(live, "_page_layout", lambda *_args: [{"slot": 0, "label": "aple"}])
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: {
+        "aple": {"label": "aple", "message": "I want an aple", "kind": "speak"},
+    })
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_exit_edit_mode", lambda _window: None)
+
+    def fail(*_args):
+        raise PagesetError("TD Snap did not save the new label 'apple'.")
+
+    monkeypatch.setattr(live, "_change_button", fail)
+    monkeypatch.setattr(
+        live, "_restore_page_state",
+        lambda _window, baseline, content, maximum: restored.update(
+            baseline=baseline, content=content
+        ),
+    )
+
+    with pytest.raises(PagesetError, match="original page was restored"):
+        live.apply_page_edits("Eating", [], [{"slot": 0, "label": "apple"}], [], "v1")
+
+    assert restored["baseline"] == ("before",)
+    assert restored["content"] == {0: {"label": "aple", "message": "I want an aple"}}
+
+
+def test_clearing_a_spoken_message_is_verified_like_any_other_change(monkeypatch):
+    """"" is a request ("speak the label again"), not an absent one."""
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_named_slots", lambda _window: {0: _fake_control("apple")})
+    monkeypatch.setattr(
+        live, "_spoken_message", lambda _window, _control: (True, "still speaking this")
+    )
+
+    with pytest.raises(PagesetError, match="did not verify the spoken message"):
+        live._verify_page_state(object(), [{"slot": 0, "label": "apple", "message": ""}])
+
+    monkeypatch.setattr(live, "_spoken_message", lambda _window, _control: (True, ""))
+    live._verify_page_state(object(), [{"slot": 0, "label": "apple", "message": ""}])
+    # A button nobody asked about is never selected just to read its message.
+    monkeypatch.setattr(
+        live, "_spoken_message",
+        lambda *_args: pytest.fail("an unrequested message must not be read"),
+    )
+    live._verify_page_state(object(), [{"slot": 0, "label": "apple", "message": None}])
