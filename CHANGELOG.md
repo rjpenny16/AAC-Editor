@@ -13,6 +13,87 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Added
 
+- **Undo my last change.** An edit that succeeded used to be final: rollback
+  only ever ran on the failure path, so the one mistake this app makes easiest —
+  a confident, verified edit to the wrong button — had no way back except doing
+  it again by hand. The edit that would reverse the last applied one is now
+  retained for the session and offered as **Undo my last change**, on the result
+  screen and on the word list.
+
+  It is not a second mechanism. The reverse plan goes through exactly the same
+  review, fingerprint guard, edit-mode session, verification, and rollback as
+  any other edit — the write path simply gets a plan that points backwards. Its
+  review screen names every button it will put back, take away, restore, or move
+  home before anything runs.
+
+  Three limits, each stated in the UI rather than discovered:
+
+  - **This process, this session.** The snapshot is never written to disk. An
+    undo is only safe while the page is still the page AAC Editor left behind,
+    and a snapshot that outlived a restart could not know whether TD Snap had
+    synced, been edited by hand, or opened a different page set since. It does
+    survive a browser reload, because the server holds it.
+  - **One level.** Undoing does not itself become undoable. *"Undo my last
+    change"* that re-applies the word somebody just retired is a trap, however
+    accurately it is named.
+  - **A re-created button is a new button.** Restoring a removed button means
+    making one again with the same label and message; its symbol comes from a
+    fresh TD Snap search, and a border color outside the five clinical function
+    colors cannot be written back. Both are reported at review time.
+
+  Anything else touching the page — a sync, or a person editing in TD Snap —
+  ends the offer, because the ordinary fingerprint guard refuses the replay.
+  New endpoints: `GET`/`DELETE /api/tdsnap/last-edit` and
+  `POST /api/tdsnap/undo`.
+
+- **Move and swap existing TD Snap buttons.** Unlocked existing buttons are now
+  movable in the placement grid, by drag or by arrow key, exactly as planned
+  buttons already were. Dropping one on another has the two trade places. Moves
+  travel as `moves: [{slot, to}]` in the same reviewed edit as additions,
+  changes, and removals, and are verified in both cells: the button is in its
+  new one, and the one it left is empty.
+
+  TD Snap's accessibility tree exposes no "put this button in that cell"
+  command, so a move is the drag a person would do — and it is only ever aimed
+  at a cell that is **empty**. What TD Snap does when a button is dropped onto
+  an occupied one is not something this project will guess at on somebody's
+  vocabulary, so a swap is built from that one primitive: park one button in a
+  spare cell, move the other, collect the first. Longer rings of moves are
+  broken the same way. A page with no spare cell says so instead of attempting a
+  drop whose result cannot be predicted.
+
+- **Symbol control.** Symbol choice was delegated entirely to TD Snap's search
+  and surfaced only as a count when it failed. The button editor now offers
+  **Let TD Snap add a symbol** and **Symbol search words** per button, so a
+  phrase button labelled *more please* — which TD Snap finds nothing for — can
+  search `more` instead, and a button that should stay text-only can say so.
+  The result names which buttons ended up without a symbol and which used a web
+  image rather than TD Snap's own library, instead of reporting a bare number.
+
+  What is *not* here, and why: picking from the candidates a search returns
+  needs those candidates to be identifiable, and TD Snap's result list exposes
+  neither readable names nor images through its accessibility tree. Choosing
+  blind from a list is a lottery, not control, so the choice offered is over the
+  search itself. See [ROADMAP.md](ROADMAP.md) for the deviation.
+
+- **Exported files can add to a page that already exists.** The third provider
+  could only ever *create* a page, which meant the most ordinary request — three
+  more words on a page somebody already uses — worked on Windows with TD Snap
+  running and nowhere else. Exported-file sessions now open on the same first
+  question the live providers ask, and the add-to-existing path writes cells
+  that mirror `add_category_page` row for row: same speak chain, same clone,
+  same placement rows.
+
+  It carries the same four guarantees as every other write operation: a review
+  naming the exact change, a fingerprint guard against a stale review, whole-file
+  validation before and after (with nothing saved unless every check passes),
+  and named checks in the result. Existing buttons are listed and **locked**:
+  changing and removing on the file path would need their own prior-content
+  snapshot and rollback, so until that exists the UI says so rather than
+  offering a control it cannot honour. New endpoints:
+  `GET /api/pageset/<id>/page/<page_id>/layout` and
+  `POST /api/pageset/<id>/page/<page_id>/buttons`.
+
 - **Change and remove existing TD Snap buttons.** Until now the app was
   add-only: fixing a typo, retiring a word, or rewording a phrase was still
   hand work — the exact work this tool exists to eliminate. Selecting **Change
@@ -97,6 +178,19 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Changed
 
+- **A cell this edit frees is space this edit can use.** The write path always
+  accepted a new button in a cell a removal had just emptied — removing a typo
+  and typing the correction into the same space is the most ordinary use of the
+  feature — but the UI still counted only the cells the page reported empty
+  before anything was planned. Capacity, placement, and the preview now account
+  for pending edits: a retired or moved-away cell is space, a cell a move is
+  headed for is not.
+- **One rule for which layout a page uses.** `builder.layout_for_page` and
+  `builder.free_slots` are now public and shared, and `pageset.grid_dimension`
+  takes a connection. The capacity the picker showed and the cells the writer
+  filled were computed by two copies of the same rule in two modules — the exact
+  kind of divergence Phase 3 was about. A read-only caller no longer copies a
+  512 MB file just to ask a page's grid size, either.
 - **Shared Windows UI Automation helper layer** (`tdsnap/uia.py`). `live.py`
   (TD Snap) and `grid3.py` (Grid 3) each drove the same control tree
   independently and had already diverged: walk depth (9 vs 10), cluster

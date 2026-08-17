@@ -8,6 +8,7 @@
 import { state } from "./state.js";
 import { $ } from "./dom.js";
 import { api } from "./api.js";
+import { countEdits } from "./edits.js";
 
 /* The last few unexpected failures, appended to the support report. Bounded so
    a repeating error can't grow without limit. */
@@ -23,16 +24,14 @@ const MAX_RECENT_ERRORS = 5;
    state.words survives a successful edit — it is only cleared when the user
    starts another one — so state.applied, not emptiness, is what says the work
    is safely in the page set. */
-/* Pending changes and removals count as unsaved work too. They are never
-   autosaved — a change is pinned to one page's reviewed fingerprint, and
-   offering it back on a later launch would mean replaying it against a page
+/* Pending changes, moves, and removals count as unsaved work too. They are
+   never autosaved — each is pinned to one page's reviewed fingerprint, and
+   offering them back on a later launch would mean replaying them against a page
    that may have moved on — so the leave-warning is the only thing standing
    between the user and losing them. */
 function hasUnsavedWork() {
-  const edits = state.pageEdits || { changes: [], removals: [] };
   return !state.applied && Boolean(
-    state.words.length || state.pendingEdit ||
-    edits.changes.length || edits.removals.length
+    state.words.length || state.pendingEdit || countEdits(state.pageEdits)
   );
 }
 

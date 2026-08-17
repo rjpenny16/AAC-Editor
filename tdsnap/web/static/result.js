@@ -11,7 +11,7 @@ import { api } from "./api.js";
 import { clearUndoHistory, renderWords } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor } from "./connect.js";
 import { clearDraft } from "./draft.js";
-import { emptyEdits } from "./edits.js";
+import { emptyEdits, undoAvailable } from "./edits.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
 import { recordError } from "./support.js";
 import { setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
@@ -28,8 +28,10 @@ const CHECK_LABELS = {
   content: "Every requested speaking button is present",
   positions: "Every new button is in the reviewed space",
   changed_content: "Every changed button says what you asked for",
+  moved_buttons: "Every moved button is in its new cell",
   removed_buttons: "Every removed button is gone",
   untouched_buttons: "Nothing else on the page changed",
+  undone: "The previous change was put back",
   symbols: "Matching symbols were added when available",
   topic_format: "Topic-page row colors were applied in TD Snap",
   grid3_edit: "Grid 3 saved the change",
@@ -47,8 +49,25 @@ function editedCounts(data) {
   return [
     data.buttons ? `${data.buttons} added` : "",
     data.changed ? `${data.changed} changed` : "",
+    data.moved ? `${data.moved} moved` : "",
     data.removed ? `${data.removed} removed` : "",
   ].filter(Boolean).join(", ");
+}
+
+/* The undo control, and what it can still reach. Rendered from state so the
+   button disappears the moment the snapshot behind it is spent — a single-level
+   undo that still looks available is worse than no undo at all. */
+function renderUndoControl() {
+  const button = $("undo-edit-btn");
+  const note = $("undo-availability");
+  const available = undoAvailable(state);
+  if (button) button.hidden = !available;
+  if (!note) return;
+  note.hidden = !available;
+  note.textContent = available
+    ? `Undo puts “${state.lastEdit.page}” back the way it was. It reaches back one ` +
+      "change, and not past a sync in TD Snap."
+    : "";
 }
 
 function renderResult(title, data, operation = state.operation, parentTitle = titleOf(state.parentId)) {
@@ -59,7 +78,10 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
   void clearDraft();
   $("result-eyebrow").textContent = "Complete";
   const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
-  $("result-heading").textContent = `Done — ${product} was updated`;
+  $("result-heading").textContent = data.undone
+    ? `Done — the last change was undone in ${product}`
+    : `Done — ${product} was updated`;
+  renderUndoControl();
   $("edit-count").textContent =
     state.edits > 1 ? `· ${state.edits} edits this session` : "";
   $("another-btn").textContent = "Add more buttons";
@@ -73,13 +95,16 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
     saveButton.removeAttribute("href");
     saveButton.removeAttribute("download");
   }
-  const touched = (data.changed || 0) + (data.removed || 0);
-  $("result-sub").textContent = operation !== "existing"
-    ? `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, and “${parentTitle}” now links to it.`
-    : touched
-      ? `“${title}” was updated: ${editedCounts(data)}. Nothing else on the page changed.`
-      : `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to ` +
-        `“${title}” without changing its existing ${state.provider === "grid3" ? "cells" : "vocabulary"}.`;
+  const touched = (data.changed || 0) + (data.removed || 0) + (data.moved || 0);
+  $("result-sub").textContent = data.undone
+    ? `“${title}” is back the way it was: ${editedCounts(data)}. There is nothing ` +
+      "left to undo from this session."
+    : operation !== "existing"
+      ? `“${title}” has ${data.buttons} speaking button${data.buttons === 1 ? "" : "s"}, and “${parentTitle}” now links to it.`
+      : touched
+        ? `“${title}” was updated: ${editedCounts(data)}. Nothing else on the page changed.`
+        : `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to ` +
+          `“${title}” without changing its existing ${state.provider === "grid3" ? "cells" : "vocabulary"}.`;
 
   const checks = $("checks");
   checks.innerHTML = "";
@@ -152,6 +177,7 @@ $("another-btn").addEventListener("click", async () => {
   $("chip-note").textContent = "";
   parentFilter.value = "";
   if (state.mode === "file") {
+    const wasExisting = state.operation === "existing";
     state.existingButtons = [];
     state.availableSlots = null;
     state.layoutFingerprint = null;
@@ -162,9 +188,17 @@ $("another-btn").addEventListener("click", async () => {
       if (!state.pages.some((page) => page.id === state.parentId)) {
         state.parentId = state.pages[0]?.id || null;
       }
-      setOperation("new");
       renderParents("");
-      show("title");
+      // Somebody who just added to a page usually has more to add to it, so
+      // stay on that page rather than sending them back to naming a new one.
+      if (wasExisting && state.parentId) {
+        setOperation("existing");
+        await loadTargetLayout(titleOf(state.parentId));
+        show("items");
+      } else {
+        setOperation("new");
+        show("title");
+      }
     } catch (error) {
       resetConnection();
       $("live-status").classList.add("error");
@@ -219,6 +253,14 @@ function resetConnection() {
     void api(`/api/pageset/${encodeURIComponent(sessionId)}/close`, { method: "POST" })
       .catch((error) => recordError("session-close", error.message));
   }
+  // Starting over may mean a different person's page set, so the retained edit
+  // has to go from the server as well as from here. It would be refused by the
+  // fingerprint guard anyway; still offering it would be the wrong promise.
+  if (undoAvailable(state)) {
+    void api("/api/tdsnap/last-edit", { method: "DELETE" })
+      .catch((error) => recordError("undo-forget", error.message));
+  }
+  state.lastEdit = null;
   state.mode = "live";
   state.connected = false;
   state.sessionId = null;

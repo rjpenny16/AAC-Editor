@@ -193,7 +193,8 @@
           <span id="current-page-label"></span>
           <button type="button" id="choose-page-btn" class="text-button">Choose another page</button>
           <button type="button" id="create-page-btn" class="text-button">Create a new page</button>
-          <button type="button" id="edit-existing-btn" class="text-button" hidden>Change or remove existing buttons</button>
+          <button type="button" id="edit-existing-btn" class="text-button" hidden>Change, move, or remove existing buttons</button>
+          <button type="button" id="undo-last-btn" class="text-button" hidden>Undo my last change</button>
         </div>
         <p id="edit-existing-summary" class="status-line pending-edits" role="status" aria-live="polite" hidden></p>
 
@@ -371,12 +372,19 @@
         <h3>Buttons to change</h3>
         <ul id="review-changes" class="review-items"></ul>
       </div>
+      <div class="review-list-wrap" id="review-moves-wrap" hidden>
+        <h3>Buttons to move</h3>
+        <p class="field-hint">These keep what they say and move to a different cell. Two buttons
+          shown swapping trade places.</p>
+        <ul id="review-moves" class="review-items"></ul>
+      </div>
       <div class="review-list-wrap review-removals" id="review-removals-wrap" hidden>
         <h3>Buttons to remove</h3>
         <p class="field-hint">These are removed from the page. TD Snap keeps the rest of the page as it is.</p>
         <ul id="review-removals" class="review-items"></ul>
       </div>
-      <section class="review-placement-preview" aria-labelledby="review-placement-heading">
+      <div id="review-undo-note" class="alert warning" role="status" hidden></div>
+      <section class="review-placement-preview" id="review-placement-section" aria-labelledby="review-placement-heading">
         <div class="preview-heading">
           <div>
             <h3 id="review-placement-heading">Check positions</h3>
@@ -402,8 +410,10 @@
       <div id="result-warnings" class="alert warning" role="status" hidden></div>
       <div class="wizard-actions">
         <button type="button" id="another-btn" class="btn btn-secondary">Add more buttons</button>
+        <button type="button" id="undo-edit-btn" class="btn btn-secondary" hidden>Undo my last change</button>
         <a id="file-save-btn" class="btn btn-primary" hidden>Save edited copy</a>
       </div>
+      <p id="undo-availability" class="field-hint" hidden></p>
       <p id="live-result-note" class="safety">Use Sync in TD Snap whenever you are ready to share the change.</p>
     </div>
   </section>
@@ -421,6 +431,20 @@
     <div class="field">
       <label for="edit-message">What the button says <span class="optional-tag">optional</span></label>
       <input id="edit-message" type="text" autocomplete="off" maxlength="200" placeholder="Leave empty to say the label">
+    </div>
+    <div class="field" id="edit-symbol-field">
+      <label class="inline-option" for="edit-symbol">
+        <input id="edit-symbol" type="checkbox" checked>
+        Let TD Snap add a symbol
+      </label>
+      <p class="field-hint">TD Snap searches its own symbol library. Turn this off for a
+        button that should stay text only.</p>
+      <div id="edit-symbol-query-row">
+        <label for="edit-symbol-query">Symbol search words <span class="optional-tag">optional</span></label>
+        <input id="edit-symbol-query" type="text" autocomplete="off" maxlength="60" placeholder="Leave empty to search the label">
+        <p class="field-hint">Useful when the label is a phrase: search <strong>more</strong>
+          for a button that says “more please”.</p>
+      </div>
     </div>
     <div class="field" id="edit-fn-field">
       <span class="label-text">Topic-page row</span>

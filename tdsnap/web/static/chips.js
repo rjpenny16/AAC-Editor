@@ -6,10 +6,13 @@
 
 import { state, FUNCTIONS, TOPIC_FUNCTIONS } from "./state.js";
 import { $, appendNamedList } from "./dom.js";
-import { changeFor, editSummary, isRemoved, keepButton, planChange, planRemoval } from "./edits.js";
+import {
+  changeFor, editSummary, isRemoved, keepButton, moveFrom, planChange, planRemoval,
+  undoAvailable,
+} from "./edits.js";
 import { inferPhraseFunction } from "./phrases.js";
 import { titleOf } from "./parents.js";
-import { renderPlacementOrder, renderPreview } from "./preview.js";
+import { openSlots, renderPlacementOrder, renderPreview } from "./preview.js";
 import { createUndoStack } from "./undo.js";
 import { clearStepError, setActiveFn } from "./wizard.js";
 
@@ -113,17 +116,17 @@ wordInput.addEventListener("paste", (event) => {
 
 function firstAvailableSlot(preferredFn = "") {
   const used = new Set(state.words.map((item) => item.slot).filter(Number.isInteger));
-  state.existingButtons.forEach((button) => used.add(button.slot));
-  const capacity = state.grid.cols * state.grid.rows;
-  const available = [];
-  for (let slot = 0; slot < capacity; slot += 1) {
-    if (!used.has(slot) && (!state.availableSlots || state.availableSlots.includes(slot))) {
-      available.push(slot);
-    }
-  }
+  const available = openSlots().filter((slot) => !used.has(slot));
   return available.find((slot) => !preferredFn || functionForSlot(slot) === preferredFn)
     ?? available[0]
-    ?? capacity - 1;
+    ?? state.grid.cols * state.grid.rows - 1;
+}
+
+/* How many new buttons fit in total, pending edits to existing buttons
+   included — retiring or moving one makes room in the same edit. Counts the
+   cells planned buttons already sit in, since those are the same space. */
+function pageCapacity() {
+  return openSlots().length;
 }
 
 function topicRowFunctions(rows) {
@@ -156,8 +159,7 @@ function autoFormatTopicRows() {
 function addWords(raw, forcedFn = null) {
   clearStepError("items");
   state.pendingEdit = null;
-  const capacity = state.availableSlots
-    ? state.availableSlots.length : state.grid.cols * state.grid.rows - state.existingButtons.length;
+  const capacity = pageCapacity();
   const duplicates = [];
   const overflow = [];
   raw
@@ -183,7 +185,9 @@ function addWords(raw, forcedFn = null) {
             : state.activeFn)
           : "";
         const slot = firstAvailableSlot(fn);
-        state.words.push({ label: word, message: null, fn, slot, symbol: true });
+        state.words.push({
+          label: word, message: null, fn, slot, symbol: true, symbolQuery: null,
+        });
       }
     });
   renderSkippedFeedback(duplicates, overflow);
@@ -231,12 +235,18 @@ function renderWords() {
     body.type = "button";
     body.className = "chip-body";
     const spoken = item.message || item.label;
+    const symbolNote = item.symbol === false
+      ? ", no symbol"
+      : item.symbolQuery ? `, symbol search “${item.symbolQuery}”` : "";
     body.setAttribute(
       "aria-label",
       `Edit ${item.label}${item.fn ? `, ${FUNCTIONS[item.fn].name}` : ""}` +
-        (item.message ? `, speaks “${spoken}”` : "")
+        (item.message ? `, speaks “${spoken}”` : "") + symbolNote
     );
-    body.title = item.message ? `Speaks: “${item.message}”` : "Click to edit";
+    body.title = [
+      item.message ? `Speaks: “${item.message}”` : "",
+      item.symbol === false ? "No symbol" : item.symbolQuery ? `Symbol: “${item.symbolQuery}”` : "",
+    ].filter(Boolean).join(" · ") || "Click to edit";
     if (item.fn) {
       const dot = document.createElement("span");
       dot.className = "chip-dot";
@@ -272,8 +282,7 @@ function renderWords() {
     }
   });
 
-  const capacity = state.availableSlots
-    ? state.availableSlots.length : state.grid.cols * state.grid.rows - state.existingButtons.length;
+  const capacity = pageCapacity();
   const meter = $("capacity");
   const left = Math.max(0, capacity - state.words.length);
   meter.textContent = capacity === 0
@@ -298,16 +307,24 @@ function renderWords() {
 
 /* The way in to changing what is already on the page, plus a running summary
    of what is pending — so a change made two screens ago is still visible from
-   the word list, rather than only resurfacing at review. */
+   the word list, rather than only resurfacing at review. The undo sits here too
+   because this is the screen somebody carries on to after an edit, and it is
+   where they notice the mistake they want back.
+
+   Both controls are rendered from state rather than toggled at the call sites,
+   so no path through the wizard can leave a stale one on screen. */
 function renderExistingEditControls() {
   const button = $("edit-existing-btn");
   const summary = $("edit-existing-summary");
+  const undo = $("undo-last-btn");
+  if (undo) undo.hidden = !undoAvailable(state);
   if (!button || !summary) return;
   button.hidden = !state.canEditExisting ||
     !state.existingButtons.some((item) => item.editable);
   const line = editSummary({
     changed: state.pageEdits.changes.length,
     removed: state.pageEdits.removals.length,
+    moved: state.pageEdits.moves.length,
     page: titleOf(state.parentId),
   });
   summary.hidden = !line;
@@ -354,7 +371,10 @@ document.querySelectorAll("#edit-fn-row .fn-pill").forEach((pill) =>
   pill.addEventListener("click", () => setEditorFn(pill.dataset.fn))
 );
 
-function showEditorFor(mode, { label, message, fn = "", note = "", canRevert = false }) {
+function showEditorFor(mode, {
+  label, message, fn = "", note = "", canRevert = false,
+  symbol = true, symbolQuery = "",
+}) {
   $("edit-label").value = label;
   $("edit-label").setCustomValidity("");
   $("edit-message").value = message;
@@ -364,10 +384,26 @@ function showEditorFor(mode, { label, message, fn = "", note = "", canRevert = f
   $("chip-editor-note").textContent = note;
   $("chip-editor-note").hidden = !note;
   $("edit-fn-field").hidden = existing;
-  $("edit-remove").textContent = existing ? "Remove from the page" : "Remove button";
+  // TD Snap owns symbol search, and it only ever runs while a button is being
+  // created — so the choice is offered where it can still be honoured, on a
+  // planned button, and hidden on one that already has its symbol.
+  $("edit-symbol-field").hidden = existing || state.mode === "file";
+  $("edit-symbol").checked = symbol !== false;
+  $("edit-symbol-query").value = symbolQuery;
+  syncSymbolQuery();
   $("edit-revert").hidden = !canRevert;
+  $("edit-remove").textContent = existing ? "Remove from the page" : "Remove button";
   chipDialog.showModal();
 }
+
+/* The search words only mean anything while a symbol is wanted at all. */
+function syncSymbolQuery() {
+  const wanted = $("edit-symbol").checked;
+  $("edit-symbol-query").disabled = !wanted;
+  $("edit-symbol-query-row").hidden = !wanted;
+}
+
+$("edit-symbol").addEventListener("change", syncSymbolQuery);
 
 function openChipEditor(index) {
   editingIndex = index;
@@ -377,6 +413,8 @@ function openChipEditor(index) {
     label: item.label,
     message: item.message || "",
     fn: item.fn || "",
+    symbol: item.symbol !== false,
+    symbolQuery: item.symbolQuery || "",
   });
 }
 
@@ -388,13 +426,15 @@ function openExistingEditor(slot) {
   editingSlot = slot;
   const change = changeFor(state.pageEdits, slot);
   const removed = isRemoved(state.pageEdits, slot);
+  const move = moveFrom(state.pageEdits, slot);
   showEditorFor("existing", {
     label: change ? change.label : button.label,
     message: change ? change.message : button.message || "",
     note: removed
       ? `“${button.label}” is marked for removal. Save to keep it with these details instead.`
       : `On the page now: “${button.label}”` +
-        (button.message ? ` · speaks “${button.message}”` : " · speaks its label"),
+        (button.message ? ` · speaks “${button.message}”` : " · speaks its label") +
+        (move ? " · already being moved to another cell" : ""),
     canRevert: Boolean(change) || removed,
   });
 }
@@ -462,12 +502,17 @@ chipDialog.addEventListener("close", () => {
     const label = $("edit-label").value.trim();
     const message = $("edit-message").value.trim();
     if (label) {
+      const wantsSymbol = $("edit-symbol").checked;
+      const query = $("edit-symbol-query").value.trim();
       state.words[editingIndex] = {
         label,
         message: message && message !== label ? message : null,
         fn: chipDialog.dataset.fn || "",
         slot: state.words[editingIndex].slot,
-        symbol: state.words[editingIndex].symbol !== false,
+        symbol: wantsSymbol,
+        // The label is already the default search, so only a different query is
+        // worth carrying — that keeps the draft and the request free of noise.
+        symbolQuery: wantsSymbol && query && query !== label ? query : null,
       };
       if (state.pageStyle === "topic" && state.words[editingIndex].fn) {
         state.words[editingIndex].slot = null;
@@ -481,6 +526,6 @@ chipDialog.addEventListener("close", () => {
 
 export {
   autoFormatTopicRows, clearUndoHistory, firstAvailableSlot, functionForSlot,
-  openExistingEditor, renderWords, takeWordInput, undoLastRemoval,
+  openExistingEditor, pageCapacity, renderWords, takeWordInput, undoLastRemoval,
   updateTopicInputRow,
 };

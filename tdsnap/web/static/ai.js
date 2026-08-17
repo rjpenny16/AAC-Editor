@@ -230,7 +230,9 @@ $("ai-go").addEventListener("click", async () => {
           : "";
         const slot = firstAvailableSlot(topic && state.autoTopicRows ? fn : "");
         if (topic && !fn && state.autoTopicRows) fn = functionForSlot(slot);
-        state.words.push({ label, message: null, fn, slot, symbol: true });
+        state.words.push({
+          label, message: null, fn, slot, symbol: true, symbolQuery: null,
+        });
         added += 1;
       }
     });

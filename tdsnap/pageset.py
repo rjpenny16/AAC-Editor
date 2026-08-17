@@ -37,6 +37,32 @@ def default_output_path(source: str) -> str:
     return f"{base}.edited{ext}"
 
 
+def grid_dimension(conn: sqlite3.Connection) -> tuple[int, int]:
+    """Return the page set's ``(cols, rows)`` grid.
+
+    Prefers ``PageSetProperties.GridDimension``; falls back to the most common
+    ``PageLayoutSetting`` among vocabulary pages. Takes a connection rather than
+    a :class:`Pageset` so a read-only caller — the web layer reporting a page's
+    capacity, for one — can ask without copying the whole file first.
+    """
+    row = conn.execute(
+        "SELECT GridDimension FROM PageSetProperties LIMIT 1"
+    ).fetchone()
+    if row and row["GridDimension"]:
+        return schema.parse_grid(row["GridDimension"])
+
+    row = conn.execute(
+        "SELECT pl.PageLayoutSetting AS s, COUNT(*) AS c FROM PageLayout pl "
+        "JOIN Page p ON pl.PageId = p.Id WHERE p.PageType = ? "
+        "GROUP BY pl.PageLayoutSetting ORDER BY c DESC LIMIT 1",
+        (PAGE_TYPE_VOCAB,),
+    ).fetchone()
+    if row and row["s"]:
+        return schema.parse_grid(row["s"])
+
+    raise PagesetError("Could not determine the page set's grid dimensions.")
+
+
 class Pageset:
     """An editable working copy of a TD Snap page set."""
 
@@ -133,27 +159,8 @@ class Pageset:
         return matches[0]
 
     def grid_dimension(self) -> tuple[int, int]:
-        """Return the page set's ``(cols, rows)`` grid.
-
-        Prefers ``PageSetProperties.GridDimension``; falls back to the most
-        common ``PageLayoutSetting`` among vocabulary pages.
-        """
-        row = self.conn.execute(
-            "SELECT GridDimension FROM PageSetProperties LIMIT 1"
-        ).fetchone()
-        if row and row["GridDimension"]:
-            return schema.parse_grid(row["GridDimension"])
-
-        row = self.conn.execute(
-            "SELECT pl.PageLayoutSetting AS s, COUNT(*) AS c FROM PageLayout pl "
-            "JOIN Page p ON pl.PageId = p.Id WHERE p.PageType = ? "
-            "GROUP BY pl.PageLayoutSetting ORDER BY c DESC LIMIT 1",
-            (PAGE_TYPE_VOCAB,),
-        ).fetchone()
-        if row and row["s"]:
-            return schema.parse_grid(row["s"])
-
-        raise PagesetError("Could not determine the page set's grid dimensions.")
+        """Return the page set's ``(cols, rows)`` grid."""
+        return grid_dimension(self.conn)
 
     # -- saving -----------------------------------------------------------
 

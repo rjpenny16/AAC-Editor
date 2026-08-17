@@ -57,7 +57,12 @@ function updateProgress(step) {
 function applyPendingDraftResume() {
   const draft = takePendingResume();
   if (!draft) return;
-  state.words = draft.items.map((item) => ({ ...item }));
+  // The stored draft uses the request-shaped `symbol_query`; state.words uses
+  // the camel-cased field the editor reads and writes.
+  state.words = draft.items.map(({ symbol_query: query, ...item }) => ({
+    ...item,
+    symbolQuery: query || null,
+  }));
   if (draft.page_style) setPageStyle(draft.page_style);
   if (draft.active_fn) setActiveFn(draft.active_fn, false);
   renderWords();
@@ -119,7 +124,9 @@ function setOperation(operation) {
   }
   $("target-label").textContent = existing ? "Page to change" : "Find it from";
   $("destination-intro").textContent = existing
-    ? "The page open in TD Snap is selected. Choose another page if this vocabulary belongs elsewhere."
+    ? state.mode === "file"
+      ? "Choose the page in this exported copy that the new buttons belong on."
+      : "The page open in TD Snap is selected. Choose another page if this vocabulary belongs elsewhere."
     : "Choose the existing page where the new page's link belongs.";
   $("operation-hint").textContent = existing
     ? "Start by choosing the page where this vocabulary belongs."
@@ -244,11 +251,8 @@ function backWizard() {
     show("connect");
     return;
   }
-  if (state.mode === "file") {
-    const previous = { title: "connect", destination: "title", items: "destination" };
-    show(previous[state.wizardStep] || "title");
-    return;
-  }
+  // Exported files walk the same two routes as TD Snap live now that they can
+  // add to an existing page, so one map serves both.
   const previous = state.operation === "new"
     ? { operation: "connect", title: "operation", destination: "title", items: "destination" }
     : { operation: "connect", destination: "operation", items: "destination" };

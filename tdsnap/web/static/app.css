@@ -635,11 +635,14 @@ summary {
 .preview .cell.existing.editable { border-style: dashed; border-color: var(--line-strong); cursor: pointer; }
 .preview .cell.existing.editable:hover { border-color: var(--accent); background: var(--accent-soft); }
 .preview .cell.marked-changed,
+.preview .cell.marked-moved,
 .preview .cell.marked-removed { color: var(--ink); cursor: pointer; }
 .preview .cell.marked-changed { border: 3px solid var(--accent); background: var(--accent-soft); }
+.preview .cell.marked-moved { border: 3px solid var(--accent); border-style: dashed; }
 .preview .cell.marked-removed { border: 3px solid var(--danger); background: var(--danger-soft); }
 .preview .cell.marked-removed .cell-label { text-decoration: line-through; }
 .preview .cell.marked-changed::after,
+.preview .cell.marked-moved::after,
 .preview .cell.marked-removed::after {
   position: absolute;
   top: 0.1rem;
@@ -651,7 +654,17 @@ summary {
 }
 
 .preview .cell.marked-changed::after { content: "changed"; color: var(--accent); }
+.preview .cell.marked-moved::after { content: "moving"; color: var(--accent); }
+
+/* A button that is both moving and changing says "changed": the text edit is
+   the one somebody needs to check word for word. */
+.preview .cell.marked-changed.marked-moved::after { content: "changed"; }
 .preview .cell.marked-removed::after { content: "removing"; color: var(--danger); }
+
+/* The symbol choice sits inside the button dialog, so its checkbox reads as one
+   line with its label rather than as another stacked field. */
+.inline-option { display: flex; gap: 0.5rem; align-items: center; font-weight: 600; }
+.inline-option input { margin: 0; }
 .pending-edits { font-weight: 700; }
 .chip-editor-note { margin: 0 0 0.75rem; }
 .review-removals .review-items li { border-color: var(--danger); background: var(--danger-soft); }

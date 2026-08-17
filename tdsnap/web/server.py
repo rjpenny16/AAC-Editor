@@ -15,6 +15,7 @@ state.
 """
 
 import contextlib
+import hashlib
 import json
 import os
 import secrets
@@ -31,7 +32,7 @@ from typing import Optional
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
-from .. import __version__, builder, grid3, live, schema, validate
+from .. import __version__, builder, grid3, live, pageset, schema, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import diagnostics, grounding, localai, ollama, prompts, settings
@@ -166,6 +167,26 @@ def _validated_removals(value) -> list:
     return value
 
 
+def _validated_moves(value) -> list:
+    """Bound ``[{slot, to}]`` before it reaches the write path."""
+    if not isinstance(value, list):
+        raise PagesetError("'moves' must be a list of button moves.")
+    if len(value) > MAX_ITEMS:
+        raise PagesetError(f"No more than {MAX_ITEMS} buttons can be moved at once.")
+    moves = []
+    for move in value:
+        if not isinstance(move, dict):
+            raise PagesetError("Each move must be a {slot, to} object.")
+        for key in ("slot", "to"):
+            slot = move.get(key)
+            if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+                raise PagesetError(
+                    "Each moved button needs a non-negative 'slot' and 'to' cell."
+                )
+        moves.append({"slot": move["slot"], "to": move["to"]})
+    return moves
+
+
 def _validated_existing(value) -> list:
     if not isinstance(value, list):
         raise PagesetError("'existing' must be a list of button labels.")
@@ -235,6 +256,7 @@ def _validated_draft_items(value) -> list:
             isinstance(slot, bool) or not isinstance(slot, int) or slot < 0
         ):
             raise PagesetError("Each draft item's slot must be a non-negative integer.")
+        query = _bounded_text(item.get("symbol_query"), "draft symbol query", MAX_LABEL_CHARS)
         items.append(
             {
                 "label": label,
@@ -242,6 +264,7 @@ def _validated_draft_items(value) -> list:
                 "fn": fn,
                 "slot": slot,
                 "symbol": bool(item.get("symbol", True)),
+                "symbol_query": query or None,
             }
         )
     return items
@@ -412,51 +435,81 @@ def _list_pages(path: str):
         conn.close()
 
 
-def _free_cells(path: str, page_id: int) -> int:
-    """How many empty grid cells *page_id* has (for the parent picker)."""
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    try:
-        layouts = conn.execute(
-            "SELECT pl.*, (SELECT COUNT(*) FROM ElementPlacement ep "
-            "WHERE ep.PageLayoutId = pl.Id) AS PlacementCount "
-            "FROM PageLayout pl WHERE pl.PageId = ?",
-            (page_id,),
-        ).fetchall()
-        if not layouts:
-            return 0
-        configured = conn.execute(
-            "SELECT GridDimension FROM PageSetProperties LIMIT 1"
-        ).fetchone()
-        preferred = (
-            schema.parse_grid(configured[0])
-            if configured and configured[0]
-            else None
-        )
-        matching = [
-            layout for layout in layouts
-            if preferred and schema.parse_grid(layout["PageLayoutSetting"]) == preferred
-        ]
-        layout = matching[0] if matching else max(
-            layouts, key=lambda candidate: candidate["PlacementCount"]
-        )
+def _page_state(path: str, page_id: int, include_buttons: bool = True) -> dict:
+    """The grid, buttons, empty cells, and fingerprint of one page in a file session.
+
+    This is the exported-file counterpart of ``live.inspect_page`` and answers
+    the same questions the preview asks of TD Snap: how big is the grid, what is
+    already on it, which cells are free, and has any of that changed since the
+    review. The layout is chosen by ``builder.layout_for_page`` rather than a
+    second copy of that rule, so the capacity the picker shows and the cells the
+    writer fills can never disagree.
+
+    Every existing button is reported locked. Changing and removing on the file
+    path would need their own prior-content snapshot and rollback; until that
+    exists, saying so plainly beats offering a control that does something else.
+
+    *include_buttons* is off for the parent picker, which only needs a count and
+    must keep working on a page set whose button tables this app cannot read.
+    """
+    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        layout = builder.layout_for_page(conn, page_id, pageset.grid_dimension(conn))
         cols, rows = schema.parse_grid(layout["PageLayoutSetting"])
-        used = set()
-        for placement in conn.execute(
-            "SELECT GridPosition, GridSpan FROM ElementPlacement "
-            "WHERE PageLayoutId = ? AND Visible = 1",
+        state = {
+            "grid": {"cols": cols, "rows": rows},
+            "free_slots": builder.free_slots(conn, layout),
+        }
+        if not include_buttons:
+            return state
+        page = conn.execute(
+            "SELECT Id, Title FROM Page WHERE Id = ? AND PageType = 1", (page_id,)
+        ).fetchone()
+        if page is None:
+            raise PagesetError("That page is not in this page set.")
+        buttons: list[dict] = []
+        for row in conn.execute(
+            "SELECT button.Label AS Label, button.Message AS Message, "
+            "placement.GridPosition AS GridPosition "
+            "FROM ElementPlacement placement "
+            "JOIN ElementReference ref ON ref.Id = placement.ElementReferenceId "
+            "JOIN Button button ON button.ElementReferenceId = ref.Id "
+            "WHERE placement.PageLayoutId = ? AND placement.Visible = 1",
             (layout["Id"],),
         ):
-            col, grid_row = schema.parse_grid_position(placement["GridPosition"])
-            col_span, row_span = schema.parse_grid_span(placement["GridSpan"])
-            used.update(
-                (x, y)
-                for x in range(col, min(cols, col + col_span))
-                for y in range(grid_row, min(rows, grid_row + row_span))
-            )
-        return cols * rows - len(used)
-    finally:
-        conn.close()
+            label = (row["Label"] or "").strip()
+            if not label:
+                continue
+            col, grid_row = schema.parse_grid_position(row["GridPosition"])
+            buttons.append({
+                "slot": grid_row * cols + col,
+                "label": label,
+                "message": (row["Message"] or "").strip() or None,
+                "function": None,
+                "symbol": False,
+                "editable": False,
+                "locked_reason": "AAC Editor only adds buttons in exported files.",
+            })
+        buttons.sort(key=lambda button: button["slot"])
+    payload = json.dumps(
+        [[button["slot"], button["label"]] for button in buttons],
+        ensure_ascii=False, separators=(",", ":"),
+    )
+    return {
+        **state,
+        "page": page["Title"] or f"Page {page_id}",
+        "buttons": buttons,
+        "content_readable": False,
+        "fingerprint": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+    }
+
+
+def _free_cells(path: str, page_id: int) -> int:
+    """How many empty grid cells *page_id* has (for the parent picker)."""
+    try:
+        return len(_page_state(path, page_id, include_buttons=False)["free_slots"])
+    except PagesetError:
+        return 0
 
 
 def _new_session_dir() -> tuple[str, str]:
@@ -717,22 +770,55 @@ def live_execute_plan():
     if request.headers.get("X-TDSnap-Editor") != "1":
         raise PagesetError("Direct TD Snap edits must start in this app.")
     payload = _json_payload()
-    # "edit_page" carries additions, changes, and removals together, so one
-    # review and one rollback cover the whole edit. The older add-only name
+    # "edit_page" carries additions, changes, moves, and removals together, so
+    # one review and one rollback cover the whole edit. The older add-only name
     # stays accepted and behaves identically.
     if payload.get("operation") not in {"add_to_existing_page", "edit_page"}:
         raise PagesetError("This edit operation is not supported yet.")
     items = _validated_items(payload.get("items", []))
     changes = _validated_changes(payload.get("changes", []))
     removals = _validated_removals(payload.get("removals", []))
+    moves = _validated_moves(payload.get("moves", []))
     page = _bounded_text(
         payload.get("page"), "page", MAX_PAGE_NAME_CHARS, required=True
     )
     fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
     with _LIVE_LOCK:
         report = live.apply_page_edits(
-            page, items, changes, removals, fingerprint or None
+            page, items, changes, removals, moves, fingerprint or None
         )
+        report["undo"] = live.last_edit()
+    return jsonify({"ok": True, **report})
+
+
+@app.get("/api/tdsnap/last-edit")
+def live_last_edit():
+    """What "Undo my last change" would do, or ``null`` when there is nothing.
+
+    The retained edit lives in the server process, so this survives a browser
+    reload while — deliberately — not surviving a restart of the app itself.
+    """
+    with _LIVE_LOCK:
+        return jsonify({"ok": True, "undo": live.last_edit()})
+
+
+@app.delete("/api/tdsnap/last-edit")
+def live_forget_last_edit():
+    """Stop offering the undo — used when a session is torn down."""
+    with _LIVE_LOCK:
+        live.forget_last_edit()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/tdsnap/undo")
+def live_undo():
+    # Same custom header as every other TD Snap mutation: it forces a
+    # cross-origin preflight so no other page can drive this one.
+    if request.headers.get("X-TDSnap-Editor") != "1":
+        raise PagesetError("Direct TD Snap edits must start in this app.")
+    with _LIVE_LOCK:
+        report = live.undo_last_edit()
+        report["undo"] = live.last_edit()
     return jsonify({"ok": True, **report})
 
 
@@ -823,6 +909,81 @@ def pages(session_id):
 def capacity(session_id, page_id):
     current = _current_path(session_id)
     return jsonify({"ok": True, "free_cells": _free_cells(current, page_id)})
+
+
+@app.get("/api/pageset/<session_id>/page/<int:page_id>/layout")
+def page_layout(session_id, page_id):
+    """The exported-file counterpart of ``/api/tdsnap/page-layout``."""
+    current = _current_path(session_id)
+    return jsonify({"ok": True, **_page_state(current, page_id)})
+
+
+@app.post("/api/pageset/<session_id>/page/<int:page_id>/buttons")
+def add_buttons(session_id, page_id):
+    """Add reviewed buttons to a page that already exists in an exported file.
+
+    The same shape as ``add_page``: validate the whole file before and after,
+    refuse to save anything that fails a check, and only then replace the
+    session's ``current`` state.
+    """
+    payload = _json_payload()
+    items = _validated_items(payload.get("items", []))
+    fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
+
+    current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
+    if not fingerprint:
+        raise PagesetError(
+            "The review fingerprint is required. Reload the page and review again."
+        )
+    if _page_state(current, page_id)["fingerprint"] != fingerprint:
+        raise PagesetError(
+            "This page changed after the preview. Reload the page and review the "
+            "edit again."
+        )
+    session = _sessions[session_id]
+    scratch = os.path.join(session["dir"], "scratch")
+
+    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
+        baseline = validate.validate_pageset(ps.conn)
+        before = validate.table_snapshot(ps.conn)
+        report = builder.add_buttons_to_page(ps, page_id, items)
+        after = validate.table_snapshot(ps.conn)
+
+        result = validate.validate_pageset(ps.conn)
+        roundtrip = validate.check_roundtrip(before, after)
+        problems = (
+            roundtrip
+            + validate.validate_added_buttons(ps.conn, report)
+            + result["problems"]
+            + validate.new_warnings(baseline, result)
+        )
+        checks = {
+            "sqlite_integrity": "pass",
+            "linkage_chains": "pass" if not problems else "fail",
+            "roundtrip_diff": "pass" if not roundtrip else "fail",
+        }
+        if problems:
+            return jsonify(
+                {"ok": False, "error": "Validation failed; nothing was saved.",
+                 "problems": problems, "checks": checks}
+            ), 422
+        ps.save_as(current, allow_source_overwrite=True)
+        session["edits"] += 1
+        _write_session_meta(
+            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
+        )
+    checks["target_page"] = "pass"
+    checks["positions"] = "pass"
+    return jsonify(
+        {
+            "ok": True,
+            "page_id": report["page_id"],
+            "buttons": len(report["button_ids"]),
+            "grid": {"cols": report["grid"][0], "rows": report["grid"][1]},
+            "checks": checks,
+            "edits": session["edits"],
+        }
+    )
 
 
 @app.post("/api/pageset/<session_id>/page")

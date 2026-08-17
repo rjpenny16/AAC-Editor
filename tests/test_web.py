@@ -491,7 +491,11 @@ def test_settings_draft_roundtrips_composition_state(client, monkeypatch, tmp_pa
         "active_fn": "question",
         "target_page": "Snacks",
         "title": "",
-        "items": [{"label": "apple", "message": None, "fn": "question", "slot": 2, "symbol": True}],
+        "items": [
+            {"label": "apple", "message": None, "fn": "question", "slot": 2,
+             "symbol": True, "symbol_query": "fruit"},
+            {"label": "quiet", "message": None, "fn": "", "slot": 3, "symbol": False},
+        ],
     }
     response = client.put(
         "/api/settings", json={"preferences": {}, "draft": draft}, headers=token_headers()
@@ -499,7 +503,14 @@ def test_settings_draft_roundtrips_composition_state(client, monkeypatch, tmp_pa
     assert response.status_code == 200
     stored = client.get("/api/settings").get_json()["draft"]
     assert stored["target_page"] == "Snacks"
-    assert stored["items"] == draft["items"]
+    # Chosen symbol search words survive a resume; an item that never had any
+    # comes back with none rather than with the key missing.
+    assert stored["items"] == [
+        {"label": "apple", "message": None, "fn": "question", "slot": 2,
+         "symbol": True, "symbol_query": "fruit"},
+        {"label": "quiet", "message": None, "fn": "", "slot": 3,
+         "symbol": False, "symbol_query": None},
+    ]
     assert "saved_at" in stored
 
 
@@ -603,4 +614,212 @@ def test_edit_plan_bounds_changes_and_removals_before_the_write_path(client):
     ]
     assert server._validated_changes([{"slot": 0, "label": " apple "}]) == [
         {"slot": 0, "label": "apple"}
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 4c: adding to a page that already exists in an exported file
+
+
+def test_an_exported_file_reports_the_layout_of_a_page_it_already_has(client, seeded_source):
+    session = upload(client, seeded_source).get_json()
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+
+    layout = client.get(
+        f"/api/pageset/{session['session_id']}/page/{page['id']}/layout"
+    ).get_json()
+
+    assert layout["ok"] and layout["page"] == "Home Page"
+    assert layout["grid"] == {"cols": 4, "rows": 3}
+    assert layout["free_slots"]
+    assert layout["fingerprint"]
+    # Existing buttons are listed, and every one of them is locked: the file
+    # path adds, and says so, rather than offering a control it cannot honour.
+    assert layout["content_readable"] is False
+    assert all(not button["editable"] for button in layout["buttons"])
+    assert all(button["locked_reason"] for button in layout["buttons"])
+    # The capacity endpoint and the layout agree, because they share one rule
+    # for which layout a page uses.
+    capacity = client.get(
+        f"/api/pageset/{session['session_id']}/page/{page['id']}/capacity"
+    ).get_json()
+    assert capacity["free_cells"] == len(layout["free_slots"])
+
+
+def test_buttons_are_added_to_an_existing_page_in_the_reviewed_cells(
+    client, seeded_source, tmp_path
+):
+    session = upload(client, seeded_source).get_json()
+    session_id = session["session_id"]
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+    layout = client.get(
+        f"/api/pageset/{session_id}/page/{page['id']}/layout"
+    ).get_json()
+    chosen = layout["free_slots"][:2]
+
+    added = client.post(
+        f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+        json={
+            "items": [
+                {"label": "chips", "slot": chosen[0]},
+                {"label": "juice", "message": "I want some juice", "slot": chosen[1]},
+            ],
+            "fingerprint": layout["fingerprint"],
+        },
+        headers=token_headers(),
+    ).get_json()
+
+    assert added["ok"], added
+    assert added["buttons"] == 2
+    assert added["checks"]["roundtrip_diff"] == "pass"
+    assert added["checks"]["linkage_chains"] == "pass"
+
+    # The saved file has them, on the same page, in the cells that were reviewed.
+    response = client.get(f"/api/pageset/{session_id}/download")
+    edited = tmp_path / "extended.sps"
+    edited.write_bytes(response.data)
+    conn = sqlite3.connect(str(edited))
+    conn.row_factory = sqlite3.Row
+    rows = {
+        row["Label"]: row["GridPosition"]
+        for row in conn.execute(
+            "SELECT button.Label AS Label, placement.GridPosition AS GridPosition "
+            "FROM Button button "
+            "JOIN ElementReference ref ON ref.Id = button.ElementReferenceId "
+            "JOIN ElementPlacement placement ON placement.ElementReferenceId = ref.Id "
+            "WHERE ref.PageId = ?",
+            (page["id"],),
+        )
+    }
+    spoken = conn.execute(
+        "SELECT Message FROM Button WHERE Label = 'juice'"
+    ).fetchone()["Message"]
+    conn.close()
+    assert rows["chips"] == f"{chosen[0] % 4},{chosen[0] // 4}"
+    assert rows["juice"] == f"{chosen[1] % 4},{chosen[1] // 4}"
+    assert spoken == "I want some juice"
+    # Pages are not created by this path — it only extends one.
+    assert "Snacks" not in rows
+
+
+def test_adding_to_an_existing_page_is_refused_against_a_stale_review(client, seeded_source):
+    session = upload(client, seeded_source).get_json()
+    session_id = session["session_id"]
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+
+    missing = client.post(
+        f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+        json={"items": [{"label": "chips", "slot": 5}]},
+        headers=token_headers(),
+    )
+    assert missing.status_code == 400
+    assert "fingerprint is required" in missing.get_json()["error"]
+
+    stale = client.post(
+        f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+        json={"items": [{"label": "chips", "slot": 5}], "fingerprint": "not-the-page"},
+        headers=token_headers(),
+    )
+    assert stale.status_code == 400
+    assert "changed after the preview" in stale.get_json()["error"]
+
+
+def test_a_cell_that_is_not_empty_is_refused_rather_than_reassigned(client, seeded_source):
+    session = upload(client, seeded_source).get_json()
+    session_id = session["session_id"]
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+    layout = client.get(
+        f"/api/pageset/{session_id}/page/{page['id']}/layout"
+    ).get_json()
+    taken = layout["buttons"][0]["slot"]
+
+    response = client.post(
+        f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+        json={
+            "items": [{"label": "chips", "slot": taken}],
+            "fingerprint": layout["fingerprint"],
+        },
+        headers=token_headers(),
+    )
+
+    assert response.status_code == 400
+    assert "is not empty on this page" in response.get_json()["error"]
+
+
+def test_a_label_already_on_the_page_is_refused_before_anything_is_written(
+    client, seeded_source
+):
+    session = upload(client, seeded_source).get_json()
+    session_id = session["session_id"]
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+    layout = client.get(
+        f"/api/pageset/{session_id}/page/{page['id']}/layout"
+    ).get_json()
+
+    response = client.post(
+        f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+        json={
+            "items": [{"label": layout["buttons"][0]["label"], "slot": layout["free_slots"][0]}],
+            "fingerprint": layout["fingerprint"],
+        },
+        headers=token_headers(),
+    )
+
+    assert response.status_code == 400
+    assert "Already on this page" in response.get_json()["error"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 4b: the undo endpoints
+
+
+def test_the_undo_endpoints_report_and_replay_the_retained_edit(client, monkeypatch):
+    from tdsnap import live
+
+    described = {"page": "Snacks", "grid": {"cols": 4, "rows": 3},
+                 "restores": {"adds": [], "changes": [], "removals": [], "moves": []},
+                 "warnings": []}
+    monkeypatch.setattr(live, "last_edit", lambda: described)
+    monkeypatch.setattr(live, "undo_last_edit", lambda: {
+        "page": "Snacks", "buttons": 0, "changed": 1, "removed": 0, "moved": 0,
+        "undone": True, "checks": {"undone": "pass"}, "warnings": [],
+    })
+
+    assert client.get("/api/tdsnap/last-edit").get_json()["undo"] == described
+
+    # The same custom header every other TD Snap mutation needs.
+    refused = client.post("/api/tdsnap/undo", headers=token_headers())
+    assert refused.status_code == 400
+    assert "must start in this app" in refused.get_json()["error"]
+
+    done = client.post(
+        "/api/tdsnap/undo",
+        headers={**token_headers(), "X-TDSnap-Editor": "1"},
+    ).get_json()
+    assert done["ok"] and done["undone"] is True
+
+
+def test_the_retained_edit_can_be_forgotten(client, monkeypatch):
+    from tdsnap import live
+
+    forgotten = []
+    monkeypatch.setattr(live, "forget_last_edit", lambda: forgotten.append(1))
+    monkeypatch.setattr(live, "last_edit", lambda: None)
+
+    assert client.delete("/api/tdsnap/last-edit", headers=token_headers()).get_json()["ok"]
+    assert forgotten == [1]
+    assert client.get("/api/tdsnap/last-edit").get_json()["undo"] is None
+
+
+def test_moves_are_bounded_at_the_edge_of_the_web_api():
+    with pytest.raises(PagesetError, match="'moves' must be a list"):
+        server._validated_moves({"slot": 0})
+    with pytest.raises(PagesetError, match=r"must be a \{slot, to\} object"):
+        server._validated_moves([5])
+    with pytest.raises(PagesetError, match="non-negative 'slot' and 'to'"):
+        server._validated_moves([{"slot": 0, "to": True}])
+    with pytest.raises(PagesetError, match="No more than"):
+        server._validated_moves([{"slot": i, "to": i + 1} for i in range(server.MAX_ITEMS + 1)])
+    assert server._validated_moves([{"slot": 1, "to": 2, "extra": "ignored"}]) == [
+        {"slot": 1, "to": 2}
     ]

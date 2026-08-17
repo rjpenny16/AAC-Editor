@@ -5,10 +5,14 @@ TD Snap workflow.  It intentionally uses TD Snap's accessibility controls
 before adding a vision model: those controls are faster, smaller, and expose
 the current page, buttons, edit fields, and navigation directly.
 
-Three kinds of edit share one spine (``apply_page_edits``): adding buttons to
-empty cells, changing an existing button's label or spoken message, and
-removing one. Change and remove are destructive in a way adding never was, so
-they carry two extra obligations, both enforced here rather than in the UI:
+Four kinds of edit share one spine (``apply_page_edits``): adding buttons to
+empty cells, changing an existing button's label or spoken message, moving one
+to another cell, and removing one. ``undo_last_edit`` is a fifth entry point
+into that same spine rather than a mechanism of its own — it hands the write
+path a plan that happens to point backwards.
+
+Change, move, and remove are destructive in a way adding never was, so they
+carry two extra obligations, both enforced here rather than in the UI:
 
 1. **Only a plain speaking button is ever rewritten.** Navigation, actions,
    and anything whose stored command sequence this app does not recognize stay
@@ -22,6 +26,7 @@ they carry two extra obligations, both enforced here rather than in the UI:
 """
 
 import argparse
+import copy
 import ctypes
 import glob
 import hashlib
@@ -771,6 +776,19 @@ def _stored_page_content(page):
     return content
 
 
+def _named_list(labels):
+    """Quote and join button labels for a sentence, so a warning can name them.
+
+    Labels are quoted because a bare one disappears into the prose around it:
+    a button labelled *more please* reads as part of the sentence, not as the
+    thing the sentence is about.
+    """
+    quoted = [f'"{label}"' for label in labels]
+    if len(quoted) <= 1:
+        return "".join(quoted)
+    return f"{', '.join(quoted[:-1])} and {quoted[-1]}"
+
+
 def _function_for_border(border_color):
     """Name the communicative function a stored border color stands for."""
     if border_color is None:
@@ -1308,7 +1326,18 @@ def _search_results(window, web=False):
 
 
 def _choose_symbol(window, label):
-    """Choose the first relevant TD Snap symbol, falling back to web search."""
+    """Choose the first relevant TD Snap symbol, falling back to web search.
+
+    Returns which library the symbol came from — ``'library'`` for TD Snap's
+    own symbol set, ``'web'`` for its web-image fallback — or ``None`` when
+    nothing matched. Naming the source per button is the difference between
+    "some symbols are missing" and "*Snacks* and *outside* were added without
+    one, and *thirsty* used a web image": the first is a shrug, the second
+    tells a clinician exactly which buttons to look at.
+
+    *label* is the search text, which is the button's label unless the user
+    gave the button its own symbol search words.
+    """
     try:
         content = _find(window, name="Content", control_type="ListItemControl")
         if content:
@@ -1330,6 +1359,7 @@ def _choose_symbol(window, label):
         _set_value(search, label)
         query = _find(window, automation_id="QueryButton", control_type="ButtonControl")
         _activate(query)
+        source = "library"
         try:
             results = _wait_for(
                 lambda: _search_results(window),
@@ -1344,6 +1374,7 @@ def _choose_symbol(window, label):
                 lambda: _search_results(window, web=True),
                 "No symbol or web image matched.", timeout=6,
             )
+            source = "web"
         _activate(results[0])
         done = _find(window, automation_id="PrimaryButton", control_type="ButtonControl")
         _activate(done)
@@ -1352,14 +1383,14 @@ def _choose_symbol(window, label):
                           control_type="ButtonControl") is None,
             "TD Snap did not close symbol search.", timeout=60,
         )
-        return True
+        return source
     except PagesetError:
         cancel = _find(
             window, automation_id="SecondaryButton", control_type="ButtonControl"
         )
         if cancel:
             _activate(cancel)
-        return False
+        return None
 
 
 def _closest_color_item(window, border_color):
@@ -1583,8 +1614,104 @@ def _remove_button(auto, window, cell, label):
     )
 
 
+# TD Snap's accessibility tree exposes no "put this button in that cell"
+# command; the only move its editing panel offers is the drag a person would
+# do. So a move is a real drag between two measured cell centers, and it is
+# only ever aimed at a cell that is **empty**. What TD Snap does when a button
+# is dropped onto an occupied one — swap, replace, refuse — is not something
+# this project is willing to guess at on somebody's vocabulary, so swapping is
+# built out of the empty-cell primitive instead (see ``_move_order``).
+
+
+def _move_order(moves, occupied, capacity):
+    """Sequence the drags that realise *moves* without ever dropping onto a
+    button.
+
+    *moves* is ``[{slot, to, label}]``, *occupied* the slots holding a button
+    when the moves are about to run (after removals), and *capacity* the number
+    of cells on the page. Returns ``[(from_slot, to_slot, label)]`` in
+    execution order — the label travels with the drag because it is what the
+    drag verifies itself against, and a parked button is dragged twice under
+    the same label.
+
+    A straight move into an empty cell is one drag. Two buttons trading places
+    have no empty cell between them, so one of them is parked in a spare cell
+    first and collected afterwards — three drags, each of them the one move
+    TD Snap is known to perform. That needs a spare cell, and a page with none
+    says so rather than attempting a drop this module cannot predict.
+    """
+    pending = {move["slot"]: (move["to"], move["label"]) for move in moves}
+    filled = set(occupied)
+    steps = []
+    while pending:
+        ready = sorted(
+            source for source, (target, _) in pending.items() if target not in filled
+        )
+        if ready:
+            for source in ready:
+                target, label = pending.pop(source)
+                steps.append((source, target, label))
+                filled.discard(source)
+                filled.add(target)
+            continue
+        # Every remaining move wants a cell that is still occupied, so what is
+        # left is one or more closed cycles (A→B→A, or longer). Park the first
+        # button of one cycle in a spare cell, which frees the cell the rest of
+        # that cycle is waiting on.
+        waiting = {target for target, _ in pending.values()}
+        spare = next(
+            (
+                slot for slot in range(capacity)
+                if slot not in filled and slot not in waiting
+            ),
+            None,
+        )
+        if spare is None:
+            raise PagesetError(
+                "This page has no empty cell to move a button through, so its "
+                "buttons can't trade places. Free one cell on the page, or move "
+                "the buttons one at a time."
+            )
+        source = min(pending)
+        target, label = pending.pop(source)
+        steps.append((source, spare, label))
+        filled.discard(source)
+        filled.add(spare)
+        pending[spare] = (target, label)
+    return steps
+
+
+def _moved_into(window, slot, label, vacated):
+    """True once *label* is the button in *slot* and *vacated* no longer holds it."""
+    by_slot = _named_slots(window)
+    control = by_slot.get(slot)
+    if control is None or (control.Name or "").strip() != label:
+        return False
+    left = by_slot.get(vacated)
+    return left is None or (left.Name or "").strip() != label
+
+
+def _move_button(auto, window, grid, source_slot, target_slot, label):
+    """Drag the existing button *label* from *source_slot* into empty *target_slot*."""
+    drag = getattr(auto, "DragDrop", None)
+    source = _cell_at(grid, source_slot)
+    target = _cell_at(grid, target_slot)
+    if drag is None or source is None or target is None:
+        raise PagesetError(
+            f"TD Snap did not expose a way to move {label!r} to the cell you "
+            "chose, so the button was left where it is."
+        )
+    x1, y1 = _physical_point(window, source.x, source.y)
+    x2, y2 = _physical_point(window, target.x, target.y)
+    drag(x1, y1, x2, y2, moveSpeed=0.5, waitTime=0.3)
+    _wait_for(
+        lambda: _moved_into(window, target_slot, label, source_slot),
+        f"TD Snap did not move the {label!r} button to the cell you chose.",
+    )
+
+
 def _add_button(auto, window, cell, label, message=None,
-                border_color=None, use_symbol=False):
+                border_color=None, use_symbol=False, symbol_query=None):
     before = _fingerprint(_page_group(window))
     x, y = _physical_point(
         window,
@@ -1610,7 +1737,7 @@ def _add_button(auto, window, cell, label, message=None,
             lambda: _find(_page_group(window), name=label, control_type="ButtonControl"),
             f"TD Snap did not save the {label!r} button.",
         )
-        symbol_applied = False
+        symbol_source = None
         border_applied = border_color is None
         if message:
             _expand_editor(window)
@@ -1630,11 +1757,15 @@ def _add_button(auto, window, cell, label, message=None,
             try:
                 _expand_editor(window)
                 if use_symbol:
-                    symbol_applied = _choose_symbol(window, label)
+                    symbol_source = _choose_symbol(window, symbol_query or label)
                 border_applied = _apply_border(window, border_color)
             except PagesetError:
                 pass
-        return {"symbol": symbol_applied, "border": border_applied}
+        return {
+            "symbol": symbol_source is not None,
+            "symbol_source": symbol_source,
+            "border": border_applied,
+        }
     except PagesetError:
         if opened or _fingerprint(_page_group(window)) != before:
             _undo_if_needed(window)
@@ -1758,18 +1889,61 @@ def _normalize_removals(removals):
     return sorted(slots)
 
 
-def _prior_content(page, changes, removals, by_slot):
+def _normalize_moves(moves):
+    """Bound and shape ``[{slot, to}]`` move requests.
+
+    Two buttons trading places is two moves pointing at each other, which is
+    why a target being another move's source is allowed while two moves
+    sharing one target is not.
+    """
+    normalized = []
+    sources = set()
+    targets = set()
+    for move in moves or ():
+        if not isinstance(move, dict):
+            raise PagesetError("Each move must be a {slot, to} object.")
+        slot = move.get("slot")
+        target = move.get("to")
+        for value in (slot, target):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise PagesetError("Each moved button needs a non-negative cell number.")
+        if slot == target:
+            raise PagesetError("A moved button needs a different cell to move to.")
+        if slot in sources:
+            raise PagesetError("The same button cannot be moved twice in one edit.")
+        if target in targets:
+            raise PagesetError("Two buttons cannot be moved into the same cell.")
+        sources.add(slot)
+        targets.add(target)
+        normalized.append({"slot": slot, "to": target})
+    return sorted(normalized, key=lambda move: move["slot"])
+
+
+def _prior_content(page, changes, removals, moves, by_slot, known=None):
     """Capture what every cell this edit will damage holds today.
 
     Refusing the whole edit when this cannot be read is the single most
     important rule on this path: without it, a failure part-way through a
-    change or a removal has nothing to restore from.
+    change, a removal, or a move has nothing to restore from.
+
+    *known* is the snapshot an undo carries of the edit it is reversing (see
+    ``_LAST_EDIT``). It is consulted only for a cell the stored page set has
+    nothing to say about, and only when the label there still matches what the
+    snapshot recorded — TD Snap may not have written a button this app created
+    moments ago back to the page-set file yet, and refusing to retire a button
+    *because this app just made it* would break the most ordinary undo there
+    is. It is an internal argument: nothing reaches it from an HTTP request.
     """
-    touched = sorted({*removals, *(change["slot"] for change in changes)})
+    touched = sorted({
+        *removals,
+        *(change["slot"] for change in changes),
+        *(move["slot"] for move in moves),
+    })
     if not touched:
         return {}
     content = _stored_page_content(page)
-    if content is None:
+    known = known or {}
+    if content is None and not all(slot in known for slot in touched):
         raise PagesetError(
             "AAC Editor couldn't read this page set's saved button content, so it "
             "won't change or remove anything here. Adding buttons still works."
@@ -1782,7 +1956,11 @@ def _prior_content(page, changes, removals, by_slot):
                 "One or more buttons in this edit are no longer where they were "
                 "reviewed. Refresh the page layout and review the edit again."
             )
-        stored = content.get(label.strip().casefold())
+        stored = (content or {}).get(label.strip().casefold())
+        if stored is None:
+            remembered = known.get(slot)
+            if remembered and remembered["label"].strip().casefold() == label.strip().casefold():
+                stored = remembered
         if stored is None:
             raise PagesetError(
                 f"AAC Editor couldn't read what {label!r} holds today, so it won't "
@@ -1794,20 +1972,32 @@ def _prior_content(page, changes, removals, by_slot):
     return prior
 
 
-def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
-    """Add, change, and remove reviewed buttons on one existing TD Snap page.
+def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
+                     fingerprint=None, *, _known_content=None, _undoing=False):
+    """Add, change, move, and remove reviewed buttons on one existing TD Snap page.
 
-    One spine for all three so that a single review, fingerprint guard,
-    edit-mode session, and rollback covers the whole edit rather than three
-    partly-overlapping ones. Removals run first (they free the cells an add
-    may have been placed in), then changes, then additions.
+    One spine for all four so that a single review, fingerprint guard,
+    edit-mode session, and rollback covers the whole edit rather than four
+    partly-overlapping ones. Removals run first (they free the cells a move or
+    an addition may be aimed at), then moves (while every button still carries
+    the label the review named), then changes, then additions.
+
+    Every slot in the request is the cell as the user reviewed it: a change to
+    a button that is also moving names where that button is now, not where it
+    is going. ``_known_content`` and ``_undoing`` are internal — see
+    ``undo_last_edit``; nothing reaches them from an HTTP request.
     """
-    normalized = _normalize_items(items)
+    normalized = _normalize_items(list(items or []))
     changes = _normalize_changes(changes)
     removals = _normalize_removals(removals)
-    if set(removals) & {change["slot"] for change in changes}:
+    moves = _normalize_moves(moves)
+    moved = {move["slot"]: move["to"] for move in moves}
+    changed_slots = {change["slot"] for change in changes}
+    if set(removals) & changed_slots:
         raise PagesetError("A button can't be changed and removed in the same edit.")
-    if not (normalized or changes or removals):
+    if set(removals) & set(moved):
+        raise PagesetError("A button can't be moved and removed in the same edit.")
+    if not (normalized or changes or removals or moves):
         raise PagesetError("Add at least one word or phrase.")
     if not _desktop_unlocked():
         raise PagesetError("Unlock Windows before editing TD Snap directly.")
@@ -1833,10 +2023,34 @@ def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
     grid = _grid(group)
     existing = _page_layout(group, grid)
     by_slot = {button["slot"]: button["label"] for button in existing}
-    prior = _prior_content(requested, changes, removals, by_slot)
+    prior = _prior_content(requested, changes, removals, moves, by_slot, _known_content)
+    capacity = len(grid.xs) * len(grid.ys)
+
+    # A move may land on a cell a removal freed, a cell nothing was in, or a
+    # cell whose own button is moving out of it — two buttons trading places.
+    # Anything else would be a drop onto a button that is staying put, which is
+    # the one thing this module refuses to guess at (see ``_move_order``).
+    staying = set(by_slot) - set(removals) - set(moved)
+    blocked = sorted(by_slot[target] for target in moved.values() if target in staying)
+    if blocked:
+        raise PagesetError(
+            "These buttons are in the way of a move and are not moving themselves: "
+            + ", ".join(blocked)
+            + ". Refresh the page layout and review the edit again."
+        )
+    if any(_cell_at(grid, target) is None for target in moved.values()):
+        raise PagesetError(
+            "One or more buttons would be moved off this page. Refresh the page layout."
+        )
+
+    def placed(slot):
+        """Where the button reviewed in *slot* ends up once this edit has run."""
+        return moved.get(slot, slot)
 
     # What the page will read as once this edit lands, used to catch a rename
-    # or an addition that would leave two buttons sharing one label.
+    # or an addition that would leave two buttons sharing one label. Moves are
+    # absent on purpose: they carry a label from one cell to another without
+    # ever creating or retiring one.
     remaining = {
         slot: label for slot, label in by_slot.items() if slot not in removals
     }
@@ -1857,7 +2071,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
         raise PagesetError(
             "Already on this page: " + ", ".join(duplicates) + ". Remove or rename duplicates before submitting."
         )
-    occupied = set(by_slot) - set(removals)
+    occupied = (set(by_slot) - set(removals) - set(moved)) | set(moved.values())
     requested_slots = [item.get("slot") for item in normalized]
     if any(slot is None for slot in requested_slots):
         raise PagesetError("Review and place every new button in an empty cell before submitting.")
@@ -1871,7 +2085,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
         for item in normalized
     ] + [
         {
-            "slot": change["slot"],
+            "slot": placed(change["slot"]),
             "label": change["label"] or prior[change["slot"]]["label"],
             "message": (
                 prior[change["slot"]]["message"]
@@ -1879,32 +2093,57 @@ def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
             ),
         }
         for change in changes
+    ] + [
+        # A button that is moving *and* being changed is already named above,
+        # at the same cell and with its new label.
+        {"slot": move["to"], "label": prior[move["slot"]]["label"], "message": None}
+        for move in moves
+        if move["slot"] not in changed_slots
     ]
-    touched = set(requested_slots) | set(removals) | {c["slot"] for c in changes}
+    touched = (
+        set(requested_slots) | set(removals) | set(moved) | set(moved.values())
+        | changed_slots
+    )
     untouched = {slot: label for slot, label in by_slot.items() if slot not in touched}
-    # A removed cell an addition then fills is verified by that addition, not
-    # by "this cell is empty" — removing a typo and typing the correction into
-    # the same space is the most ordinary use of this whole feature.
+    # A cell an addition or a move then fills is verified by that addition or
+    # move, not by "this cell is empty" — removing a typo and typing the
+    # correction into the same space is the most ordinary use of this feature.
     filled = {item["slot"] for item in expected}
-    emptied = [slot for slot in removals if slot not in filled]
+    emptied = [
+        slot for slot in sorted(set(removals) | set(moved)) if slot not in filled
+    ]
     restore_content = {
         slot: {"label": entry["label"], "message": entry["message"]}
         for slot, entry in prior.items()
     }
+    # Planned before edit mode is entered so a page with no spare cell to move
+    # a button through is refused while nothing has been touched.
+    move_steps = _move_order(
+        [
+            {"slot": move["slot"], "to": move["to"], "label": prior[move["slot"]]["label"]}
+            for move in moves
+        ],
+        set(by_slot) - set(removals),
+        capacity,
+    )
 
     _enter_edit_mode(window)
-    symbols = 0
+    symbol_results = []
     styled = 0
     try:
         for slot in removals:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
             _remove_button(auto, window, _cell_at(edit_grid, slot), prior[slot]["label"])
+        for source, target, label in move_steps:
+            _collapse_editor(window)
+            edit_grid = _grid(_page_group(window))
+            _move_button(auto, window, edit_grid, source, target, label)
         for change in changes:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
             _change_button(
-                auto, window, _cell_at(edit_grid, change["slot"]),
+                auto, window, _cell_at(edit_grid, placed(change["slot"])),
                 prior[change["slot"]]["label"], change["label"], change["message"],
             )
         for item in normalized:
@@ -1913,8 +2152,15 @@ def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
             result = _add_button(
                 auto, window, _cell_at(edit_grid, item["slot"]), item["label"],
                 item["message"], item["border_color"], item.get("symbol", True),
+                item.get("symbol_query"),
             )
-            symbols += int(result["symbol"])
+            symbol_results.append({
+                "label": item["label"],
+                "requested": bool(item.get("symbol", True)),
+                "applied": bool(result["symbol"]),
+                "source": result.get("symbol_source"),
+                "query": item.get("symbol_query") or item["label"],
+            })
             styled += int(result["border"] and item["border_color"] is not None)
         _verify_page_state(window, expected, emptied, untouched)
         _exit_edit_mode(window)
@@ -1937,8 +2183,9 @@ def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
             raise PagesetError(
                 "TD Snap did not verify the removal of: " + ", ".join(left_behind)
             )
+        settled = _fingerprint_token(final_group)
     except Exception as exc:
-        steps = len(normalized) + len(changes) + len(removals)
+        steps = len(normalized) + len(changes) + len(removals) + len(move_steps)
         try:
             _restore_page_state(window, baseline, restore_content, steps * 6 + 8)
         except PagesetError as rollback_error:
@@ -1947,7 +2194,8 @@ def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
     finally:
         _exit_edit_mode(window)
 
-    expected_symbols = sum(item.get("symbol", True) for item in normalized)
+    expected_symbols = sum(entry["requested"] for entry in symbol_results)
+    symbols = sum(entry["applied"] for entry in symbol_results)
     expected_styles = sum(item["border_color"] is not None for item in normalized)
     checks = {
         "td_snap_edit": "pass",
@@ -1961,26 +2209,243 @@ def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
         checks["changed_content"] = "pass"
     if removals:
         checks["removed_buttons"] = "pass"
-    if changes or removals:
+    if moves:
+        checks["moved_buttons"] = "pass"
+    if changes or removals or moves:
         checks["untouched_buttons"] = "pass"
-    return {
+    if _undoing:
+        checks["undone"] = "pass"
+    unmatched = [
+        entry["label"] for entry in symbol_results
+        if entry["requested"] and not entry["applied"]
+    ]
+    web_images = [entry["label"] for entry in symbol_results if entry["source"] == "web"]
+    report = {
         "page": _page_name(window, final_group),
         "buttons": len(normalized),
         "changed": len(changes),
         "removed": len(removals),
+        "moved": len(moves),
+        "undone": _undoing,
         "checks": checks,
+        "symbols": symbol_results,
         "warnings": [warning for warning in [
-            f"TD Snap could not find a symbol for {expected_symbols - symbols} button(s)."
-            if symbols < expected_symbols else None,
+            f"TD Snap found no symbol for {_named_list(unmatched)}. "
+            f"{'It was' if len(unmatched) == 1 else 'They were'} added without one — "
+            "add one in TD Snap, or try different symbol search words."
+            if unmatched else None,
+            f"TD Snap used a web image rather than one of its own symbols for "
+            f"{_named_list(web_images)}."
+            if web_images else None,
             "Some topic border colors could not be applied automatically."
             if styled < expected_styles else None,
         ] if warning],
     }
+    if _undoing:
+        forget_last_edit()
+    else:
+        _record_last_edit(
+            requested, grid, prior, normalized, changes, removals, moves,
+            symbol_results, settled,
+        )
+    return report
 
 
 def add_to_existing_page(page, items, fingerprint=None):
     """Add reviewed buttons to empty cells on an existing TD Snap page."""
     return apply_page_edits(page, items, fingerprint=fingerprint)
+
+
+# ---------------------------------------------------------------------------
+# Undo my last change
+#
+# Until now the only rollback was the failure path: an edit that broke midway
+# put the page back, and an edit that succeeded was final. That left the one
+# mistake this app is most likely to help somebody make — a confident, verified
+# edit to the wrong button — with no way back except doing it again by hand.
+#
+# So the edit that would reverse the last applied one is retained, together
+# with the content it would restore, and offered as a single-level undo that
+# goes through exactly the same review, fingerprint guard, edit-mode session,
+# verification, and rollback as any other edit. It is not a second mechanism:
+# it is the ordinary write path, handed a plan that happens to point backwards.
+#
+# Three deliberate limits, each stated in the UI rather than hidden here:
+#
+# 1. **This process, this session.** The snapshot is never written to disk. An
+#    undo is only safe while the page is still the page this app left behind,
+#    and a snapshot that outlived a restart could not know whether TD Snap had
+#    synced, been edited by hand, or opened a different page set since.
+# 2. **One level.** Undoing does not itself become undoable. "Undo my last
+#    change" that re-applies the word somebody just retired is a trap, however
+#    accurately it is named.
+# 3. **A re-created button is a new button.** Restoring a removed button means
+#    making one again with the same label and message; its symbol comes from a
+#    fresh TD Snap search, and a border color outside the five clinical
+#    function colors cannot be written back at all. Both are reported up front,
+#    at review time, not discovered afterwards.
+
+_LAST_EDIT = None
+
+
+def _restored_item(slot, entry, warnings):
+    """One button an undo will re-create, and what it cannot bring back."""
+    border = entry.get("border_color")
+    if border is not None and not colors.is_allowed_border_color(border):
+        border = None
+        warnings.append(
+            f"{entry['label']!r} had a border color AAC Editor doesn't write, so "
+            "undo restores the button without it."
+        )
+    if entry.get("symbol"):
+        warnings.append(
+            f"{entry['label']!r} is re-created with a fresh TD Snap symbol search, "
+            "which may not find the symbol it had."
+        )
+    return {
+        "label": entry["label"],
+        "message": entry["message"] or None,
+        "border_color": border,
+        "slot": slot,
+        "symbol": bool(entry.get("symbol")),
+        "symbol_query": entry["label"],
+    }
+
+
+def _record_last_edit(page, grid, prior, items, changes, removals, moves,
+                      symbol_results, fingerprint):
+    """Retain the edit that would put this page back, plus what it would restore.
+
+    *fingerprint* is the page's token *after* the edit, so replaying the
+    reverse plan is refused by the ordinary fingerprint guard the moment
+    anything else touches the page — including a TD Snap sync that pulls the
+    page set out from under it.
+    """
+    global _LAST_EDIT
+    moved = {move["slot"]: move["to"] for move in moves}
+    applied = {entry["label"]: entry for entry in symbol_results}
+
+    def placed(slot):
+        return moved.get(slot, slot)
+
+    warnings = []
+    restore = [_restored_item(slot, prior[slot], warnings) for slot in removals]
+
+    # What each cell the undo will touch holds *now*, so the undo has a content
+    # snapshot even for a button TD Snap has not yet written back to the page
+    # set file — which is every button this app just created.
+    content = {}
+    for move in moves:
+        content[move["to"]] = dict(prior[move["slot"]])
+    for change in changes:
+        entry = prior[change["slot"]]
+        content[placed(change["slot"])] = {
+            **entry,
+            "label": change["label"] or entry["label"],
+            "message": entry["message"] if change["message"] is None else (
+                change["message"] or None
+            ),
+        }
+    for item in items:
+        content[item["slot"]] = {
+            "label": item["label"],
+            "message": item["message"],
+            "border_color": item["border_color"],
+            "function": _function_for_border(item["border_color"]),
+            "symbol": bool(applied.get(item["label"], {}).get("applied")),
+            "kind": "speak",
+        }
+
+    _LAST_EDIT = {
+        "page": page,
+        "grid": {"cols": len(grid.xs), "rows": len(grid.ys)},
+        "fingerprint": fingerprint,
+        "content": content,
+        "plan": {
+            "items": restore,
+            "changes": [
+                {
+                    "slot": placed(change["slot"]),
+                    "label": prior[change["slot"]]["label"],
+                    # "" is a request — "speak the label again" — and is how the
+                    # original message is restored when there wasn't one.
+                    "message": prior[change["slot"]]["message"] or "",
+                }
+                for change in changes
+            ],
+            "removals": [item["slot"] for item in items],
+            "moves": [{"slot": move["to"], "to": move["slot"]} for move in moves],
+        },
+        # The same shapes the review screen already knows how to render, so an
+        # undo is reviewed by the same lists as the edit that caused it.
+        "restores": {
+            "adds": [
+                {"label": entry["label"], "message": entry["message"]}
+                for entry in restore
+            ],
+            "changes": [
+                {
+                    "label": prior[change["slot"]]["label"],
+                    "message": prior[change["slot"]]["message"] or "",
+                    "from": {
+                        "label": content[placed(change["slot"])]["label"],
+                        "message": content[placed(change["slot"])]["message"] or "",
+                    },
+                }
+                for change in changes
+            ],
+            "removals": [
+                {"label": item["label"], "message": item["message"]}
+                for item in items
+            ],
+            "moves": [
+                {
+                    "label": prior[move["slot"]]["label"],
+                    "slot": move["to"],
+                    "to": move["slot"],
+                }
+                for move in moves
+            ],
+        },
+        "warnings": warnings,
+    }
+
+
+def forget_last_edit():
+    """Drop the retained edit, so nothing offers to undo it."""
+    global _LAST_EDIT
+    _LAST_EDIT = None
+
+
+def last_edit():
+    """What an undo would do right now, or ``None`` when there is nothing to undo."""
+    if _LAST_EDIT is None:
+        return None
+    return copy.deepcopy({
+        "page": _LAST_EDIT["page"],
+        "grid": _LAST_EDIT["grid"],
+        "restores": _LAST_EDIT["restores"],
+        "warnings": _LAST_EDIT["warnings"],
+    })
+
+
+def undo_last_edit():
+    """Reverse the last edit this session applied, through the ordinary write path."""
+    snapshot = _LAST_EDIT
+    if snapshot is None:
+        raise PagesetError(
+            "There is no change left to undo. AAC Editor can only undo an edit it "
+            "made while this window has been open, and only before anything else "
+            "changes the page."
+        )
+    plan = snapshot["plan"]
+    return apply_page_edits(
+        snapshot["page"],
+        plan["items"], plan["changes"], plan["removals"], plan["moves"],
+        snapshot["fingerprint"],
+        _known_content=snapshot["content"],
+        _undoing=True,
+    )
 
 
 def add_topic_page(title, items, parent=DEFAULT_PARENT):
@@ -2015,7 +2480,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     parent_group = _page_group(window)
     parent_baseline = _fingerprint(parent_group)
     page_baseline = None
-    symbols = 0
+    symbol_results = []
     styled = 0
     placed = []
     try:
@@ -2050,8 +2515,15 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
             result = _add_button(
                 auto, window, _cell_at(active_grid, slot), item["label"],
                 item["message"], item["border_color"], item.get("symbol", True),
+                item.get("symbol_query"),
             )
-            symbols += int(result["symbol"])
+            symbol_results.append({
+                "label": item["label"],
+                "requested": bool(item.get("symbol", True)),
+                "applied": bool(result["symbol"]),
+                "source": result.get("symbol_source"),
+                "query": item.get("symbol_query") or item["label"],
+            })
             styled += int(result["border"] and item["border_color"] is not None)
 
         _verify_page_state(window, placed)
@@ -2076,7 +2548,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
         link = _find(_page_group(window), name=title, control_type="ButtonControl")
         if not link:
             raise PagesetError("The new page exists, but its parent link was not visible.")
-        link_symbol = False
+        link_symbol = None
         try:
             _enter_edit_mode(window)
             link = _find(_page_group(window), name=title, control_type="ButtonControl")
@@ -2101,26 +2573,39 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     finally:
         _exit_edit_mode(window)
 
-    total_symbols = symbols + int(link_symbol)
-    expected_symbols = len(normalized) + 1
+    symbol_results.append({
+        "label": title,
+        "requested": True,
+        "applied": link_symbol is not None,
+        "source": link_symbol,
+        "query": title,
+    })
+    total_symbols = sum(entry["applied"] for entry in symbol_results)
+    expected_symbols = sum(entry["requested"] for entry in symbol_results)
+    expected_styles = sum(item["border_color"] is not None for item in normalized)
+    unmatched = [
+        entry["label"] for entry in symbol_results
+        if entry["requested"] and not entry["applied"]
+    ]
     return {
         "page": title,
         "parent": parent,
         "buttons": len(normalized),
+        "symbols": symbol_results,
         "checks": {
             "td_snap_edit": "pass",
             "navigation": "pass",
             "content": "pass",
             "symbols": "pass" if total_symbols == expected_symbols else "partial",
-            "topic_format": "pass" if styled == sum(
-                item["border_color"] is not None for item in normalized
-            ) else "partial",
+            "topic_format": "pass" if styled == expected_styles else "partial",
         },
         "warnings": [warning for warning in [
-            f"TD Snap could not find a symbol for {expected_symbols - total_symbols} button(s)."
-            if total_symbols < expected_symbols else None,
+            f"TD Snap found no symbol for {_named_list(unmatched)}. "
+            f"{'It was' if len(unmatched) == 1 else 'They were'} added without one — "
+            "add one in TD Snap, or try different symbol search words."
+            if unmatched else None,
             "Some topic border colors could not be applied automatically."
-            if styled < sum(item["border_color"] is not None for item in normalized) else None,
+            if styled < expected_styles else None,
         ] if warning],
     }
 

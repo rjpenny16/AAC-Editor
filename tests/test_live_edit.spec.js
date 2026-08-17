@@ -564,6 +564,11 @@ test('exported TD Snap file can create and save an edited copy', async ({ page }
     mimeType: 'application/octet-stream',
     buffer: Buffer.from('synthetic pageset'),
   });
+  // An exported file now asks the same first question as a live connection,
+  // because it can add to an existing page as well as create one.
+  await expect(page.locator('#wizard-operation')).toBeVisible();
+  await page.locator('#operation-new').click();
+  await page.locator('#wizard-operation .wizard-next').click();
   await expect(page.locator('#wizard-title')).toBeVisible();
   await page.locator('#title-input').fill('Snacks');
   await page.locator('#wizard-title .wizard-next').click();
@@ -1028,7 +1033,7 @@ test('a page-layout error is visible and a later selection recovers', async ({ p
   await expect(page.locator('#wizard-placement .preview-frame')).toHaveAttribute('aria-busy', 'true');
   releaseFirstPlaces();
   await expect(page.locator('#build-error')).toContainText(
-    'Couldn’t load the selected TD Snap page.',
+    'Couldn’t load the selected page.',
   );
   await expect(page.locator('#parent-capacity')).toContainText('could not be loaded');
   await page.locator('#parent-select').selectOption('Eating');
@@ -1280,8 +1285,8 @@ test.describe('never lose work: settings, drafts, and undo', () => {
     target_page: 'Eating',
     title: '',
     items: [
-      { label: 'Apple', message: null, fn: '', slot: 0, symbol: true },
-      { label: 'Banana', message: null, fn: '', slot: 1, symbol: true },
+      { label: 'Apple', message: null, fn: '', slot: 0, symbol: true, symbol_query: 'fruit' },
+      { label: 'Banana', message: null, fn: '', slot: 1, symbol: false, symbol_query: null },
     ],
     saved_at: 1700000000,
   };
@@ -1303,6 +1308,13 @@ test.describe('never lose work: settings, drafts, and undo', () => {
     await expect(page.locator('#chipbox .chip')).toHaveCount(2);
     await expect(page.locator('#chipbox .chip-body').filter({ hasText: 'Apple' })).toBeVisible();
     await expect(page.locator('#chipbox .chip-body').filter({ hasText: 'Banana' })).toBeVisible();
+    // Each button's symbol choice is part of the work, so it comes back too.
+    await expect(
+      page.locator('#chipbox .chip-body').filter({ hasText: 'Apple' }),
+    ).toHaveAttribute('title', 'Symbol: “fruit”');
+    await expect(
+      page.locator('#chipbox .chip-body').filter({ hasText: 'Banana' }),
+    ).toHaveAttribute('title', 'No symbol');
   });
 
   test('discarding the recovery banner clears the stored draft and starts empty', async ({ page }) => {
@@ -1660,6 +1672,474 @@ test.describe('changing and removing existing buttons', () => {
     await page.locator('#build-btn').click();
     await expect(page.locator('#review-removals li')).toHaveCount(1);
     expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
+/* Moving what is already on the page, and undoing an edit that has landed.
+ *
+ * Both reach into vocabulary somebody relies on, so the same rules apply as to
+ * changing and removing: nothing is written before the review names it, a
+ * locked button says why, and the request carries cells rather than guesses.
+ * The undo tests also pin the two things it cannot reach — one edit back, and
+ * not past a TD Snap sync — being said before it runs, not after.
+ */
+test.describe('moving buttons and undoing an applied edit', () => {
+  const MOVABLE_PAGE = {
+    buttons: [
+      {
+        slot: 0, label: 'aple', message: 'I want an aple', function: null,
+        symbol: true, editable: true, locked_reason: null,
+      },
+      {
+        slot: 1, label: 'pear', message: null, function: null,
+        symbol: true, editable: true, locked_reason: null,
+      },
+      {
+        slot: 2, label: 'Games', message: null, function: null, symbol: true,
+        editable: false,
+        locked_reason: 'This button opens another page, so AAC Editor leaves it alone.',
+      },
+    ],
+    free_slots: [3, 4, 5],
+    content_readable: true,
+    fingerprint: 'eating-v1',
+  };
+
+  const APPLIED = {
+    page: 'Eating',
+    grid: { cols: 3, rows: 2 },
+    restores: {
+      adds: [{ label: 'old', message: 'the old one' }],
+      changes: [{
+        label: 'aple', message: 'I want an aple',
+        from: { label: 'apple', message: 'I want an apple' },
+      }],
+      removals: [{ label: 'banana', message: null }],
+      moves: [{ label: 'pear', slot: 4, to: 1 }],
+    },
+    warnings: ['“old” is re-created with a fresh TD Snap symbol search, which may not find the symbol it had.'],
+  };
+
+  async function movablePage(page, overrides = {}) {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating', { ...MOVABLE_PAGE, ...overrides }),
+    });
+  }
+
+  /* What the server would say it is holding, and what an undo would report. */
+  async function mockUndo(page, { available = null, report = null } = {}) {
+    const calls = { undo: 0, forgotten: 0, body: null };
+    await page.route('**/api/tdsnap/last-edit', (route) => {
+      if (route.request().method() === 'DELETE') {
+        calls.forgotten += 1;
+        return fulfillJson(route, { ok: true });
+      }
+      return fulfillJson(route, { ok: true, undo: available });
+    });
+    await page.route('**/api/tdsnap/undo', (route) => {
+      calls.undo += 1;
+      calls.body = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true,
+        page: 'Eating',
+        buttons: 1, changed: 1, removed: 0, moved: 1,
+        undone: true,
+        undo: null,
+        warnings: [],
+        checks: {
+          td_snap_edit: 'pass', target_page: 'pass', content: 'pass',
+          positions: 'pass', changed_content: 'pass', moved_buttons: 'pass',
+          untouched_buttons: 'pass', undone: 'pass',
+        },
+        ...(report || {}),
+      });
+    });
+    return calls;
+  }
+
+  test('a button is dragged to an empty cell and named in review', async ({ page }) => {
+    let submitted = null;
+    await movablePage(page);
+    await page.route('**/api/tdsnap/edit-plan', (route) => {
+      submitted = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true, page: 'Eating', buttons: 0, changed: 0, removed: 0, moved: 1,
+        warnings: [], undo: null,
+        checks: { td_snap_edit: 'pass', moved_buttons: 'pass', untouched_buttons: 'pass' },
+      });
+    });
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+
+    const apple = page.locator('#preview .cell.existing').filter({ hasText: 'aple' });
+    await apple.focus();
+    await apple.press('ArrowDown');
+
+    // The button is drawn where it is going, and the cell it left is empty.
+    const moved = page.locator('#preview [data-slot="3"]');
+    await expect(moved).toHaveClass(/marked-moved/);
+    await expect(moved).toHaveText(/aple/);
+    await expect(moved).toHaveAttribute('aria-label', /Moved here from row 1, column 1/);
+    await expect(page.locator('#preview [data-slot="0"]')).toHaveText('');
+
+    await page.locator('#placement-back-btn').click();
+    await expect(page.locator('#edit-existing-summary')).toHaveText(
+      'Pending: move 1 button on eating.',
+    );
+    await page.locator('#build-btn').click();
+
+    await expect(page.locator('#review-action')).toHaveText('Move 1 button on Eating');
+    await expect(page.locator('#review-moves li')).toHaveText([
+      'aplerow 1, column 1 → row 2, column 1',
+    ]);
+
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-heading')).toHaveText('Done — TD Snap was updated');
+    expect(submitted).toMatchObject({
+      operation: 'edit_page',
+      page: 'Eating',
+      fingerprint: 'eating-v1',
+      moves: [{ slot: 0, to: 3 }],
+      changes: [],
+      removals: [],
+    });
+    await expect(page.locator('#checks li')).toContainText([
+      'Every moved button is in its new cell',
+    ]);
+  });
+
+  test('dropping one button on another sends both halves of the swap', async ({ page }) => {
+    let submitted = null;
+    await movablePage(page);
+    await page.route('**/api/tdsnap/edit-plan', (route) => {
+      submitted = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true, page: 'Eating', buttons: 0, changed: 0, removed: 0, moved: 2,
+        warnings: [], undo: null, checks: { td_snap_edit: 'pass', moved_buttons: 'pass' },
+      });
+    });
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+
+    // Arrow keys are the keyboard equivalent of dropping one onto the other.
+    const apple = page.locator('#preview .cell.existing').filter({ hasText: 'aple' });
+    await apple.focus();
+    await apple.press('ArrowRight');
+
+    await expect(page.locator('#preview [data-slot="1"]')).toHaveText(/aple/);
+    await expect(page.locator('#preview [data-slot="0"]')).toHaveText(/pear/);
+
+    await page.locator('#placement-back-btn').click();
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-action')).toHaveText('Move 2 buttons on Eating');
+    await page.locator('#confirm-update-btn').click();
+
+    expect(submitted.moves).toEqual([{ slot: 0, to: 1 }, { slot: 1, to: 0 }]);
+  });
+
+  test('a locked button is never moved and never landed on', async ({ page }) => {
+    await movablePage(page);
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+
+    const locked = page.locator('#preview .cell.existing').filter({ hasText: 'Games' });
+    await expect(locked).not.toHaveAttribute('draggable', 'true');
+
+    // "pear" sits next to the locked button; moving right must do nothing.
+    const pear = page.locator('#preview .cell.existing').filter({ hasText: 'pear' });
+    await pear.focus();
+    await pear.press('ArrowRight');
+    await expect(page.locator('#preview [data-slot="1"]')).toHaveText(/pear/);
+    await expect(page.locator('#preview [data-slot="2"]')).toHaveText(/Games/);
+    await expect(page.locator('#preview .cell.marked-moved')).toHaveCount(0);
+  });
+
+  test('a cell a move frees becomes space for a new button', async ({ page }) => {
+    await movablePage(page, { free_slots: [3] });
+    await connect(page);
+    // One free cell to start with: three existing buttons on a six-cell grid,
+    // and the page reports only cell 3 as safe to write to.
+    await expect(page.locator('#capacity')).toHaveText('1 space available');
+
+    await page.locator('#edit-existing-btn').click();
+    const apple = page.locator('#preview .cell.existing').filter({ hasText: 'aple' });
+    await apple.focus();
+    await apple.press('ArrowDown');
+    await page.locator('#placement-back-btn').click();
+
+    // Cell 0 is now free and cell 3 is taken, so the count is unchanged — but
+    // the space that is offered has moved with the button.
+    await expect(page.locator('#capacity')).toHaveText('1 space available');
+    await page.locator('#word-input').fill('banana');
+    await page.locator('#word-add-btn').click();
+    await expect(page.locator('#preview [data-slot="0"]')).toHaveText(/banana/);
+  });
+
+  test('a symbol can be skipped or given its own search words', async ({ page }) => {
+    let submitted = null;
+    await movablePage(page);
+    await page.route('**/api/tdsnap/edit-plan', (route) => {
+      submitted = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true, page: 'Eating', buttons: 2, changed: 0, removed: 0, moved: 0,
+        undo: null,
+        warnings: ['TD Snap found no symbol for "more please". It was added without one — add one in TD Snap, or try different symbol search words.'],
+        checks: { td_snap_edit: 'pass', symbols: 'partial' },
+      });
+    });
+    await connect(page);
+    await page.locator('#word-input').fill('more please, quiet');
+    await page.locator('#word-input').press('Enter');
+
+    await page.locator('.chip-body').filter({ hasText: 'more please' }).click();
+    await expect(page.locator('#edit-symbol-field')).toBeVisible();
+    await page.locator('#edit-symbol-query').fill('more');
+    await page.locator('#edit-save').click();
+
+    await page.locator('.chip-body').filter({ hasText: 'quiet' }).click();
+    await page.locator('#edit-symbol').uncheck();
+    // The search words are meaningless once no symbol is wanted, so they go.
+    await expect(page.locator('#edit-symbol-query-row')).toBeHidden();
+    await page.locator('#edit-save').click();
+
+    await expect(
+      page.locator('.chip-body').filter({ hasText: 'quiet' }),
+    ).toHaveAttribute('title', 'No symbol');
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-items li')).toHaveText([
+      'more pleaseSymbol search: more',
+      'quietNo symbol',
+    ]);
+
+    await page.locator('#confirm-update-btn').click();
+    expect(submitted.items.map(
+      ({ label, symbol, symbol_query: query }) => ({ label, symbol, query }),
+    )).toEqual([
+      { label: 'more please', symbol: true, query: 'more' },
+      { label: 'quiet', symbol: false, query: null },
+    ]);
+    // The warning names the button, not a count.
+    await expect(page.locator('#result-warnings')).toContainText('"more please"');
+  });
+
+  test('an applied edit is offered back, reviewed, and replayed in reverse', async ({ page }) => {
+    await movablePage(page);
+    const calls = await mockUndo(page, { available: APPLIED });
+    await connect(page);
+
+    // Offered on the word list, where somebody who carried on would notice.
+    await expect(page.locator('#undo-last-btn')).toBeVisible();
+    await page.locator('#undo-last-btn').click();
+
+    await expect(page.locator('#result-heading')).toHaveText(
+      'Check what undoing will put back',
+    );
+    await expect(page.locator('#review-action')).toHaveText(
+      'Add 1, change 1, move 1 and remove 1 button on Eating',
+    );
+    await expect(page.locator('#review-items-wrap h3')).toHaveText('Buttons to put back');
+    await expect(page.locator('#review-items li')).toHaveText(['oldSpeaks: the old one']);
+    await expect(page.locator('#review-changes li')).toHaveText([
+      'apple“apple” becomes “aple” · speaks “I want an aple”',
+    ]);
+    await expect(page.locator('#review-moves li')).toHaveText([
+      'pearrow 2, column 2 → row 1, column 2',
+    ]);
+    await expect(page.locator('#review-removals li')).toHaveText(['banana']);
+    // What it cannot reach is stated before it runs.
+    await expect(page.locator('#review-undo-note')).toContainText(
+      'cannot reach back past a sync in TD Snap',
+    );
+    await expect(page.locator('#review-undo-note')).toContainText(
+      'fresh TD Snap symbol search',
+    );
+    // An undo has no placement to adjust.
+    await expect(page.locator('#adjust-placement-btn')).toBeHidden();
+    expect(calls.undo).toBe(0);
+
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-heading')).toHaveText(
+      'Done — the last change was undone in TD Snap',
+    );
+    expect(calls.undo).toBe(1);
+    await expect(page.locator('#result-sub')).toContainText(
+      'There is nothing left to undo from this session.',
+    );
+    await expect(page.locator('#checks li')).toContainText([
+      'The previous change was put back',
+    ]);
+    // Single level: once spent, the control goes.
+    await expect(page.locator('#undo-edit-btn')).toBeHidden();
+  });
+
+  test('nothing is offered to undo until an edit has been applied', async ({ page }) => {
+    await movablePage(page);
+    await mockUndo(page, { available: null });
+    await connect(page);
+
+    await expect(page.locator('#undo-last-btn')).toBeHidden();
+    await page.locator('#word-input').fill('banana');
+    await page.locator('#word-add-btn').click();
+    await expect(page.locator('#undo-last-btn')).toBeHidden();
+  });
+
+  test('a refused undo says the page was left alone', async ({ page }) => {
+    await movablePage(page);
+    await mockUndo(page, { available: APPLIED });
+    await page.route('**/api/tdsnap/undo', (route) => fulfillJson(route, {
+      ok: false,
+      error: 'The target page changed after preview. Refresh the layout and review the edit again.',
+    }, 400));
+    await connect(page);
+    await page.locator('#undo-last-btn').click();
+    await page.locator('#confirm-update-btn').click();
+
+    await expect(page.locator('#review-error')).toContainText(
+      'TD Snap couldn’t undo the last change.',
+    );
+    await expect(page.locator('#review-error')).toContainText(
+      'the page is as it was before this undo',
+    );
+  });
+
+  test('starting over stops offering an undo for a page set that may change', async ({ page }) => {
+    await movablePage(page);
+    const calls = await mockUndo(page, { available: APPLIED });
+    await connect(page);
+    await expect(page.locator('#undo-last-btn')).toBeVisible();
+
+    await page.locator('#choose-page-btn').click();
+    await page.locator('#reset-btn').click();
+
+    await expect(page.locator('#step-load')).toBeVisible();
+    expect(calls.forgotten).toBe(1);
+  });
+
+  test('the undo review has no serious or critical accessibility violations', async ({ page }) => {
+    await movablePage(page);
+    await mockUndo(page, { available: APPLIED });
+    await connect(page);
+    await page.locator('#undo-last-btn').click();
+    await expect(page.locator('#review-undo-note')).toBeVisible();
+
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
+
+/* Adding to a page that already exists in an exported file.
+ *
+ * The third provider could only ever create a page, which meant the most
+ * ordinary request — three more words on a page somebody already uses — was
+ * possible on Windows and nowhere else. These pin that it now walks the same
+ * two routes as a live connection, and that the review still names the page.
+ */
+test.describe('exported file adds to an existing page', () => {
+  const SESSION = {
+    ok: true,
+    session_id: 'file-session',
+    filename: 'sample.sps',
+    schema_version: '4.13',
+    grid: { cols: 3, rows: 2 },
+    pages: [{ id: 1, title: 'Home' }, { id: 2, title: 'Eating' }],
+    baseline_problems: [],
+  };
+
+  const LAYOUT = {
+    ok: true,
+    page: 'Home',
+    grid: { cols: 3, rows: 2 },
+    buttons: [{
+      slot: 0, label: 'apple', message: null, function: null, symbol: false,
+      editable: false,
+      locked_reason: 'AAC Editor only adds buttons in exported files.',
+    }],
+    free_slots: [1, 2, 3, 4, 5],
+    content_readable: false,
+    fingerprint: 'file-home-v1',
+  };
+
+  async function openFile(page, routes = {}) {
+    await page.route('**/api/pageset', (route) => fulfillJson(route, SESSION));
+    await page.route('**/api/pageset/file-session/pages', (route) =>
+      fulfillJson(route, { ok: true, pages: SESSION.pages }));
+    await page.route('**/api/pageset/file-session/page/*/layout', (route) =>
+      fulfillJson(route, LAYOUT));
+    for (const [pattern, handler] of Object.entries(routes)) {
+      await page.route(pattern, handler);
+    }
+    await openEditor(page);
+    await page.locator('#provider-file').click();
+    await page.locator('#file-input').setInputFiles({
+      name: 'sample.sps',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('synthetic pageset'),
+    });
+    await expect(page.locator('#wizard-operation')).toBeVisible();
+  }
+
+  test('buttons are added to a chosen page and the review names it', async ({ page }) => {
+    let submitted = null;
+    await openFile(page, {
+      '**/api/pageset/file-session/page/1/buttons': (route) => {
+        submitted = route.request().postDataJSON();
+        return fulfillJson(route, {
+          ok: true, buttons: submitted.items.length, edits: 1,
+          checks: {
+            sqlite_integrity: 'pass', linkage_chains: 'pass',
+            roundtrip_diff: 'pass', target_page: 'pass', positions: 'pass',
+          },
+        });
+      },
+    });
+
+    // "Add buttons to an existing page" leads, as it does for a live connection.
+    await expect(page.locator('#operation-existing')).toHaveAttribute('aria-checked', 'true');
+    await page.locator('#wizard-operation .wizard-next').click();
+    await expect(page.locator('#parent-capacity')).toContainText('5 empty spaces');
+    await page.locator('#wizard-destination .wizard-next').click();
+
+    // Existing buttons are shown and locked, and say so.
+    await expect(page.locator('#preview .cell.existing')).toHaveText(/apple/);
+    await expect(page.locator('#preview .cell.existing')).toHaveAttribute(
+      'title', 'AAC Editor only adds buttons in exported files.',
+    );
+    await expect(page.locator('#edit-existing-btn')).toBeHidden();
+
+    await page.locator('#word-input').fill('Chips, Juice');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-action')).toHaveText('Add 2 buttons to Home');
+    await expect(page.locator('#review-target')).toHaveText('Home');
+
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-heading')).toHaveText('Done — TD Snap was updated');
+    await expect(page.locator('#file-save-btn')).toBeVisible();
+    expect(submitted.fingerprint).toBe('file-home-v1');
+    expect(submitted.items.map((item) => item.slot)).toEqual([1, 2]);
+    expect(submitted.items.map((item) => item.label)).toEqual(['Chips', 'Juice']);
+    // No page is created on this path, so no title travels with it.
+    expect(submitted.title).toBeUndefined();
+  });
+
+  test('a stale review is refused and says how to recover', async ({ page }) => {
+    await openFile(page, {
+      '**/api/pageset/file-session/page/1/buttons': (route) => fulfillJson(route, {
+        ok: false,
+        error: 'This page changed after the preview. Reload the page and review the edit again.',
+      }, 400),
+    });
+    await page.locator('#wizard-operation .wizard-next').click();
+    await page.locator('#wizard-destination .wizard-next').click();
+    await page.locator('#word-input').fill('Chips');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await page.locator('#confirm-update-btn').click();
+
+    await expect(page.locator('#review-error')).toContainText(
+      'This page changed after the preview.',
+    );
   });
 });
 
