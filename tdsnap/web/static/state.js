@@ -37,7 +37,16 @@ const state = {
   pendingEdit: null,
   placementAdjusted: false,
   grid: { cols: 8, rows: 5 },
-  existingButtons: [],
+  existingButtons: [], // [{slot, label, message, function, symbol, editable, locked_reason}]
+  // Pending edits to buttons that already exist on the page, kept apart from
+  // state.words because they reach into vocabulary somebody already uses.
+  // See edits.js.
+  pageEdits: { changes: [], removals: [] },
+  // Whether this connection can change or remove what is already on the page:
+  // TD Snap live, on an existing page, whose stored content AAC Editor could
+  // actually read. Anything less and existing buttons stay locked.
+  canEditExisting: false,
+  placementReturn: "review", // which step the placement editor returns to
   availableSlots: null,
   grid3Cells: [],
   previewAspect: null,

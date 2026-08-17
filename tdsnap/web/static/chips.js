@@ -6,6 +6,7 @@
 
 import { state, FUNCTIONS, TOPIC_FUNCTIONS } from "./state.js";
 import { $, appendNamedList } from "./dom.js";
+import { changeFor, editSummary, isRemoved, keepButton, planChange, planRemoval } from "./edits.js";
 import { inferPhraseFunction } from "./phrases.js";
 import { titleOf } from "./parents.js";
 import { renderPlacementOrder, renderPreview } from "./preview.js";
@@ -290,8 +291,27 @@ function renderWords() {
       : "Type a word, press Enter — or paste a comma-separated list";
   updateTopicInputRow();
   if (undoBtn) undoBtn.hidden = !undoStack.canUndo();
+  renderExistingEditControls();
   renderPreview();
   renderPlacementOrder();
+}
+
+/* The way in to changing what is already on the page, plus a running summary
+   of what is pending — so a change made two screens ago is still visible from
+   the word list, rather than only resurfacing at review. */
+function renderExistingEditControls() {
+  const button = $("edit-existing-btn");
+  const summary = $("edit-existing-summary");
+  if (!button || !summary) return;
+  button.hidden = !state.canEditExisting ||
+    !state.existingButtons.some((item) => item.editable);
+  const line = editSummary({
+    changed: state.pageEdits.changes.length,
+    removed: state.pageEdits.removals.length,
+    page: titleOf(state.parentId),
+  });
+  summary.hidden = !line;
+  summary.textContent = line ? `Pending: ${line.toLocaleLowerCase()}.` : "";
 }
 
 /* Called when a session/connection resets and the old undo history no
@@ -303,8 +323,22 @@ function clearUndoHistory() {
 
 /* ---------- step 2: chip editor dialog ---------- */
 
+/* The same dialog serves a planned button and an existing one. They differ in
+   what a mistake costs: a planned button only exists here, while an existing
+   one is vocabulary somebody already uses — so the existing mode says what the
+   button holds today, offers a way back to it, and never touches the
+   topic-page row, which the change operation deliberately leaves alone. */
 const chipDialog = $("chip-editor");
 let editingIndex = null;
+let editingSlot = null;
+
+function editingExisting() {
+  return editingSlot !== null;
+}
+
+function existingButton(slot) {
+  return state.existingButtons.find((button) => button.slot === slot) || null;
+}
 
 function setEditorFn(fn) {
   document.querySelectorAll("#edit-fn-row .fn-pill").forEach((pill) => {
@@ -320,37 +354,106 @@ document.querySelectorAll("#edit-fn-row .fn-pill").forEach((pill) =>
   pill.addEventListener("click", () => setEditorFn(pill.dataset.fn))
 );
 
+function showEditorFor(mode, { label, message, fn = "", note = "", canRevert = false }) {
+  $("edit-label").value = label;
+  $("edit-label").setCustomValidity("");
+  $("edit-message").value = message;
+  setEditorFn(fn);
+  const existing = mode === "existing";
+  $("chip-editor-title").textContent = existing ? "Change this button" : "Edit button";
+  $("chip-editor-note").textContent = note;
+  $("chip-editor-note").hidden = !note;
+  $("edit-fn-field").hidden = existing;
+  $("edit-remove").textContent = existing ? "Remove from the page" : "Remove button";
+  $("edit-revert").hidden = !canRevert;
+  chipDialog.showModal();
+}
+
 function openChipEditor(index) {
   editingIndex = index;
+  editingSlot = null;
   const item = state.words[index];
-  $("edit-label").value = item.label;
-  $("edit-label").setCustomValidity("");
-  $("edit-message").value = item.message || "";
-  setEditorFn(item.fn || "");
-  chipDialog.showModal();
+  showEditorFor("word", {
+    label: item.label,
+    message: item.message || "",
+    fn: item.fn || "",
+  });
+}
+
+/* Opened from the placement grid, on a button that is already on the page. */
+function openExistingEditor(slot) {
+  const button = existingButton(slot);
+  if (!button || !button.editable || !state.canEditExisting) return;
+  editingIndex = null;
+  editingSlot = slot;
+  const change = changeFor(state.pageEdits, slot);
+  const removed = isRemoved(state.pageEdits, slot);
+  showEditorFor("existing", {
+    label: change ? change.label : button.label,
+    message: change ? change.message : button.message || "",
+    note: removed
+      ? `“${button.label}” is marked for removal. Save to keep it with these details instead.`
+      : `On the page now: “${button.label}”` +
+        (button.message ? ` · speaks “${button.message}”` : " · speaks its label"),
+    canRevert: Boolean(change) || removed,
+  });
 }
 
 $("edit-label").addEventListener("input", () => {
   $("edit-label").setCustomValidity("");
 });
 
+/* A label already in use on this page, whether it is planned, already there,
+   or about to be renamed onto. The server refuses these too; catching it here
+   means the user finds out while typing rather than at the confirm step. */
+function labelTaken(label) {
+  const folded = label.toLocaleLowerCase();
+  const planned = state.words.some(
+    (item, index) => index !== editingIndex && item.label.toLocaleLowerCase() === folded
+  );
+  const present = state.existingButtons.some((button) => {
+    if (button.slot === editingSlot || isRemoved(state.pageEdits, button.slot)) return false;
+    const change = changeFor(state.pageEdits, button.slot);
+    return (change ? change.label : button.label || "").toLocaleLowerCase() === folded;
+  });
+  return planned || present;
+}
+
 $("chip-editor-form").addEventListener("submit", (event) => {
   if (!event.submitter || event.submitter.value !== "save") return;
   const input = $("edit-label");
   const label = input.value.trim();
-  const duplicate = state.words.some(
-    (item, index) => index !== editingIndex &&
-      item.label.toLocaleLowerCase() === label.toLocaleLowerCase()
-  );
-  input.setCustomValidity(duplicate ? "Each button needs a unique label." : "");
+  input.setCustomValidity(labelTaken(label) ? "Each button needs a unique label." : "");
   if (!label || !input.checkValidity()) {
     event.preventDefault();
     input.reportValidity();
   }
 });
 
+function closeExistingEditor(action) {
+  const button = existingButton(editingSlot);
+  if (!button) return;
+  if (action === "remove") {
+    state.pageEdits = planRemoval(state.pageEdits, button);
+  } else if (action === "keep") {
+    state.pageEdits = keepButton(state.pageEdits, button.slot);
+  } else if (action === "save") {
+    state.pageEdits = planChange(state.pageEdits, button, {
+      label: $("edit-label").value.trim(),
+      message: $("edit-message").value.trim(),
+    });
+  }
+  state.pendingEdit = null;
+}
+
 chipDialog.addEventListener("close", () => {
   const action = chipDialog.returnValue;
+  if (editingExisting()) {
+    closeExistingEditor(action);
+    editingSlot = null;
+    renderWords();
+    return;
+  }
   if (editingIndex === null) return;
   if (action === "remove") {
     undoStack.push(snapshotWords());
@@ -378,5 +481,6 @@ chipDialog.addEventListener("close", () => {
 
 export {
   autoFormatTopicRows, clearUndoHistory, firstAvailableSlot, functionForSlot,
-  renderWords, takeWordInput, undoLastRemoval, updateTopicInputRow,
+  openExistingEditor, renderWords, takeWordInput, undoLastRemoval,
+  updateTopicInputRow,
 };

@@ -8,7 +8,8 @@
 
 import { state, FUNCTIONS } from "./state.js";
 import { $ } from "./dom.js";
-import { functionForSlot, renderWords } from "./chips.js";
+import { functionForSlot, openExistingEditor, renderWords } from "./chips.js";
+import { changeFor, isRemoved } from "./edits.js";
 import { titleOf } from "./parents.js";
 import { setOperation, show } from "./wizard.js";
 
@@ -115,6 +116,56 @@ function renderGrid3Preview(preview) {
   });
 }
 
+/* An existing button, in whichever of its four states applies: locked (the
+   only state before change and remove existed), eligible, marked for a
+   change, or marked for removal. A locked one always says *why* — on hover
+   and on focus — because "you can't touch this" without a reason is the kind
+   of dead end this app exists to remove. */
+function renderExistingCell(cell, existing) {
+  const change = changeFor(state.pageEdits, existing.slot);
+  const removed = isRemoved(state.pageEdits, existing.slot);
+  const label = change ? change.label : existing.label || "Existing button";
+  cell.classList.add("existing");
+  addPreviewCellContent(cell, label, "", state.pageStyle !== "topic");
+  const position =
+    `row ${Math.floor(existing.slot / state.grid.cols) + 1}, ` +
+    `column ${(existing.slot % state.grid.cols) + 1}`;
+  if (removed) {
+    cell.classList.add("marked-removed");
+    cell.title = `“${existing.label}” will be removed`;
+    cell.setAttribute("aria-label", `${existing.label}, ${position}, marked for removal. Select to keep it.`);
+  } else if (change) {
+    cell.classList.add("marked-changed");
+    cell.title = `“${existing.label}” becomes “${change.label}”`;
+    cell.setAttribute("aria-label", `${existing.label}, ${position}, will be changed to ${change.label}. Select to edit again.`);
+  } else if (existing.editable) {
+    cell.classList.add("editable");
+    cell.title = existing.message
+      ? `Speaks: “${existing.message}” · select to change or remove`
+      : "Select to change or remove this button";
+    cell.setAttribute("aria-label", `${label}, ${position}, existing. Select to change or remove it.`);
+  } else {
+    cell.title = existing.locked_reason || "Existing TD Snap button — position preserved";
+    cell.setAttribute(
+      "aria-label",
+      `${label}, ${position}, existing and locked. ${existing.locked_reason || ""}`.trim()
+    );
+    return;
+  }
+  if (!state.canEditExisting) {
+    cell.classList.remove("editable");
+    return;
+  }
+  cell.tabIndex = 0;
+  cell.setAttribute("role", "button");
+  cell.addEventListener("click", () => openExistingEditor(existing.slot));
+  cell.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openExistingEditor(existing.slot);
+  });
+}
+
 function renderPreview() {
   const preview = $("preview");
   const previewTitle = state.operation === "existing"
@@ -158,12 +209,7 @@ function renderPreview() {
       cell.style.setProperty("--row-color", FUNCTIONS[rowFn].color);
     }
     const existing = state.existingButtons.find((item) => item.slot === slot);
-    if (existing) {
-      cell.classList.add("existing");
-      addPreviewCellContent(cell, existing.label || "Existing button", "", state.pageStyle !== "topic");
-      cell.title = "Existing TD Snap button — position preserved";
-      cell.setAttribute("aria-label", `${existing.label || "Existing button"}, existing and locked`);
-    }
+    if (existing) renderExistingCell(cell, existing);
     const index = state.words.findIndex((item) => item.slot === slot);
     if (index >= 0) {
       const item = state.words[index];
@@ -308,4 +354,28 @@ $("create-page-btn").addEventListener("click", () => {
   show("title");
 });
 
-export { placementSlots, renderPlacementOrder, renderPreview };
+/* The placement grid is the one screen that shows the page as it really is, so
+   it is where an existing button is changed or removed. It is reachable from
+   the word list as well as from review; the Back button follows whichever
+   route the user took rather than always landing on review. */
+function showPlacement(from) {
+  state.placementReturn = from;
+  const editing = from === "items";
+  $("placement-heading").textContent = editing
+    ? "Change or remove existing buttons"
+    : "Adjust button placement";
+  $("placement-lead").textContent = editing
+    ? "Select a button to change what it says or remove it. Buttons that open a page or run " +
+      "an action stay locked, and say why."
+    : "Drag buttons to the exact cells you want, or focus one and use the arrow keys. " +
+      "Existing buttons stay locked.";
+  $("placement-back-btn").textContent = editing
+    ? "Back to words and phrases"
+    : "Back to review";
+  renderPreview();
+  show("placement");
+}
+
+$("edit-existing-btn").addEventListener("click", () => showPlacement("items"));
+
+export { placementSlots, renderPlacementOrder, renderPreview, showPlacement };

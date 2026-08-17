@@ -13,6 +13,45 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Added
 
+- **Change and remove existing TD Snap buttons.** Until now the app was
+  add-only: fixing a typo, retiring a word, or rewording a phrase was still
+  hand work — the exact work this tool exists to eliminate. Selecting **Change
+  or remove existing buttons** on the word list opens the page grid, where an
+  eligible button can be selected to rewrite its label, rewrite or clear its
+  spoken message, or remove it. Additions, changes, and removals travel as one
+  reviewed edit through one rollback.
+
+  Three rules hold this open, and none of them are in the UI where they could
+  be bypassed:
+
+  - **Only a plain speaking button is ever rewritten.** A button that opens a
+    page or runs a TD Snap action stays locked and says why on hover and on
+    focus. The accessibility tree cannot tell these apart — a page link and a
+    speaking button look identical — so eligibility is read from the page set's
+    own stored command sequence.
+  - **Prior content is captured before anything is touched, and the edit is
+    refused outright when it cannot be read.** Every operation before this was
+    additive, so rollback could mean "undo until the page matches its pre-edit
+    fingerprint". A fingerprint carries a button's name and position, and
+    rewriting a spoken message changes neither — that rollback would have
+    stopped on its first check and reported the page restored while the message
+    stayed wrong. Rollback now undoes until each touched cell holds its prior
+    label *and* spoken message again, read back through TD Snap's own editor.
+  - **Nothing else on the page may move.** Verification now checks the cells
+    the edit never named, as well as the ones it did, so "these three buttons
+    changed" is a checked claim rather than an assumption.
+
+  New endpoint operation `edit_page` on `POST /api/tdsnap/edit-plan`, carrying
+  `changes` and `removals` alongside `items`; the older `add_to_existing_page`
+  is unchanged and still accepted. `GET /api/tdsnap/page-layout` now reports
+  each button's spoken message, whether it can be edited, and why not.
+
+  The Windows UI Automation paths this rides on — selecting an existing button
+  and finding TD Snap's delete action — are covered by unit tests against fakes
+  but still need the `TDSNAP_LIVE_E2E=1` run on real hardware before release.
+  A delete action TD Snap does not expose stops the removal with a message
+  naming exactly that, rather than continuing blind.
+
 - **Support report.** A **Copy a support report** action in the footer, and on
   the new error banner, collects app version, OS, Python, packaging mode, and
   the TD Snap, Grid 3, and AI capability flags a bug report needs. It reports

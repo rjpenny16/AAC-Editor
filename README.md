@@ -32,10 +32,14 @@ the explicit administrator fallback for Grid 3.
 ## What it does
 
 - Adds words to exact empty spaces on an existing TD Snap page.
+- Fixes a typo or retires a word: changes what an existing TD Snap button says,
+  or removes it, with the same review, verification, and rollback an addition
+  gets. Buttons that open a page or run an action stay locked and say why.
 - Adds vocabulary to empty spaces AAC Editor can update safely on the grid open in Grid 3, preserving
   the grid-set file and each blank cell's existing style.
 - Creates word or color-coded topic pages and links them from an existing page.
-- Keeps established vocabulary locked, rejects duplicates, and checks capacity.
+- Rejects duplicates, checks capacity, and never touches a button the review
+  step did not name.
 - Adds matching TD Snap symbols when TD Snap can find them.
 - Suggests AAC-friendly placement and optional words or phrases with local AI.
 - Verifies the completed edit and reports anything that still needs review.
@@ -78,6 +82,16 @@ stored in plain language, and **Clear all saved data** deletes the file.
 3. Add buttons, review their positions, and confirm the result-specific action.
 4. Use **Choose another page** or **Create a new page** only when needed.
 5. Review the checks before returning to TD Snap.
+
+To fix or retire something already on the page, select **Change or remove
+existing buttons**, then select the button itself. AAC Editor changes only
+buttons whose whole job is to speak their own message; a button that opens a
+page or runs an action stays locked and says so on hover and on focus. Before
+a change or a removal runs, AAC Editor reads what every affected button holds
+today, and refuses the edit outright if it cannot — a destructive edit it could
+not undo is one it does not start. If the edit then fails part-way, TD Snap is
+undone until each of those buttons holds its prior label and spoken message
+again, and the result screen confirms that nothing else on the page moved.
 
 For Grid 3, choose **Grid 3** on the first screen, open the exact existing grid
 you want to update, add vocabulary, review its order, and confirm the change.

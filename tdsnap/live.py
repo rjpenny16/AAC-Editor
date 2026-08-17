@@ -4,6 +4,21 @@ The word model decides what to add; this module only performs the repeatable
 TD Snap workflow.  It intentionally uses TD Snap's accessibility controls
 before adding a vision model: those controls are faster, smaller, and expose
 the current page, buttons, edit fields, and navigation directly.
+
+Three kinds of edit share one spine (``apply_page_edits``): adding buttons to
+empty cells, changing an existing button's label or spoken message, and
+removing one. Change and remove are destructive in a way adding never was, so
+they carry two extra obligations, both enforced here rather than in the UI:
+
+1. **Only a plain speaking button is ever rewritten.** Navigation, actions,
+   and anything whose stored command sequence this app does not recognize stay
+   locked. The accessibility tree cannot tell these apart — a page-link button
+   and a speaking button look identical — so eligibility is read from the page
+   set's own database (see the prior-content section below).
+2. **Prior content is captured before anything is touched, and the edit is
+   refused outright when it cannot be read.** Rollback for an additive edit
+   could restore prior *shape*; a destructive one has to restore prior
+   *content*, and it cannot do that from a snapshot it never took.
 """
 
 import argparse
@@ -21,13 +36,25 @@ from contextlib import closing, suppress
 from ctypes import wintypes
 from dataclasses import dataclass
 
-from . import uia
-from .builder import _normalize_items
+from . import colors, templates, uia
+from .builder import MAX_LABEL_LENGTH, MAX_MESSAGE_LENGTH, _normalize_items
 from .errors import PagesetError
 
 DEFAULT_PARENT = "Topics Menu Page"
 TD_SNAP_APP = r"shell:AppsFolder\TobiiDynavox.Snap_626b2w651dr5w!App"
 _EXCLUDED_GROUPS = {"Message Bar", "Tool Bar"}
+
+# Why a button is not eligible for a change or a removal, in the words the
+# preview shows on hover and focus. Only a button whose whole job is to speak
+# its own message is ever rewritten: navigation, actions, and anything whose
+# command sequence this app does not recognize stay locked, because getting
+# them wrong breaks how someone moves around their own vocabulary.
+LOCK_REASONS = {
+    "navigate": "This button opens another page, so AAC Editor leaves it alone.",
+    "action": "This button runs a TD Snap action, so AAC Editor leaves it alone.",
+    "unknown": "AAC Editor doesn't recognize what this button does, so it leaves it alone.",
+    "unreadable": "AAC Editor couldn't read what this button holds today.",
+}
 
 
 @dataclass(frozen=True)
@@ -628,6 +655,156 @@ def _named_page_buttons(group):
     return [name for _, _, name in sorted(buttons)]
 
 
+# ---------------------------------------------------------------------------
+# Prior content: what a button holds before a destructive edit
+#
+# Every operation before change and remove was additive, so a rollback could
+# mean "undo until the page matches its pre-edit fingerprint" — the fingerprint
+# carries each button's name and position, and only an add could move either.
+# Rewriting a spoken message changes neither, so that same rollback would stop
+# on its first check and report the page restored while the message stayed
+# wrong. Destructive edits therefore capture prior *content* first, and refuse
+# to run at all when that capture fails.
+#
+# The page set's own database is where this is readable. The alternative —
+# opening TD Snap's button editor on every cell in turn before the edit starts
+# — is slower, and would have to touch the very buttons it is trying to leave
+# alone. It is also the only place the command sequence behind a button is
+# visible: the accessibility tree shows a page-link button and a speaking
+# button identically.
+
+_SPEAK_COMMAND_TYPE = "3"
+
+
+def _column(row, name, default=None):
+    """Read an optional column, tolerating older page-set schema revisions."""
+    return row[name] if name in row.keys() else default  # noqa: SIM118 - sqlite3.Row
+
+
+def _command_kind(commands, command_flags, page_links):
+    """Classify one stored button. Only ``'speak'`` may ever be rewritten."""
+    if page_links or command_flags == templates.COMMAND_FLAGS_NAVIGATE:
+        return "navigate"
+    try:
+        parsed = json.loads(commands or "")
+    except (TypeError, ValueError):
+        return "unknown"
+    values = parsed.get("$values") if isinstance(parsed, dict) else None
+    if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], dict):
+        return "action"
+    if str(values[0].get("$type")) != _SPEAK_COMMAND_TYPE:
+        return "action"
+    return "speak" if command_flags == templates.COMMAND_FLAGS_SPEAK else "action"
+
+
+def _stored_page_content(page):
+    """Prior label, message, border, and command kind for the buttons on *page*.
+
+    Keyed by casefolded label, because that is the only key the live control
+    tree and the stored page set reliably agree on: UI Automation exposes a
+    button's name, while matching by grid coordinate would mean re-deriving
+    the layout through the same guesswork the preview already does. A label
+    that appears twice on the page is dropped rather than guessed at, which
+    locks those buttons out of destructive editing instead of risking editing
+    the wrong one.
+
+    Returns ``None`` when the page set or the page cannot be identified, which
+    makes the caller refuse a destructive edit rather than run one it could
+    not undo.
+    """
+    title = str(page or "").strip()
+    path = _active_pageset_path(title)
+    if not path or not title:
+        return None
+    try:
+        with closing(sqlite3.connect(
+            f"file:{path}?mode=ro", uri=True, timeout=2
+        )) as conn:
+            conn.row_factory = sqlite3.Row
+            pages = conn.execute(
+                "SELECT Id FROM Page WHERE PageType = 1 AND Title = ? COLLATE NOCASE",
+                (title,),
+            ).fetchall()
+            if len(pages) != 1:
+                return None
+            rows = conn.execute(
+                "SELECT button.*, commands.SerializedCommands AS SerializedCommands, "
+                "(SELECT COUNT(*) FROM ButtonPageLink link "
+                " WHERE link.ButtonId = button.Id) AS PageLinks "
+                "FROM Button button "
+                "JOIN ElementReference ref ON ref.Id = button.ElementReferenceId "
+                "LEFT JOIN CommandSequence commands ON commands.ButtonId = button.Id "
+                "WHERE ref.PageId = ?",
+                (pages[0]["Id"],),
+            ).fetchall()
+    except (OSError, sqlite3.Error):
+        return None
+
+    content = {}
+    ambiguous = set()
+    for row in rows:
+        label = (_column(row, "Label") or "").strip()
+        if not label:
+            continue
+        key = label.casefold()
+        if key in content:
+            ambiguous.add(key)
+            continue
+        border = _column(row, "BorderColor")
+        message = (_column(row, "Message") or "").strip()
+        content[key] = {
+            "label": label,
+            "message": message or None,
+            "border_color": border,
+            "function": _function_for_border(border),
+            "symbol": bool(
+                _column(row, "LibrarySymbolId") or _column(row, "PageSetImageId")
+            ),
+            "kind": _command_kind(
+                _column(row, "SerializedCommands"),
+                _column(row, "CommandFlags"),
+                _column(row, "PageLinks", 0),
+            ),
+        }
+    for key in ambiguous:
+        content.pop(key, None)
+    return content
+
+
+def _function_for_border(border_color):
+    """Name the communicative function a stored border color stands for."""
+    if border_color is None:
+        return None
+    stored = colors.hex_from_argb(border_color).casefold()
+    for name, value in colors.FUNCTION_BORDER_COLORS.items():
+        if value.casefold() == stored:
+            return name
+    return None
+
+
+def _describe_buttons(page, buttons):
+    """Annotate visible buttons with what each holds and whether it is editable.
+
+    A page whose stored content cannot be read still lists every button; they
+    are simply all locked, so adding buttons keeps working exactly as before
+    on a page set AAC Editor cannot fully identify.
+    """
+    content = _stored_page_content(page)
+    described = []
+    for button in buttons:
+        stored = (content or {}).get(button["label"].strip().casefold())
+        kind = stored["kind"] if stored else "unreadable"
+        described.append({
+            **button,
+            "message": stored["message"] if stored else None,
+            "function": stored["function"] if stored else None,
+            "symbol": stored["symbol"] if stored else False,
+            "editable": kind == "speak",
+            "locked_reason": None if kind == "speak" else LOCK_REASONS[kind],
+        })
+    return described, content is not None
+
+
 def _first_empty(grid, rectangles):
     for y in grid.ys:
         for x in grid.xs:
@@ -926,52 +1103,131 @@ def _control_slot(grid, control):
     return row * len(grid.xs) + column
 
 
-def _verify_added_buttons(window, items):
-    """Verify exact slots, labels, and requested spoken messages in Edit mode."""
-    _collapse_editor(window)
+def _named_slots(window):
+    """Map every named grid button to its slot, re-measuring the live grid."""
     group = _page_group(window)
     grid = _grid(group)
-    by_slot = {
+    return {
         _control_slot(grid, control): control
         for control in group.GetChildren()
         if control.ControlTypeName == "ButtonControl"
         and (control.Name or "").strip()
     }
-    for item in items:
+
+
+def _spoken_message(window, control):
+    """Read one button's spoken message out of TD Snap's own editor."""
+    _activate(control)
+    _expand_editor(window)
+    message_box = _find(window, automation_id="MessageBox", control_type="EditControl")
+    value = None if message_box is None else _value(message_box)
+    _collapse_editor(window)
+    return message_box is not None, value
+
+
+def _verify_page_state(window, expected=(), removed=(), untouched=None):
+    """Verify every reviewed cell, and that nothing else on the page moved.
+
+    *expected* is the ``{slot, label, message}`` each added or changed button
+    must now carry, *removed* the slots that must now be empty, and
+    *untouched* the label every other cell held before the edit and must
+    still hold. That last check is what makes a destructive edit reviewable:
+    "these three cells changed" is only a promise if the other cells are
+    checked too.
+    """
+    _collapse_editor(window)
+    by_slot = _named_slots(window)
+    for item in expected:
         control = by_slot.get(item["slot"])
         if control is None or (control.Name or "").strip() != item["label"]:
             raise PagesetError(
                 f"TD Snap did not verify {item['label']!r} in its reviewed cell."
             )
-        if item["message"]:
-            _activate(control)
-            _expand_editor(window)
-            message_box = _find(
-                window, automation_id="MessageBox", control_type="EditControl"
-            )
-            if message_box is None or _value(message_box) != item["message"]:
+        # `None` means "no message was requested"; "" means "clear it and go
+        # back to speaking the label", which is a real request and is checked
+        # like any other.
+        if item["message"] is not None:
+            found, value = _spoken_message(window, control)
+            if not found or (value or "") != item["message"]:
                 raise PagesetError(
                     f"TD Snap did not verify the spoken message for {item['label']!r}."
                 )
-            _collapse_editor(window)
+    for slot in removed:
+        control = by_slot.get(slot)
+        if control is not None:
+            raise PagesetError(
+                f"TD Snap did not verify the removal of "
+                f"{(control.Name or '').strip()!r}; it is still on the page."
+            )
+    for slot, label in (untouched or {}).items():
+        control = by_slot.get(slot)
+        if control is None or (control.Name or "").strip() != label:
+            raise PagesetError(
+                f"TD Snap changed {label!r}, which this edit was not meant to touch. "
+                "Inspect the page before making another edit."
+            )
 
 
-def _restore_page_fingerprint(window, baseline, maximum):
-    """Undo until the visible page matches the reviewed pre-edit baseline."""
+def _content_restored(window, content):
+    """True when every touched cell holds the content it held before the edit.
+
+    A read that fails part-way counts as "not restored yet" rather than
+    propagating: mid-rollback TD Snap is repainting, and letting a transient
+    read error out of here would replace the caller's specific "inspect the
+    page before making another edit" with whichever control happened to be
+    missing at that instant.
+    """
+    if not content:
+        return True
+    try:
+        by_slot = _named_slots(window)
+        for slot, prior in content.items():
+            control = by_slot.get(slot)
+            if control is None or (control.Name or "").strip() != prior["label"]:
+                return False
+            found, value = _spoken_message(window, control)
+            if not found or (value or None) != prior["message"]:
+                return False
+    except PagesetError:
+        return False
+    return True
+
+
+def _restore_page_state(window, baseline, content=None, maximum=0):
+    """Undo until the page matches its reviewed shape *and* its prior content.
+
+    Shape alone was a complete check while every operation was additive (see
+    the prior-content section above for why it stopped being one). *content*
+    maps a slot to the ``{label, message}`` it held before the edit and is
+    read back through TD Snap's own editor rather than the page-set file, so
+    a restoration is confirmed against what TD Snap is showing right now.
+    """
     _enter_edit_mode(window)
+
+    def restored():
+        return (
+            _fingerprint(_page_group(window)) == baseline
+            and _content_restored(window, content)
+        )
+
     for _ in range(maximum + 1):
-        if _fingerprint(_page_group(window)) == baseline:
+        if restored():
             return
         undo = _find(window, automation_id="UndoButton", control_type="ButtonControl")
         if undo is None or not getattr(undo, "IsEnabled", False):
             break
         _activate(undo)
         time.sleep(0.12)
-    if _fingerprint(_page_group(window)) != baseline:
+    if not restored():
         raise PagesetError(
             "TD Snap could not verify restoration of the reviewed page. "
             "Inspect the page before making another edit."
         )
+
+
+def _restore_page_fingerprint(window, baseline, maximum):
+    """Undo an additive edit, where prior shape is the whole of prior state."""
+    _restore_page_state(window, baseline, None, maximum)
 
 
 def _rollback_new_page(auto, window, parent, parent_baseline, page_baseline, maximum):
@@ -1197,6 +1453,136 @@ def _empty_label_field(window):
     return None
 
 
+def _filled_label_field(window, expected):
+    """The button-editor label box when it already holds *expected*.
+
+    This is how a change or a removal proves it is acting on the button it
+    reviewed. Clicking a cell selects whatever is actually there, and the
+    button fingerprint is unchanged by a mere selection, so the field's own
+    value is the only evidence available that the right cell opened — the
+    same reasoning as ``_empty_label_field``, from the other direction.
+    """
+    wanted = expected.strip().casefold()
+    for control, _ in _walk(window, 12):
+        if (
+            control.ControlTypeName == "EditControl"
+            and control.AutomationId == "TextBox"
+            and control.IsEnabled
+            and (_value(control) or "").strip().casefold() == wanted
+        ):
+            return control
+    return None
+
+
+def _select_button(auto, window, cell, label):
+    """Open TD Snap's button editor on the existing button in *cell*."""
+    x, y = _physical_point(window, cell.x, cell.y)
+    auto.Click(x, y, waitTime=0.2)
+    return _wait_for(
+        lambda: _filled_label_field(window, label),
+        f"TD Snap did not open its button editor on {label!r}.",
+        timeout=6,
+    )
+
+
+def _change_button(auto, window, cell, current, label=None, message=None):
+    """Rewrite the label and/or spoken message of one existing button.
+
+    ``label``/``message`` of ``None`` mean "leave this as it is"; an empty
+    message means "go back to speaking the label".
+    """
+    field = _select_button(auto, window, cell, current)
+    if label and label != current:
+        _set_value(field, label)
+        _wait_for(
+            lambda: _find(_page_group(window), name=label, control_type="ButtonControl"),
+            f"TD Snap did not save the new label {label!r}.",
+        )
+    if message is None:
+        return
+    name = label or current
+    _expand_editor(window)
+    message_box = _find(window, automation_id="MessageBox", control_type="EditControl")
+    if message_box is None:
+        raise PagesetError(f"TD Snap did not expose the spoken-message field for {name!r}.")
+    _set_value(message_box, message)
+    _wait_for(
+        lambda: (_value(message_box) or "") == message,
+        f"TD Snap did not save the spoken message for {name!r}.",
+    )
+    _collapse_editor(window)
+
+
+# TD Snap's editing panel is the surface most likely to be renamed by a product
+# update, so the delete action is discovered rather than pinned to one id: by
+# automation id first, then by the names the action is known to carry. A wrong
+# guess must never silently do nothing, so failing to find it refuses the
+# removal by name instead of continuing — the same line this project holds for
+# Grid 3, where a feature stops at whatever the app does not expose.
+_DELETE_AUTOMATION_IDS = ("DeleteButton", "DeleteElementButton", "RemoveButton")
+_DELETE_NAMES = {"delete", "delete button", "remove", "remove button", "delete cell"}
+_CONFIRM_NAMES = ("Delete", "Remove", "Yes", "OK")
+_ACTIONABLE = {"ButtonControl", "ListItemControl", "MenuItemControl"}
+
+
+def _delete_action(window):
+    """TD Snap's delete-the-selected-button control, however it exposes it."""
+    controls = [control for control, _ in _walk(window, 12) if control.IsEnabled]
+    for control in controls:
+        if (control.AutomationId or "") in _DELETE_AUTOMATION_IDS:
+            return control
+    for control in controls:
+        rect = control.BoundingRectangle
+        if (
+            control.ControlTypeName in _ACTIONABLE
+            and (control.Name or "").strip().casefold() in _DELETE_NAMES
+            and rect.right > rect.left
+            and rect.bottom > rect.top
+        ):
+            return control
+    return None
+
+
+def _confirm_removal(window, label):
+    """Answer TD Snap's confirmation prompt, if it showed one.
+
+    Only consulted while the button is still on the page. Activating a stray
+    dialog control when no dialog opened would be a click into whatever the
+    editing panel happens to be showing, which is exactly the class of blind
+    action this module exists to avoid.
+    """
+    gone = _find(_page_group(window), name=label, control_type="ButtonControl") is None
+    if gone:
+        return
+    confirm = _find(window, automation_id="PrimaryButton", control_type="ButtonControl")
+    for name in _CONFIRM_NAMES:
+        if confirm is not None:
+            break
+        confirm = _find(window, name=name, control_type="ButtonControl")
+    if confirm is not None:
+        _activate(confirm)
+
+
+def _remove_button(auto, window, cell, label):
+    """Delete one existing button through TD Snap's own editing controls."""
+    _select_button(auto, window, cell, label)
+    _expand_editor(window)
+    action = _delete_action(window)
+    if action is None:
+        raise PagesetError(
+            f"TD Snap did not expose a way to delete {label!r} through its "
+            "accessibility controls, so the button was left alone."
+        )
+    _activate(action)
+    _confirm_removal(window, label)
+    _wait_for(
+        lambda: _find(
+            _page_group(window), name=label, control_type="ButtonControl"
+        ) is None,
+        f"TD Snap did not remove the {label!r} button.",
+    )
+
+
 def _add_button(auto, window, cell, label, message=None,
                 border_color=None, use_symbol=False):
     before = _fingerprint(_page_group(window))
@@ -1299,10 +1685,13 @@ def inspect_page(page=None):
     group = _page_group(window)
     grid = _grid(group)
     buttons = _page_layout(group, grid)
+    page_name = _page_name(window, group)
+    described, content_readable = _describe_buttons(page_name, buttons)
     return {
-        "page": _page_name(window, group),
+        "page": page_name,
         "grid": {"cols": len(grid.xs), "rows": len(grid.ys)},
-        "buttons": buttons,
+        "buttons": described,
+        "content_readable": content_readable,
         "free_slots": [
             slot for slot in range(len(grid.xs) * len(grid.ys))
             if slot not in {button["slot"] for button in buttons}
@@ -1311,10 +1700,114 @@ def inspect_page(page=None):
     }
 
 
-def add_to_existing_page(page, items, fingerprint=None):
-    """Add reviewed buttons to empty cells on an existing TD Snap page."""
+def _normalize_changes(changes):
+    """Bound and shape ``[{slot, label?, message?}]`` change requests.
+
+    ``label`` or ``message`` of ``None`` means "leave that as it is"; an empty
+    message means "go back to speaking the label". A change that asks for
+    neither is rejected rather than quietly doing nothing, because a review
+    step that names a change which never happens is worse than an error.
+    """
+    normalized = []
+    seen = set()
+    for change in changes or ():
+        if not isinstance(change, dict):
+            raise PagesetError("Each change must be a {slot, label, message} object.")
+        slot = change.get("slot")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            raise PagesetError("Each changed button needs a non-negative cell number.")
+        if slot in seen:
+            raise PagesetError("The same button cannot be changed twice in one edit.")
+        seen.add(slot)
+        label = change.get("label")
+        if label is not None:
+            if not isinstance(label, str):
+                raise PagesetError("Each changed button label must be text.")
+            label = label.strip()
+            if not label:
+                raise PagesetError("A changed button still needs a label.")
+            if len(label) > MAX_LABEL_LENGTH:
+                raise PagesetError(
+                    f"Button label {label!r} is too long "
+                    f"(maximum {MAX_LABEL_LENGTH} characters)."
+                )
+        message = change.get("message")
+        if message is not None:
+            if not isinstance(message, str):
+                raise PagesetError("Each changed spoken message must be text.")
+            message = message.strip()
+            if len(message) > MAX_MESSAGE_LENGTH:
+                raise PagesetError(
+                    "A changed spoken message is too long "
+                    f"(maximum {MAX_MESSAGE_LENGTH} characters)."
+                )
+        if label is None and message is None:
+            raise PagesetError("A change must set a new label or a new spoken message.")
+        normalized.append({"slot": slot, "label": label, "message": message})
+    return normalized
+
+
+def _normalize_removals(removals):
+    """Bound and de-duplicate the slots a removal request names."""
+    slots = []
+    for slot in removals or ():
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            raise PagesetError("Each removed button needs a non-negative cell number.")
+        if slot not in slots:
+            slots.append(slot)
+    return sorted(slots)
+
+
+def _prior_content(page, changes, removals, by_slot):
+    """Capture what every cell this edit will damage holds today.
+
+    Refusing the whole edit when this cannot be read is the single most
+    important rule on this path: without it, a failure part-way through a
+    change or a removal has nothing to restore from.
+    """
+    touched = sorted({*removals, *(change["slot"] for change in changes)})
+    if not touched:
+        return {}
+    content = _stored_page_content(page)
+    if content is None:
+        raise PagesetError(
+            "AAC Editor couldn't read this page set's saved button content, so it "
+            "won't change or remove anything here. Adding buttons still works."
+        )
+    prior = {}
+    for slot in touched:
+        label = by_slot.get(slot)
+        if label is None:
+            raise PagesetError(
+                "One or more buttons in this edit are no longer where they were "
+                "reviewed. Refresh the page layout and review the edit again."
+            )
+        stored = content.get(label.strip().casefold())
+        if stored is None:
+            raise PagesetError(
+                f"AAC Editor couldn't read what {label!r} holds today, so it won't "
+                "be changed or removed."
+            )
+        if stored["kind"] != "speak":
+            raise PagesetError(f"{label!r} can't be edited. {LOCK_REASONS[stored['kind']]}")
+        prior[slot] = stored
+    return prior
+
+
+def apply_page_edits(page, items=(), changes=(), removals=(), fingerprint=None):
+    """Add, change, and remove reviewed buttons on one existing TD Snap page.
+
+    One spine for all three so that a single review, fingerprint guard,
+    edit-mode session, and rollback covers the whole edit rather than three
+    partly-overlapping ones. Removals run first (they free the cells an add
+    may have been placed in), then changes, then additions.
+    """
     normalized = _normalize_items(items)
-    if not normalized:
+    changes = _normalize_changes(changes)
+    removals = _normalize_removals(removals)
+    if set(removals) & {change["slot"] for change in changes}:
+        raise PagesetError("A button can't be changed and removed in the same edit.")
+    if not (normalized or changes or removals):
         raise PagesetError("Add at least one word or phrase.")
     if not _desktop_unlocked():
         raise PagesetError("Unlock Windows before editing TD Snap directly.")
@@ -1339,13 +1832,32 @@ def add_to_existing_page(page, items, fingerprint=None):
     baseline = _fingerprint(group)
     grid = _grid(group)
     existing = _page_layout(group, grid)
-    occupied = {button["slot"] for button in existing}
-    labels = {button["label"].strip().casefold() for button in existing if button["label"]}
+    by_slot = {button["slot"]: button["label"] for button in existing}
+    prior = _prior_content(requested, changes, removals, by_slot)
+
+    # What the page will read as once this edit lands, used to catch a rename
+    # or an addition that would leave two buttons sharing one label.
+    remaining = {
+        slot: label for slot, label in by_slot.items() if slot not in removals
+    }
+    for change in changes:
+        if change["label"]:
+            remaining[change["slot"]] = change["label"]
+    labels = [
+        label.strip().casefold() for label in remaining.values() if label.strip()
+    ]
+    repeated = sorted({label for label in labels if labels.count(label) > 1})
+    if repeated:
+        raise PagesetError(
+            "Two buttons on this page would end up with the same label: "
+            + ", ".join(repeated) + "."
+        )
     duplicates = [item["label"] for item in normalized if item["label"].casefold() in labels]
     if duplicates:
         raise PagesetError(
             "Already on this page: " + ", ".join(duplicates) + ". Remove or rename duplicates before submitting."
         )
+    occupied = set(by_slot) - set(removals)
     requested_slots = [item.get("slot") for item in normalized]
     if any(slot is None for slot in requested_slots):
         raise PagesetError("Review and place every new button in an empty cell before submitting.")
@@ -1354,10 +1866,47 @@ def add_to_existing_page(page, items, fingerprint=None):
     if any(not isinstance(slot, int) or slot in occupied or _cell_at(grid, slot) is None for slot in requested_slots):
         raise PagesetError("One or more selected cells are no longer empty. Refresh the page layout.")
 
+    expected = [
+        {"slot": item["slot"], "label": item["label"], "message": item["message"]}
+        for item in normalized
+    ] + [
+        {
+            "slot": change["slot"],
+            "label": change["label"] or prior[change["slot"]]["label"],
+            "message": (
+                prior[change["slot"]]["message"]
+                if change["message"] is None else change["message"]
+            ),
+        }
+        for change in changes
+    ]
+    touched = set(requested_slots) | set(removals) | {c["slot"] for c in changes}
+    untouched = {slot: label for slot, label in by_slot.items() if slot not in touched}
+    # A removed cell an addition then fills is verified by that addition, not
+    # by "this cell is empty" — removing a typo and typing the correction into
+    # the same space is the most ordinary use of this whole feature.
+    filled = {item["slot"] for item in expected}
+    emptied = [slot for slot in removals if slot not in filled]
+    restore_content = {
+        slot: {"label": entry["label"], "message": entry["message"]}
+        for slot, entry in prior.items()
+    }
+
     _enter_edit_mode(window)
     symbols = 0
     styled = 0
     try:
+        for slot in removals:
+            _collapse_editor(window)
+            edit_grid = _grid(_page_group(window))
+            _remove_button(auto, window, _cell_at(edit_grid, slot), prior[slot]["label"])
+        for change in changes:
+            _collapse_editor(window)
+            edit_grid = _grid(_page_group(window))
+            _change_button(
+                auto, window, _cell_at(edit_grid, change["slot"]),
+                prior[change["slot"]]["label"], change["label"], change["message"],
+            )
         for item in normalized:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
@@ -1367,7 +1916,7 @@ def add_to_existing_page(page, items, fingerprint=None):
             )
             symbols += int(result["symbol"])
             styled += int(result["border"] and item["border_color"] is not None)
-        _verify_added_buttons(window, normalized)
+        _verify_page_state(window, expected, emptied, untouched)
         _exit_edit_mode(window)
         final_group = _page_group(window)
         final_grid = _grid(final_group)
@@ -1375,17 +1924,23 @@ def add_to_existing_page(page, items, fingerprint=None):
             button["slot"]: button["label"] for button in _page_layout(final_group, final_grid)
         }
         missing = [
-            item["label"] for item in normalized
+            item["label"] for item in expected
             if final_slots.get(item["slot"]) != item["label"]
         ]
         if missing:
             raise PagesetError(
-                "TD Snap did not verify the added button(s) in their reviewed cells: "
+                "TD Snap did not verify the edited button(s) in their reviewed cells: "
                 + ", ".join(missing)
             )
+        left_behind = [final_slots[slot] for slot in emptied if slot in final_slots]
+        if left_behind:
+            raise PagesetError(
+                "TD Snap did not verify the removal of: " + ", ".join(left_behind)
+            )
     except Exception as exc:
+        steps = len(normalized) + len(changes) + len(removals)
         try:
-            _restore_page_fingerprint(window, baseline, len(normalized) * 6 + 8)
+            _restore_page_state(window, baseline, restore_content, steps * 6 + 8)
         except PagesetError as rollback_error:
             raise PagesetError(f"{exc} {rollback_error}") from exc
         raise PagesetError(f"{exc} The original page was restored.") from exc
@@ -1394,17 +1949,26 @@ def add_to_existing_page(page, items, fingerprint=None):
 
     expected_symbols = sum(item.get("symbol", True) for item in normalized)
     expected_styles = sum(item["border_color"] is not None for item in normalized)
+    checks = {
+        "td_snap_edit": "pass",
+        "target_page": "pass",
+        "content": "pass",
+        "positions": "pass",
+        "symbols": "pass" if symbols == expected_symbols else "partial",
+        "topic_format": "pass" if styled == expected_styles else "partial",
+    }
+    if changes:
+        checks["changed_content"] = "pass"
+    if removals:
+        checks["removed_buttons"] = "pass"
+    if changes or removals:
+        checks["untouched_buttons"] = "pass"
     return {
         "page": _page_name(window, final_group),
         "buttons": len(normalized),
-        "checks": {
-            "td_snap_edit": "pass",
-            "target_page": "pass",
-            "content": "pass",
-            "positions": "pass",
-            "symbols": "pass" if symbols == expected_symbols else "partial",
-            "topic_format": "pass" if styled == expected_styles else "partial",
-        },
+        "changed": len(changes),
+        "removed": len(removals),
+        "checks": checks,
         "warnings": [warning for warning in [
             f"TD Snap could not find a symbol for {expected_symbols - symbols} button(s)."
             if symbols < expected_symbols else None,
@@ -1412,6 +1976,11 @@ def add_to_existing_page(page, items, fingerprint=None):
             if styled < expected_styles else None,
         ] if warning],
     }
+
+
+def add_to_existing_page(page, items, fingerprint=None):
+    """Add reviewed buttons to empty cells on an existing TD Snap page."""
+    return apply_page_edits(page, items, fingerprint=fingerprint)
 
 
 def add_topic_page(title, items, parent=DEFAULT_PARENT):
@@ -1485,7 +2054,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
             symbols += int(result["symbol"])
             styled += int(result["border"] and item["border_color"] is not None)
 
-        _verify_added_buttons(window, placed)
+        _verify_page_state(window, placed)
         _exit_edit_mode(window)
         final_group = _page_group(window)
         final_grid = _grid(final_group)

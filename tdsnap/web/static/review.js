@@ -11,8 +11,9 @@ import { $, setBusy, setActivity } from "./dom.js";
 import { api } from "./api.js";
 import { renderWords, takeWordInput } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages } from "./connect.js";
+import { changePayload, countEdits, describeChange, describeRemoval, editSummary } from "./edits.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
-import { placementSlots, renderPreview } from "./preview.js";
+import { placementSlots, renderPreview, showPlacement } from "./preview.js";
 import { renderResult } from "./result.js";
 import { FUNCTIONS } from "./state.js";
 import { clearBuildError, clearStepError, continueWizard, setOperation, show, showStepError } from "./wizard.js";
@@ -30,8 +31,11 @@ buildForm.addEventListener("input", handleAnswerChange);
 buildForm.addEventListener("change", handleAnswerChange);
 
 function freezePayload(payload) {
-  payload.items.forEach(Object.freeze);
-  Object.freeze(payload.items);
+  [payload.items, payload.changes, payload.removals].forEach((list) => {
+    if (!list) return;
+    list.forEach(Object.freeze);
+    Object.freeze(list);
+  });
   return Object.freeze(payload);
 }
 
@@ -60,10 +64,47 @@ function syncReviewPlacement() {
     });
 }
 
+/* Changes and removals only ever apply to the page already open, so they
+   travel with an existing-page edit and are dropped everywhere else. */
+function pendingPageEdits() {
+  if (state.mode === "file" || state.provider === "grid3" || state.operation !== "existing") {
+    return { changes: [], removals: [] };
+  }
+  return state.pageEdits;
+}
+
+function renderReviewEdits(edits) {
+  const changes = $("review-changes");
+  const removals = $("review-removals");
+  changes.innerHTML = "";
+  removals.innerHTML = "";
+  $("review-changes-wrap").hidden = !edits.changes.length;
+  $("review-removals-wrap").hidden = !edits.removals.length;
+  edits.changes.forEach((change) => {
+    const row = document.createElement("li");
+    const label = document.createElement("strong");
+    label.textContent = change.from.label;
+    const detail = document.createElement("span");
+    detail.textContent = describeChange(change);
+    row.append(label, detail);
+    changes.append(row);
+  });
+  edits.removals.forEach((slot) => {
+    const button = state.existingButtons.find((item) => item.slot === slot);
+    if (!button) return;
+    const row = document.createElement("li");
+    const label = document.createElement("strong");
+    label.textContent = describeRemoval(button);
+    row.append(label);
+    removals.append(row);
+  });
+}
+
 function prepareReview() {
   const title = $("title-input").value.trim();
   const parentTitle = titleOf(state.parentId);
   const operation = state.operation;
+  const edits = pendingPageEdits();
   const items = state.words.map((item) => ({
       label: item.label,
       message: item.message,
@@ -78,9 +119,13 @@ function prepareReview() {
         parent_page_id: Number(state.parentId),
       }
     : {
-        operation: operation === "existing" ? "add_to_existing_page" : "create_page",
+        operation: operation === "existing"
+          ? countEdits(edits) ? "edit_page" : "add_to_existing_page"
+          : "create_page",
         title,
         items,
+        changes: changePayload(edits),
+        removals: [...edits.removals],
         parent: parentTitle,
         page: parentTitle,
         fingerprint: state.layoutFingerprint,
@@ -101,21 +146,34 @@ function prepareReview() {
     ),
   });
 
+  const count = payload.items.length;
+  const changed = edits.changes.length;
+  const removed = edits.removals.length;
+  const destructive = Boolean(changed || removed);
   $("result-eyebrow").textContent = "Review";
-  $("result-heading").textContent = "Check positions before adding";
-  $("result-sub").textContent = "Check the details below. Nothing changes until you confirm.";
+  $("result-heading").textContent = destructive
+    ? "Check every change before it is made"
+    : "Check positions before adding";
+  $("result-sub").textContent = destructive
+    ? "Every button this edit touches is named below. Nothing changes until you confirm."
+    : "Check the details below. Nothing changes until you confirm.";
   $("review-state").hidden = false;
   $("success-state").hidden = true;
-  const count = payload.items.length;
   const buttonWord = `button${count === 1 ? "" : "s"}`;
-  const resultLabel = operation === "existing"
-    ? `Add ${count} ${buttonWord} to ${parentTitle}`
-    : `Create ${title} with ${count} ${buttonWord}`;
+  const resultLabel = operation !== "existing"
+    ? `Create ${title} with ${count} ${buttonWord}`
+    : destructive
+      ? editSummary({ added: count, changed, removed, page: parentTitle })
+      : `Add ${count} ${buttonWord} to ${parentTitle}`;
   $("review-action").textContent = resultLabel;
   $("review-target").textContent = operation === "existing"
     ? parentTitle
     : `${title}, found from ${parentTitle}`;
-  $("review-count").textContent = `${payload.items.length} button${payload.items.length === 1 ? "" : "s"}`;
+  $("review-count").textContent = [
+    `${count} added`,
+    changed ? `${changed} changed` : "",
+    removed ? `${removed} removed` : "",
+  ].filter(Boolean).join(" · ");
   $("review-placement").textContent = state.placementAdjusted
     ? "The positions you chose"
     : "Automatic — the first open spaces";
@@ -125,6 +183,7 @@ function prepareReview() {
 
   const list = $("review-items");
   list.innerHTML = "";
+  $("review-items-wrap").hidden = !count;
   payload.items.forEach((item) => {
     const row = document.createElement("li");
     const label = document.createElement("strong");
@@ -137,6 +196,7 @@ function prepareReview() {
     }
     list.append(row);
   });
+  renderReviewEdits(edits);
   syncReviewPlacement();
   show("review");
 }
@@ -171,7 +231,7 @@ buildForm.addEventListener("submit", (event) => {
 
   takeWordInput();
 
-  if (!state.words.length) {
+  if (!state.words.length && !countEdits(pendingPageEdits())) {
     showStepError("items", "Add at least one word or phrase before continuing.");
     return;
   }
@@ -189,11 +249,15 @@ $("review-back-btn").addEventListener("click", () => {
 });
 
 $("adjust-placement-btn").addEventListener("click", () => {
-  renderPreview();
-  show("placement");
+  showPlacement("review");
 });
 
 $("placement-back-btn").addEventListener("click", () => {
+  if (state.placementReturn === "items") {
+    state.pendingEdit = null;
+    show("items");
+    return;
+  }
   prepareReview();
 });
 
