@@ -21,8 +21,10 @@ import sys
 # Floors, not targets. Raise them as coverage improves; never lower one to make
 # a build pass.
 FLOORS = {
-    "tdsnap/builder.py": 90,
-    "tdsnap/validate.py": 82,
+    # Raised in Phase 4c, which added the exported-file write path
+    # (add_buttons_to_page) and the checks that verify it.
+    "tdsnap/builder.py": 93,
+    "tdsnap/validate.py": 86,
     "tdsnap/templates.py": 88,
     "tdsnap/schema.py": 85,
     "tdsnap/pageset.py": 82,

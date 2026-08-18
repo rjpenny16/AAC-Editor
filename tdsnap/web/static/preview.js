@@ -9,7 +9,9 @@
 import { state, FUNCTIONS } from "./state.js";
 import { $ } from "./dom.js";
 import { functionForSlot, openExistingEditor, renderWords } from "./chips.js";
-import { changeFor, isRemoved } from "./edits.js";
+import {
+  cellName, changeFor, isRemoved, moveFrom, moveInto, placeableSlots, planMove,
+} from "./edits.js";
 import { titleOf } from "./parents.js";
 import { setOperation, show } from "./wizard.js";
 
@@ -79,16 +81,13 @@ function renderGrid3Preview(preview) {
       cell.title = item.message
         ? `Speaks: “${item.message}” · retains ${style.key || "existing"} style`
         : `Retains ${style.key || "existing"} style`;
-      cell.addEventListener("dragstart", (event) => {
-        event.dataTransfer.setData("text/plain", String(wordIndex));
-        event.dataTransfer.effectAllowed = "move";
-      });
+      cell.addEventListener("dragstart", (event) =>
+        beginDrag(event, { kind: "word", index: wordIndex }));
+      cell.addEventListener("dragend", () => { dragging = null; });
       cell.addEventListener("keydown", (event) => {
-        const moves = { ArrowLeft: -1, ArrowRight: 1,
-          ArrowUp: -state.grid.cols, ArrowDown: state.grid.cols };
-        if (!(event.key in moves)) return;
+        const target = stepTarget(model.slot, event.key);
+        if (target === null) return;
         event.preventDefault();
-        const target = model.slot + moves[event.key];
         movePreviewItem(wordIndex, target);
         preview.querySelector(`[data-slot="${target}"]`)?.focus();
       });
@@ -108,42 +107,152 @@ function renderGrid3Preview(preview) {
       cell.addEventListener("drop", (event) => {
         event.preventDefault();
         cell.classList.remove("drop-target");
-        const index = Number(event.dataTransfer.getData("text/plain"));
-        if (Number.isInteger(index)) movePreviewItem(index, model.slot);
+        const payload = droppedPayload(event);
+        if (payload && payload.kind === "word") movePreviewItem(payload.index, model.slot);
       });
     }
     preview.append(cell);
   });
 }
 
-/* An existing button, in whichever of its four states applies: locked (the
-   only state before change and remove existed), eligible, marked for a
-   change, or marked for removal. A locked one always says *why* — on hover
-   and on focus — because "you can't touch this" without a reason is the kind
-   of dead end this app exists to remove. */
-function renderExistingCell(cell, existing) {
+/* Where an arrow key sends the button in *slot*, or null when that would leave
+   the grid. Left and right stop at the row's edge instead of wrapping onto the
+   neighbouring row, which is what "move it right" means to somebody who can
+   see the grid. */
+function stepTarget(slot, key) {
+  const step = {
+    ArrowLeft: -1,
+    ArrowRight: 1,
+    ArrowUp: -state.grid.cols,
+    ArrowDown: state.grid.cols,
+  }[key];
+  if (step === undefined) return null;
+  const target = slot + step;
+  if (target < 0 || target >= state.grid.cols * state.grid.rows) return null;
+  if (
+    Math.abs(step) === 1
+    && Math.floor(target / state.grid.cols) !== Math.floor(slot / state.grid.cols)
+  ) {
+    return null;
+  }
+  return target;
+}
+
+/* Which existing button a cell shows once the pending edit lands. A button on
+   its way somewhere else is drawn in its destination, not in the cell it is
+   leaving — the preview's whole job is to show the page as it will be. */
+function existingAt(slot) {
+  const arriving = moveInto(state.pageEdits, slot);
+  if (arriving) {
+    return state.existingButtons.find((button) => button.slot === arriving.slot) || null;
+  }
+  if (moveFrom(state.pageEdits, slot)) return null;
+  return state.existingButtons.find((button) => button.slot === slot) || null;
+}
+
+/* Cells a new button may use, pending edits included: a cell a removal or a
+   move frees counts as space, a cell a move is headed for does not. */
+function openSlots() {
+  const total = state.grid.cols * state.grid.rows;
+  const free = state.availableSlots
+    || Array.from({ length: total }, (_, slot) => slot).filter(
+      (slot) => !state.existingButtons.some((button) => button.slot === slot),
+    );
+  return placeableSlots(state.pageEdits, state.existingButtons, free);
+}
+
+/* What is being dragged across the preview right now. `dataTransfer` cannot be
+   read during `dragover` in most browsers, but each cell has to decide there
+   whether it is a legal target, so the payload is also kept here. */
+let dragging = null;
+
+function beginDrag(event, payload) {
+  dragging = payload;
+  event.dataTransfer.setData(
+    "text/plain",
+    payload.kind === "word" ? `word:${payload.index}` : `button:${payload.slot}`,
+  );
+  event.dataTransfer.effectAllowed = "move";
+}
+
+/* Read the drop back off the event rather than trusting `dragging`, so a drag
+   that started outside the preview can never be mistaken for one of ours. */
+function droppedPayload(event) {
+  const raw = event.dataTransfer.getData("text/plain") || "";
+  const [kind, value] = raw.split(":");
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0) return null;
+  if (kind === "word") return { kind: "word", index: number };
+  if (kind === "button") return { kind: "button", slot: number };
+  return null;
+}
+
+function canDrop(payload, slot) {
+  if (!payload) return false;
+  if (payload.kind === "word") return openSlots().includes(slot);
+  const target = existingAt(slot);
+  return (
+    slot !== payload.slot
+    && (!target || (state.canEditExisting && target.editable))
+    && !state.words.some((item) => item.slot === slot)
+  );
+}
+
+function moveExistingButton(slot, target) {
+  const next = planMove(
+    state.pageEdits, state.existingButtons, slot, target,
+    state.words.map((item) => item.slot),
+  );
+  if (next === state.pageEdits) return false;
+  state.pageEdits = next;
+  state.placementAdjusted = true;
+  state.pendingEdit = null;
+  renderWords();
+  return true;
+}
+
+/* An existing button, in whichever of its states applies: locked (the only
+   state before change and remove existed), eligible, marked for a change,
+   marked for a move, or marked for removal. A locked one always says *why* —
+   on hover and on focus — because "you can't touch this" without a reason is
+   the kind of dead end this app exists to remove. */
+function renderExistingCell(cell, existing, slot) {
   const change = changeFor(state.pageEdits, existing.slot);
   const removed = isRemoved(state.pageEdits, existing.slot);
+  const move = moveFrom(state.pageEdits, existing.slot);
   const label = change ? change.label : existing.label || "Existing button";
   cell.classList.add("existing");
   addPreviewCellContent(cell, label, "", state.pageStyle !== "topic");
   const position =
-    `row ${Math.floor(existing.slot / state.grid.cols) + 1}, ` +
-    `column ${(existing.slot % state.grid.cols) + 1}`;
+    `row ${Math.floor(slot / state.grid.cols) + 1}, ` +
+    `column ${(slot % state.grid.cols) + 1}`;
+  const moveNote = move
+    ? ` Moved here from ${cellName(move.slot, state.grid.cols)}.`
+    : "";
   if (removed) {
     cell.classList.add("marked-removed");
     cell.title = `“${existing.label}” will be removed`;
     cell.setAttribute("aria-label", `${existing.label}, ${position}, marked for removal. Select to keep it.`);
   } else if (change) {
     cell.classList.add("marked-changed");
+    if (move) cell.classList.add("marked-moved");
     cell.title = `“${existing.label}” becomes “${change.label}”`;
-    cell.setAttribute("aria-label", `${existing.label}, ${position}, will be changed to ${change.label}. Select to edit again.`);
+    cell.setAttribute(
+      "aria-label",
+      `${existing.label}, ${position}, will be changed to ${change.label}.${moveNote} ` +
+      "Select to edit again, or use the arrow keys to move it."
+    );
   } else if (existing.editable) {
     cell.classList.add("editable");
+    if (move) cell.classList.add("marked-moved");
     cell.title = existing.message
-      ? `Speaks: “${existing.message}” · select to change or remove`
-      : "Select to change or remove this button";
-    cell.setAttribute("aria-label", `${label}, ${position}, existing. Select to change or remove it.`);
+      ? `Speaks: “${existing.message}” · select to change or remove · drag to move`
+      : "Select to change or remove this button, or drag it to another cell";
+    cell.setAttribute(
+      "aria-label",
+      `${label}, ${position}, existing.${moveNote} Select to change or remove it, ` +
+      "or drag or use the arrow keys to move it."
+    );
   } else {
     cell.title = existing.locked_reason || "Existing TD Snap button — position preserved";
     cell.setAttribute(
@@ -159,10 +268,24 @@ function renderExistingCell(cell, existing) {
   cell.tabIndex = 0;
   cell.setAttribute("role", "button");
   cell.addEventListener("click", () => openExistingEditor(existing.slot));
+  if (!removed) {
+    cell.draggable = true;
+    cell.addEventListener("dragstart", (event) =>
+      beginDrag(event, { kind: "button", slot: existing.slot }));
+  }
   cell.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openExistingEditor(existing.slot);
+      return;
+    }
+    if (removed) return;
+    const target = stepTarget(slot, event.key);
+    if (target === null) return;
     event.preventDefault();
-    openExistingEditor(existing.slot);
+    if (moveExistingButton(existing.slot, target)) {
+      $("preview").querySelector(`[data-slot="${target}"]`)?.focus();
+    }
   });
 }
 
@@ -208,8 +331,8 @@ function renderPreview() {
       cell.classList.add("topic-row");
       cell.style.setProperty("--row-color", FUNCTIONS[rowFn].color);
     }
-    const existing = state.existingButtons.find((item) => item.slot === slot);
-    if (existing) renderExistingCell(cell, existing);
+    const existing = existingAt(slot);
+    if (existing) renderExistingCell(cell, existing, slot);
     const index = state.words.findIndex((item) => item.slot === slot);
     if (index >= 0) {
       const item = state.words[index];
@@ -234,21 +357,13 @@ function renderPreview() {
       }
       if (item.message) cell.title = `Speaks: “${item.message}”`;
       cell.addEventListener("dragstart", (event) => {
-        event.dataTransfer.setData("text/plain", String(index));
-        event.dataTransfer.effectAllowed = "move";
+        beginDrag(event, { kind: "word", index });
         cell.classList.add("dragging");
       });
-      cell.addEventListener("dragend", () => cell.classList.remove("dragging"));
       cell.addEventListener("keydown", (event) => {
-        const moves = {
-          ArrowLeft: -1,
-          ArrowRight: 1,
-          ArrowUp: -state.grid.cols,
-          ArrowDown: state.grid.cols,
-        };
-        if (!(event.key in moves)) return;
+        const target = stepTarget(slot, event.key);
+        if (target === null) return;
         event.preventDefault();
-        const target = Math.max(0, Math.min(total - 1, slot + moves[event.key]));
         movePreviewItem(index, target);
         const moved = preview.querySelector(`[data-slot="${target}"]`);
         if (moved) moved.focus();
@@ -258,18 +373,23 @@ function renderPreview() {
       cell.classList.add("empty-topic");
       cell.setAttribute("aria-label", `Empty cell ${slot + 1}`);
     }
+    cell.addEventListener("dragend", () => {
+      dragging = null;
+      cell.classList.remove("dragging");
+    });
     cell.addEventListener("dragover", (event) => {
-      if (existing) return;
+      if (!canDrop(dragging, slot)) return;
       event.preventDefault();
       cell.classList.add("drop-target");
     });
     cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
     cell.addEventListener("drop", (event) => {
-      if (existing) return;
+      const payload = droppedPayload(event);
+      if (!canDrop(payload, slot)) return;
       event.preventDefault();
       cell.classList.remove("drop-target");
-      const index = Number(event.dataTransfer.getData("text/plain"));
-      if (Number.isInteger(index)) movePreviewItem(index, slot);
+      if (payload.kind === "word") movePreviewItem(payload.index, slot);
+      else moveExistingButton(payload.slot, slot);
     });
     preview.append(cell);
   }
@@ -282,10 +402,7 @@ function placementSlots() {
       .sort((left, right) => left.y - right.y || left.x - right.x)
       .map((cell) => cell.slot);
   }
-  if (state.availableSlots) return [...state.availableSlots].sort((a, b) => a - b);
-  const occupied = new Set(state.existingButtons.map((button) => button.slot));
-  return Array.from({ length: state.grid.cols * state.grid.rows }, (_, slot) => slot)
-    .filter((slot) => !occupied.has(slot));
+  return openSlots();
 }
 
 function renderPlacementOrder() {
@@ -328,8 +445,15 @@ function renderPlacementOrder() {
 function movePreviewItem(index, targetSlot) {
   const item = state.words[index];
   if (!item || item.slot === targetSlot) return;
-  if (state.existingButtons.some((button) => button.slot === targetSlot) ||
-      (state.availableSlots && !state.availableSlots.includes(targetSlot))) return;
+  const swappable = state.words.some(
+    (candidate, candidateIndex) => candidateIndex !== index && candidate.slot === targetSlot,
+  );
+  // Grid 3 keeps its own notion of which cells are safe to write to; TD Snap's
+  // comes from the page layout plus whatever this edit is about to free.
+  const usable = state.provider === "grid3" && state.grid3Cells.length
+    ? placementSlots()
+    : openSlots();
+  if (!swappable && !usable.includes(targetSlot)) return;
   const previousSlot = item.slot;
   const occupant = state.words.find((candidate, candidateIndex) =>
     candidateIndex !== index && candidate.slot === targetSlot
@@ -355,20 +479,25 @@ $("create-page-btn").addEventListener("click", () => {
 });
 
 /* The placement grid is the one screen that shows the page as it really is, so
-   it is where an existing button is changed or removed. It is reachable from
-   the word list as well as from review; the Back button follows whichever
+   it is where an existing button is changed, moved, or removed. It is reachable
+   from the word list as well as from review; the Back button follows whichever
    route the user took rather than always landing on review. */
 function showPlacement(from) {
   state.placementReturn = from;
   const editing = from === "items";
+  const movable = state.canEditExisting;
   $("placement-heading").textContent = editing
-    ? "Change or remove existing buttons"
+    ? "Change, move, or remove existing buttons"
     : "Adjust button placement";
   $("placement-lead").textContent = editing
-    ? "Select a button to change what it says or remove it. Buttons that open a page or run " +
-      "an action stay locked, and say why."
-    : "Drag buttons to the exact cells you want, or focus one and use the arrow keys. " +
-      "Existing buttons stay locked.";
+    ? "Select a button to change what it says or remove it, or drag it to another cell. " +
+      "Drop it on another button to have the two trade places. Buttons that open a page " +
+      "or run an action stay locked, and say why."
+    : movable
+      ? "Drag buttons to the exact cells you want, or focus one and use the arrow keys. " +
+        "Existing buttons move the same way; drop one on another to trade places."
+      : "Drag buttons to the exact cells you want, or focus one and use the arrow keys. " +
+        "Existing buttons stay locked.";
   $("placement-back-btn").textContent = editing
     ? "Back to words and phrases"
     : "Back to review";
@@ -378,4 +507,4 @@ function showPlacement(from) {
 
 $("edit-existing-btn").addEventListener("click", () => showPlacement("items"));
 
-export { placementSlots, renderPlacementOrder, renderPreview, showPlacement };
+export { openSlots, placementSlots, renderPlacementOrder, renderPreview, showPlacement };

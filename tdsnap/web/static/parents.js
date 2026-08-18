@@ -31,7 +31,7 @@ parentSelect.addEventListener("change", async () => {
     try {
       await loadTargetLayout(titleOf(state.parentId));
     } catch (error) {
-      showBuildError("Couldn’t load the selected TD Snap page.", [error.message]);
+      showBuildError("Couldn’t load the selected page.", [error.message]);
     }
   } else {
     try {

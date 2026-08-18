@@ -31,16 +31,21 @@ the explicit administrator fallback for Grid 3.
 
 ## What it does
 
-- Adds words to exact empty spaces on an existing TD Snap page.
+- Adds words to exact empty spaces on an existing TD Snap page — live, or in an
+  exported copy.
 - Fixes a typo or retires a word: changes what an existing TD Snap button says,
-  or removes it, with the same review, verification, and rollback an addition
-  gets. Buttons that open a page or run an action stay locked and say why.
+  moves it to another cell, or removes it, with the same review, verification,
+  and rollback an addition gets. Buttons that open a page or run an action stay
+  locked and say why.
+- Undoes the last change it made, once, through the same review step — while the
+  page is still as AAC Editor left it.
 - Adds vocabulary to empty spaces AAC Editor can update safely on the grid open in Grid 3, preserving
   the grid-set file and each blank cell's existing style.
 - Creates word or color-coded topic pages and links them from an existing page.
 - Rejects duplicates, checks capacity, and never touches a button the review
   step did not name.
-- Adds matching TD Snap symbols when TD Snap can find them.
+- Adds matching TD Snap symbols when TD Snap can find them, searching the words
+  you choose — or none at all, per button.
 - Suggests AAC-friendly placement and optional words or phrases with local AI.
 - Verifies the completed edit and reports anything that still needs review.
 
@@ -83,15 +88,31 @@ stored in plain language, and **Clear all saved data** deletes the file.
 4. Use **Choose another page** or **Create a new page** only when needed.
 5. Review the checks before returning to TD Snap.
 
-To fix or retire something already on the page, select **Change or remove
-existing buttons**, then select the button itself. AAC Editor changes only
-buttons whose whole job is to speak their own message; a button that opens a
-page or runs an action stays locked and says so on hover and on focus. Before
-a change or a removal runs, AAC Editor reads what every affected button holds
-today, and refuses the edit outright if it cannot — a destructive edit it could
-not undo is one it does not start. If the edit then fails part-way, TD Snap is
-undone until each of those buttons holds its prior label and spoken message
-again, and the result screen confirms that nothing else on the page moved.
+To fix, move, or retire something already on the page, select **Change, move, or
+remove existing buttons**, then select the button itself — or drag it to another
+cell, or move it with the arrow keys. Dropping one button on another has the two
+trade places. AAC Editor changes only buttons whose whole job is to speak their
+own message; a button that opens a page or runs an action stays locked and says
+so on hover and on focus. Before a change, a move, or a removal runs, AAC Editor
+reads what every affected button holds today, and refuses the edit outright if it
+cannot — a destructive edit it could not undo is one it does not start. If the
+edit then fails part-way, TD Snap is undone until each of those buttons holds its
+prior label and spoken message again, and the result screen confirms that nothing
+else on the page moved.
+
+If an edit lands and turns out to be wrong, **Undo my last change** puts the page
+back. It goes through the same review step, naming every button it will restore,
+remove, or move home before anything runs. Three things it deliberately cannot
+do, all of which it says on that screen: it reaches back one change only, it only
+covers a change made while the app has been open, and it cannot reach back past a
+sync in TD Snap or a change made in TD Snap itself. A button it re-creates is a
+new button, so its symbol comes from a fresh TD Snap search.
+
+Each button's symbol can be steered from the button editor: turn **Let TD Snap
+add a symbol** off for one that should stay text-only, or set **Symbol search
+words** when the label is a poor query — searching `more` for a button that says
+*more please*. The result names the buttons that ended up without a symbol, so
+there is no guessing about which ones to look at in TD Snap.
 
 For Grid 3, choose **Grid 3** on the first screen, open the exact existing grid
 you want to update, add vocabulary, review its order, and confirm the change.
@@ -145,7 +166,10 @@ Exported-file edits always write a separate `*.edited.sps` copy. They discover
 the file's schema at runtime, clone TD Snap's own records as templates, and run
 SQLite integrity, foreign-key, linkage, and unexpected-change checks before
 saving. TD Snap's proprietary `SyncHash` cannot be reproduced, so direct mode
-is preferred when page-set sync matters.
+is preferred when page-set sync matters. Exported files can add buttons to a page
+that already exists as well as create one; existing buttons are shown but locked,
+because changing and removing them there would need their own prior-content
+snapshot and rollback.
 
 ## Development
 

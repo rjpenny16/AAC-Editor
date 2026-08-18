@@ -168,7 +168,10 @@ async function useFileSession(data) {
   state.placementAdjusted = false;
   $("title-input").value = "";
   setPageStyle("words");
-  setOperation("new");
+  // Exported files can now add to a page that already exists, so they open on
+  // the same first question the live providers ask instead of assuming a new
+  // page is wanted. Adding to a familiar page is the shorter path, so it leads.
+  setOperation("existing");
   renderParents("");
   $("file-badge").textContent = `${state.filename} · Change file`;
   $("file-badge").setAttribute("aria-label", `Change exported file (currently ${state.filename})`);
@@ -179,7 +182,7 @@ async function useFileSession(data) {
   $("live-result-note").textContent =
     "Save the edited copy, review it, then import it into TD Snap.";
   setProviderState("file", "Ready", "ready");
-  show("title");
+  show("operation");
   return true;
 }
 
@@ -341,6 +344,15 @@ $("live-connect-btn").addEventListener("click", async () => {
     state.connected = true;
     $("file-badge").hidden = false;
     setProviderState("tdsnap", "Ready", "ready");
+    // The retained edit lives in the server process, so reloading the browser
+    // after an edit does not cost the undo. Failing to ask simply means not
+    // offering it — never a reason to block a connection that otherwise worked.
+    try {
+      state.lastEdit = (await api("/api/tdsnap/last-edit")).undo;
+    } catch {
+      state.lastEdit = null;
+    }
+    renderWords();
     if (state.layoutFingerprint) show("items");
     else show("destination");
     startLiveMonitor();
@@ -372,11 +384,14 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     ? "Refreshing the live TD Snap page…"
     : `Loading “${pageName}”…`);
   try {
-    const data = await api(state.provider === "grid3"
-      ? "/api/grid3/page-layout"
-      : currentOnly
-        ? "/api/tdsnap/page-layout"
-        : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
+    const data = await api(state.mode === "file"
+      ? `/api/pageset/${encodeURIComponent(state.sessionId)}` +
+        `/page/${encodeURIComponent(state.parentId)}/layout`
+      : state.provider === "grid3"
+        ? "/api/grid3/page-layout"
+        : currentOnly
+          ? "/api/tdsnap/page-layout"
+          : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
     state.grid = data.grid;
     state.existingButtons = data.buttons || [];
     state.availableSlots = data.free_slots || [];
@@ -406,6 +421,7 @@ async function loadTargetLayout(pageName, currentOnly = false) {
       ? `${data.free_slots.length} empty space${data.free_slots.length === 1 ? "" : "s"} ` +
         `AAC Editor can update safely on “${data.page}”.`
       : `“${data.page}” is full. Choose another page or remove existing vocabulary in ${state.provider === "grid3" ? "Grid 3" : "TD Snap"}.`;
+    if (state.mode === "file") state.currentPage = state.parentId;
     $("current-page-label").textContent = `Adding to ${data.page}`;
     renderWords();
     return data;

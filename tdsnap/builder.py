@@ -54,7 +54,10 @@ def _normalize_items(items: list[Item]) -> list[dict[str, object]]:
     convention is clinical, not a UI preference, so nothing else is accepted.
     ``slot`` is an optional zero-based grid index chosen in the visual
     preview. ``symbol`` controls whether live editing should make a
-    best-effort symbol search.
+    best-effort symbol search, and ``symbol_query`` says what to search for
+    when the label itself is a poor query — a button labelled "more please"
+    finds nothing, while "more" finds the symbol the label is standing in for.
+    Neither reaches the exported-file path, which writes no symbols at all.
     """
     if not isinstance(items, list):
         raise PagesetError("Words must be provided as a list.")
@@ -121,9 +124,18 @@ def _normalize_items(items: list[Item]) -> list[dict[str, object]]:
         symbol = item.get("symbol", True)
         if not isinstance(symbol, bool):
             raise PagesetError(f"The symbol setting for {label!r} must be true or false.")
+        query = item.get("symbol_query")
+        if query is not None and not isinstance(query, str):
+            raise PagesetError(f"The symbol search words for {label!r} must be text.")
+        query = (query or "").strip() or None
+        if query and len(query) > MAX_LABEL_LENGTH:
+            raise PagesetError(
+                f"The symbol search words for {label!r} are too long "
+                f"(maximum {MAX_LABEL_LENGTH} characters)."
+            )
         normalized.append({"label": label, "message": message,
                            "border_color": border, "slot": slot,
-                           "symbol": symbol})
+                           "symbol": symbol, "symbol_query": query})
     return normalized
 
 
@@ -132,21 +144,23 @@ def _random_sync_hash() -> int:
     return random.getrandbits(64) - (1 << 63)
 
 
-def _parent_layout(
-    conn: sqlite3.Connection, parent_page_id: int, grid: tuple[int, int]
+def layout_for_page(
+    conn: sqlite3.Connection, page_id: int, grid: tuple[int, int]
 ) -> sqlite3.Row:
-    """Return the PageLayout of *parent_page_id* to place the nav button in.
+    """Return the PageLayout of *page_id* to place a new button in.
 
     Pages can carry several layouts (one per grid size the user has viewed);
     prefer the one matching the page set's grid, then the most-populated one.
+    Public because the capacity the UI shows and the cells the writer fills
+    have to be the same answer — two copies of this rule would drift.
     """
     layouts = conn.execute(
-        "SELECT * FROM PageLayout WHERE PageId = ?", (parent_page_id,)
+        "SELECT * FROM PageLayout WHERE PageId = ?", (page_id,)
     ).fetchall()
     if not layouts:
         raise PagesetError(
-            f"Parent page Id {parent_page_id} has no PageLayout; cannot place "
-            "a navigation button on it."
+            f"Page Id {page_id} has no PageLayout, so AAC Editor cannot "
+            "place a button on it."
         )
     grid_prefix = f"{grid[0]},{grid[1]},"
     matching = [
@@ -166,11 +180,8 @@ def _parent_layout(
     return max(layouts, key=placement_count)
 
 
-def _free_slot(
-    conn: sqlite3.Connection, layout: sqlite3.Row
-) -> tuple[int, int]:
-    """First empty ``(col, row)`` cell in *layout*, row-major order."""
-    cols, rows = schema.parse_grid(layout["PageLayoutSetting"])
+def _used_cells(conn: sqlite3.Connection, layout: sqlite3.Row) -> set[tuple[int, int]]:
+    """Every ``(col, row)`` cell *layout* already has something visible in."""
     used = set()
     for row in conn.execute(
         "SELECT GridPosition, GridSpan FROM ElementPlacement "
@@ -184,14 +195,31 @@ def _free_slot(
             for x in range(col, col + col_span)
             for y in range(grid_row, grid_row + row_span)
         )
-    for index in range(cols * rows):
-        slot = (index % cols, index // cols)
-        if slot not in used:
-            return slot
-    raise PagesetError(
-        "The parent page's grid is full; free a cell or pick another page for "
-        "the navigation button."
-    )
+    return used
+
+
+def free_slots(conn: sqlite3.Connection, layout: sqlite3.Row) -> list[int]:
+    """Empty zero-based slot numbers in *layout*, in reading order."""
+    cols, rows = schema.parse_grid(layout["PageLayoutSetting"])
+    used = _used_cells(conn, layout)
+    return [
+        index for index in range(cols * rows)
+        if (index % cols, index // cols) not in used
+    ]
+
+
+def _free_slot(
+    conn: sqlite3.Connection, layout: sqlite3.Row
+) -> tuple[int, int]:
+    """First empty ``(col, row)`` cell in *layout*, row-major order."""
+    cols, _ = schema.parse_grid(layout["PageLayoutSetting"])
+    free = free_slots(conn, layout)
+    if not free:
+        raise PagesetError(
+            "The parent page's grid is full; free a cell or pick another page for "
+            "the navigation button."
+        )
+    return (free[0] % cols, free[0] // cols)
 
 
 def _insert_cell(
@@ -385,7 +413,7 @@ def add_category_page(
 
         nav_button_id = None
         if parent_page is not None:
-            layout = _parent_layout(conn, parent_page_id, (cols, rows))
+            layout = layout_for_page(conn, parent_page_id, (cols, rows))
             slot = _free_slot(conn, layout)
             nav_button_id, _ = _insert_cell(
                 conn,
@@ -429,5 +457,128 @@ def add_category_page(
         "button_ids": button_ids,
         "buttons": button_specs,
         "nav_button_id": nav_button_id,
+        "grid": (cols, rows),
+    }
+
+
+def add_buttons_to_page(
+    pageset: Pageset, page_id: int, items: list[Item]
+) -> dict[str, object]:
+    """Add speaking buttons to the empty cells of a page that already exists.
+
+    The exported-file path could only ever *create* a page, which meant the one
+    thing most people want to do — put three more words on a page they already
+    use — was possible on Windows with TD Snap running and nowhere else. This
+    is that operation, and it deliberately mirrors ``add_category_page`` cell
+    for cell: same speak chain, same clone, same placement rows, so a page this
+    writes to is indistinguishable from a page TD Snap itself extended.
+
+    Nothing already on the page is touched. Buttons land in the cells the
+    review chose, and a request for a cell that is not empty is refused rather
+    than quietly moved elsewhere — the preview said where these buttons were
+    going, and silently disagreeing with it is how vocabulary ends up somewhere
+    nobody expects.
+    """
+    conn = pageset.conn
+    items = _normalize_items(items)
+    if not items:
+        raise PagesetError("Add at least one word or phrase.")
+
+    owns_transaction = not conn.in_transaction
+    savepoint = f"tdsnap_extend_{uuid.uuid4().hex}"
+    if owns_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    else:
+        conn.execute(f"SAVEPOINT {savepoint}")
+    try:
+        page = conn.execute(
+            "SELECT * FROM Page WHERE Id = ? AND PageType = 1", (page_id,)
+        ).fetchone()
+        if page is None:
+            raise PagesetError(f"Vocabulary page Id {page_id} not found.")
+
+        existing = {
+            (row["Label"] or "").strip().casefold()
+            for row in conn.execute(
+                "SELECT button.Label AS Label FROM Button button "
+                "JOIN ElementReference ref ON ref.Id = button.ElementReferenceId "
+                "WHERE ref.PageId = ?",
+                (page_id,),
+            )
+        }
+        duplicates = [item["label"] for item in items if item["label"].casefold() in existing]
+        if duplicates:
+            raise PagesetError(
+                "Already on this page: " + ", ".join(duplicates)
+                + ". Remove or rename duplicates before submitting."
+            )
+
+        cols, rows = pageset.grid_dimension()
+        layout = layout_for_page(conn, page_id, (cols, rows))
+        cols, rows = schema.parse_grid(layout["PageLayoutSetting"])
+        free = free_slots(conn, layout)
+        if len(items) > len(free):
+            raise PagesetError(
+                f"{len(items)} button(s) don't fit: this page has "
+                f"{len(free)} empty cell(s)."
+            )
+
+        unused = list(free)
+        speak_chain = templates.find_speak_chain(conn)
+        now = net_ticks_now()
+        button_ids = []
+        button_specs = []
+        for item in items:
+            requested = item.get("slot")
+            if isinstance(requested, int):
+                if requested not in unused:
+                    raise PagesetError(
+                        f"The cell chosen for {item['label']!r} is not empty on this "
+                        "page. Reload the page and review the placement again."
+                    )
+                slot_index = requested
+            else:
+                slot_index = unused[0]
+            unused.remove(slot_index)
+            button_id, _ = _insert_cell(
+                conn,
+                speak_chain,
+                page_id=page_id,
+                layout_id=layout["Id"],
+                slot=(slot_index % cols, slot_index // cols),
+                label=item["label"],
+                command_flags=templates.COMMAND_FLAGS_SPEAK,
+                serialized_commands=templates.SPEAK_COMMANDS,
+                message=item["message"],
+                border_color=item["border_color"],
+            )
+            button_ids.append(button_id)
+            button_specs.append({"id": button_id, **item, "slot": slot_index})
+
+        conn.execute("UPDATE Page SET Timestamp = ? WHERE Id = ?", (now, page_id))
+        conn.execute(
+            "UPDATE SyncData SET Timestamp = ? WHERE UniqueId = ?",
+            (now, page["UniqueId"]),
+        )
+        conn.execute("UPDATE Synchronization SET PageSetTimestamp = ?", (now,))
+        conn.execute("UPDATE PageSetProperties SET Timestamp = ?", (now,))
+        if owns_transaction:
+            conn.commit()
+        else:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+    except BaseException:
+        if owns_transaction:
+            conn.rollback()
+        else:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
+
+    return {
+        "page_id": page_id,
+        "page_unique_id": page["UniqueId"],
+        "layout_id": layout["Id"],
+        "button_ids": button_ids,
+        "buttons": button_specs,
         "grid": (cols, rows),
     }

@@ -9,6 +9,8 @@
  * boundary, so any scalar more than one module writes to lives here instead.
  */
 
+import { emptyEdits } from "./edits.js";
+
 /* Communicative-function color coding used on topic pages: each function
    gets the same colored border TD Snap renders around the button. */
 const FUNCTIONS = {
@@ -40,12 +42,18 @@ const state = {
   existingButtons: [], // [{slot, label, message, function, symbol, editable, locked_reason}]
   // Pending edits to buttons that already exist on the page, kept apart from
   // state.words because they reach into vocabulary somebody already uses.
-  // See edits.js.
-  pageEdits: { changes: [], removals: [] },
-  // Whether this connection can change or remove what is already on the page:
-  // TD Snap live, on an existing page, whose stored content AAC Editor could
-  // actually read. Anything less and existing buttons stay locked.
+  // Built by edits.js rather than written out here, so a new kind of edit can
+  // never be missing from the one copy nothing resets.
+  pageEdits: emptyEdits(),
+  // Whether this connection can change, move, or remove what is already on the
+  // page: TD Snap live, on an existing page, whose stored content AAC Editor
+  // could actually read. Anything less and existing buttons stay locked.
   canEditExisting: false,
+  // What "Undo my last change" would do, as described by the server that is
+  // holding the snapshot — or null when there is nothing to undo. The snapshot
+  // itself never comes here: the browser only ever renders the description and
+  // asks the server to replay it. See the undo section in live.py.
+  lastEdit: null,
   placementReturn: "review", // which step the placement editor returns to
   availableSlots: null,
   grid3Cells: [],

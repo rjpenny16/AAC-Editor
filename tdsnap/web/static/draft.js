@@ -46,6 +46,7 @@ function currentComposition() {
       fn: item.fn || "",
       slot: Number.isInteger(item.slot) ? item.slot : null,
       symbol: item.symbol !== false,
+      symbol_query: item.symbolQuery || null,
     })),
   };
 }

@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 
-from tdsnap import validate
+from tdsnap import builder, validate
 from tdsnap.builder import _normalize_items, add_category_page
 from tdsnap.errors import PagesetError
 
@@ -345,3 +345,141 @@ def test_parent_grid_full(seeded_pageset):
         add_category_page(ps, f"Filler {i + 3}", ["x"], parent_id)
     with pytest.raises(PagesetError, match="grid is full"):
         add_category_page(ps, "One Too Many", ["x"], parent_id)
+
+
+# ---------------------------------------------------------------------------
+# Adding to a page that already exists (Phase 4c)
+
+
+@pytest.fixture
+def home(seeded_pageset):
+    """The seeded page set and the Id of the page it already has."""
+    return seeded_pageset, seeded_pageset.find_page_id_by_name("Home Page")
+
+
+def _placements(ps, page_id):
+    return {
+        row["Label"]: row["GridPosition"]
+        for row in ps.conn.execute(
+            "SELECT button.Label AS Label, placement.GridPosition AS GridPosition "
+            "FROM Button button "
+            "JOIN ElementReference ref ON ref.Id = button.ElementReferenceId "
+            "JOIN ElementPlacement placement ON placement.ElementReferenceId = ref.Id "
+            "WHERE ref.PageId = ?",
+            (page_id,),
+        )
+    }
+
+
+def test_buttons_land_in_the_cells_the_review_chose(home):
+    ps, page_id = home
+    layout = builder.layout_for_page(ps.conn, page_id, ps.grid_dimension())
+    free = builder.free_slots(ps.conn, layout)
+
+    report = builder.add_buttons_to_page(
+        ps, page_id,
+        [
+            {"label": "Chips", "slot": free[1]},
+            {"label": "Juice", "message": "I want juice", "slot": free[0]},
+        ],
+    )
+
+    cols = report["grid"][0]
+    placed = _placements(ps, page_id)
+    assert placed["Chips"] == f"{free[1] % cols},{free[1] // cols}"
+    assert placed["Juice"] == f"{free[0] % cols},{free[0] // cols}"
+    assert report["layout_id"] == layout["Id"]
+    assert validate.validate_added_buttons(ps.conn, report) == []
+    assert validate.validate_pageset(ps.conn)["problems"] == []
+
+
+def test_a_button_with_no_chosen_cell_takes_the_first_free_one(home):
+    ps, page_id = home
+    layout = builder.layout_for_page(ps.conn, page_id, ps.grid_dimension())
+    first = builder.free_slots(ps.conn, layout)[0]
+
+    report = builder.add_buttons_to_page(ps, page_id, ["Chips"])
+
+    cols = report["grid"][0]
+    assert _placements(ps, page_id)["Chips"] == f"{first % cols},{first // cols}"
+
+
+def test_adding_to_an_existing_page_leaves_everything_else_alone(home):
+    ps, page_id = home
+    before = validate.table_snapshot(ps.conn)
+
+    report = builder.add_buttons_to_page(ps, page_id, ["Chips"])
+
+    problems = validate.check_roundtrip(before, validate.table_snapshot(ps.conn))
+    assert problems == []
+    assert validate.validate_added_buttons(ps.conn, report) == []
+
+
+def test_adding_to_a_page_that_is_not_there_is_refused(home):
+    ps, _ = home
+    with pytest.raises(PagesetError, match="Vocabulary page Id 9999 not found"):
+        builder.add_buttons_to_page(ps, 9999, ["Chips"])
+
+
+def test_more_buttons_than_empty_cells_is_refused_before_anything_is_written(home):
+    ps, page_id = home
+    layout = builder.layout_for_page(ps.conn, page_id, ps.grid_dimension())
+    free = len(builder.free_slots(ps.conn, layout))
+
+    with pytest.raises(PagesetError, match=rf"don't fit: this page has {free} empty"):
+        builder.add_buttons_to_page(
+            ps, page_id, [f"word{index}" for index in range(free + 1)]
+        )
+
+    assert "word0" not in _placements(ps, page_id)
+
+
+def test_an_empty_request_is_refused(home):
+    ps, page_id = home
+    with pytest.raises(PagesetError, match="Add at least one word or phrase"):
+        builder.add_buttons_to_page(ps, page_id, [])
+
+
+def test_extending_a_page_inside_a_caller_transaction_stays_caller_owned(home):
+    ps, page_id = home
+    ps.conn.execute("UPDATE PageSetProperties SET Description = 'caller change'")
+    assert ps.conn.in_transaction
+
+    builder.add_buttons_to_page(ps, page_id, ["Chips"])
+
+    assert ps.conn.in_transaction
+    ps.conn.rollback()
+    assert "Chips" not in _placements(ps, page_id)
+    assert ps.conn.execute(
+        "SELECT Description FROM PageSetProperties"
+    ).fetchone()[0] is None
+
+
+def test_a_failed_extension_inside_a_caller_transaction_rolls_back_only_itself(home):
+    ps, page_id = home
+    ps.conn.execute("UPDATE PageSetProperties SET Description = 'caller change'")
+    layout = builder.layout_for_page(ps.conn, page_id, ps.grid_dimension())
+    taken = builder.free_slots(ps.conn, layout)[0]
+
+    builder.add_buttons_to_page(ps, page_id, [{"label": "Chips", "slot": taken}])
+    with pytest.raises(PagesetError, match="is not empty on this page"):
+        builder.add_buttons_to_page(ps, page_id, [{"label": "Juice", "slot": taken}])
+
+    placed = _placements(ps, page_id)
+    assert "Chips" in placed and "Juice" not in placed
+    assert ps.conn.execute(
+        "SELECT Description FROM PageSetProperties"
+    ).fetchone()[0] == "caller change"
+
+
+def test_symbol_search_words_are_bounded_like_every_other_field():
+    assert _normalize_items([{"label": "more please", "symbol_query": " more "}]) == [
+        {"label": "more please", "message": None, "border_color": None, "slot": None,
+         "symbol": True, "symbol_query": "more"},
+    ]
+    # An empty query means "search the label", which is the default anyway.
+    assert _normalize_items([{"label": "x", "symbol_query": "  "}])[0]["symbol_query"] is None
+    with pytest.raises(PagesetError, match="symbol search words for 'x' must be text"):
+        _normalize_items([{"label": "x", "symbol_query": 5}])
+    with pytest.raises(PagesetError, match="symbol search words for 'x' are too long"):
+        _normalize_items([{"label": "x", "symbol_query": "q" * 61}])

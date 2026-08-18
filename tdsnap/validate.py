@@ -256,10 +256,43 @@ def validate_new_page(conn: sqlite3.Connection, report: dict) -> list[str]:
                 "expected 1."
             )
 
-    # Every requested button must exist with exactly the requested content:
-    # label shown, message spoken (phrase buttons), border color + 3px
-    # thickness (function coding). Catches silent drops or mixups.
-    for spec in report.get("buttons", []):
+    problems += _check_button_content(conn, report.get("buttons", []))
+
+    sync = conn.execute(
+        "SELECT * FROM SyncData WHERE UniqueId = ?", (page_uuid,)
+    ).fetchone()
+    if sync is None:
+        problems.append("New page has no SyncData row.")
+    elif sync["Timestamp"] != page["Timestamp"] or sync["SyncHash"] != page["SyncHash"]:
+        problems.append("New page's SyncData row disagrees with the Page row.")
+
+    if report.get("nav_button_id") is not None:
+        nav_id = report["nav_button_id"]
+        link = conn.execute(
+            "SELECT * FROM ButtonPageLink WHERE ButtonId = ?", (nav_id,)
+        ).fetchone()
+        if link is None or link["PageUniqueId"] != page_uuid:
+            problems.append("Navigation button's ButtonPageLink is missing/wrong.")
+        commands = conn.execute(
+            "SELECT SerializedCommands FROM CommandSequence WHERE ButtonId = ?",
+            (nav_id,),
+        ).fetchone()
+        if commands is None or page_uuid not in (commands[0] or ""):
+            problems.append(
+                "Navigation button's CommandSequence doesn't reference the new page."
+            )
+
+    return problems
+
+
+def _check_button_content(conn: sqlite3.Connection, specs) -> list[str]:
+    """Every requested button exists with exactly the requested content.
+
+    Label shown, message spoken (phrase buttons), border color plus its 3px
+    thickness (function coding). Catches silent drops and mixups.
+    """
+    problems = []
+    for spec in specs:
         button = conn.execute(
             "SELECT * FROM Button WHERE Id = ?", (spec["id"],)
         ).fetchone()
@@ -287,32 +320,85 @@ def validate_new_page(conn: sqlite3.Connection, report: dict) -> list[str]:
                 f"Button {spec['label']!r} has a border color but no "
                 "border thickness."
             )
+    return problems
 
-    sync = conn.execute(
-        "SELECT * FROM SyncData WHERE UniqueId = ?", (page_uuid,)
-    ).fetchone()
-    if sync is None:
-        problems.append("New page has no SyncData row.")
-    elif sync["Timestamp"] != page["Timestamp"] or sync["SyncHash"] != page["SyncHash"]:
-        problems.append("New page's SyncData row disagrees with the Page row.")
 
-    if report.get("nav_button_id") is not None:
-        nav_id = report["nav_button_id"]
-        link = conn.execute(
-            "SELECT * FROM ButtonPageLink WHERE ButtonId = ?", (nav_id,)
+def validate_added_buttons(conn: sqlite3.Connection, report: dict) -> list[str]:
+    """Check the cells ``add_buttons_to_page`` added to a page that already existed.
+
+    The page itself is not re-validated here — it is somebody's existing
+    vocabulary and was not built by this app. What is checked is that each new
+    cell is a complete chain on the right page and in the cell the review
+    named, and that ``check_roundtrip`` still holds for everything else.
+    """
+    problems = []
+    page_id = report["page_id"]
+    layout_id = report["layout_id"]
+    cols = report["grid"][0]
+
+    if conn.execute("SELECT 1 FROM Page WHERE Id = ?", (page_id,)).fetchone() is None:
+        return [f"Page Id {page_id} is missing."]
+    if conn.execute(
+        "SELECT 1 FROM PageLayout WHERE Id = ? AND PageId = ?", (layout_id, page_id)
+    ).fetchone() is None:
+        problems.append("The layout the new buttons were placed in is missing.")
+        return problems
+
+    for spec in report.get("buttons", []):
+        button = conn.execute(
+            "SELECT * FROM Button WHERE Id = ?", (spec["id"],)
         ).fetchone()
-        if link is None or link["PageUniqueId"] != page_uuid:
-            problems.append("Navigation button's ButtonPageLink is missing/wrong.")
-        commands = conn.execute(
-            "SELECT SerializedCommands FROM CommandSequence WHERE ButtonId = ?",
-            (nav_id,),
+        if button is None:
+            continue  # _check_button_content reports it
+        if not _is_guid(button["UniqueId"]):
+            problems.append(f"Button {button['Id']} has no GUID UniqueId.")
+        ref = conn.execute(
+            "SELECT * FROM ElementReference WHERE Id = ?",
+            (button["ElementReferenceId"],),
         ).fetchone()
-        if commands is None or page_uuid not in (commands[0] or ""):
+        if ref is None or ref["PageId"] != page_id:
+            problems.append(f"Button {spec['label']!r} is not attached to the page.")
+            continue
+        sequences = conn.execute(
+            "SELECT COUNT(*) FROM CommandSequence WHERE ButtonId = ?", (button["Id"],)
+        ).fetchone()[0]
+        if sequences != 1:
             problems.append(
-                "Navigation button's CommandSequence doesn't reference the new page."
+                f"Button {spec['label']!r} has {sequences} CommandSequence rows; "
+                "expected 1."
+            )
+        placements = conn.execute(
+            "SELECT * FROM ElementPlacement WHERE ElementReferenceId = ?", (ref["Id"],)
+        ).fetchall()
+        if len(placements) != 1:
+            problems.append(
+                f"Button {spec['label']!r} has {len(placements)} placements; expected 1."
+            )
+            continue
+        placement = placements[0]
+        if placement["PageLayoutId"] != layout_id:
+            problems.append(
+                f"Button {spec['label']!r} was placed in the wrong page layout."
+            )
+        if not placement["GridSpan"]:
+            problems.append(f"Button {spec['label']!r} is missing GridSpan.")
+        expected_position = f"{spec['slot'] % cols},{spec['slot'] // cols}"
+        if placement["GridPosition"] != expected_position:
+            problems.append(
+                f"Button {spec['label']!r} is in cell "
+                f"{placement['GridPosition']!r}; expected {expected_position!r}."
+            )
+        if conn.execute(
+            "SELECT COUNT(*) FROM ElementPlacement WHERE PageLayoutId = ? "
+            "AND GridPosition = ? AND Visible = 1",
+            (layout_id, expected_position),
+        ).fetchone()[0] != 1:
+            problems.append(
+                f"Cell {expected_position} holds more than one visible button "
+                f"after adding {spec['label']!r}."
             )
 
-    return problems
+    return problems + _check_button_content(conn, report.get("buttons", []))
 
 
 # Tables add_category_page is allowed to touch. Anything else changing is a bug.

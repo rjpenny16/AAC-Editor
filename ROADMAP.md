@@ -23,10 +23,11 @@ The gaps are elsewhere, and three of them are serious:
    no autosave, no recovery. Composing a large topic page — labels, spoken messages, function
    assignments, drag placements — and then reloading loses all of it. This is the clearest
    user-facing failure mode in the product and it is small to fix.
-2. ~~**The app is add-only.**~~ *Phase 4a closed the first half of this: TD Snap live can now change
-   and remove a speaking button.* Moving a button and choosing its symbol are still hand work
-   (Phase 4c), and there is still no user-initiated undo once an edit lands in the real page set;
-   only failure-path rollback exists (Phase 4b).
+2. ~~**The app is add-only.**~~ *Closed across Phase 4. TD Snap live can change, move, swap, and
+   remove a speaking button; an applied edit can be undone once, through the same review step; and
+   exported files add to an existing page rather than only creating one. Symbol control landed as
+   control over the search rather than the pick — see 4c for why the accessibility surface stops it
+   there.*
 3. **`live.py` and `grid3.py` each carry their own copy of the UI-Automation helper layer.** Twelve
    identically-named functions exist in both files and have already diverged in behaviour. Building
    Grid 3 parity on top of that multiplies the divergence.
@@ -246,30 +247,62 @@ existing chip-editor dialog pre-filled, and give removals their own review card 
 so the confirm button reads e.g. *"Change 2 and remove 1 button on Snacks."* New verification checks:
 changed buttons say what was asked · removed buttons are gone · nothing else on the page changed.
 
-### 4b — Undo my last change
+### 4b — Undo my last change — **shipped**
 
-Once an edit runs today, the buttons are in the user's real, synced page set with no way back. Only
-failure-path rollback exists; the mitigation is procedural documentation, which relies on the user
-having read it *before* the mistake.
+The edit that would reverse the last applied one is retained for the session and offered as a
+single-level **"Undo my last change"** that replays through the same `apply_page_edits` spine — the
+same review, fingerprint guard, edit-mode session, verification, and rollback as any other edit. The
+fingerprint recorded is the page's token *after* the edit, so the ordinary guard refuses the replay the
+moment anything else touches the page, a TD Snap sync included.
 
-This lands here because it needs exactly the content-snapshot machinery 4a builds. Retain the
-snapshot of the last applied edit for the session and offer a single-level **"Undo my last change"**
-that replays it in reverse through the same review-and-verify flow. Be explicit in the UI that it
-cannot reach back past a TD Snap sync.
+Three limits, each stated in the UI rather than discovered: this process and this session only (never
+persisted — a snapshot that outlived a restart could not know whether TD Snap had synced); one level
+(undoing does not become undoable); and a re-created button is a new button, so its symbol comes from a
+fresh search and a border color outside the five clinical colors cannot be written back. The last two
+are named on the review screen before the undo runs.
 
-### 4c — Move, reorder, and symbol control
+One deliberate departure from the plan above: the snapshot lives in the server process rather than the
+browser, because `_prior_content` is what has to trust it. The frontend renders the description the
+server hands it and asks for the replay; it never holds the restoration data itself.
 
-- **Move and swap existing buttons.** The drag and keyboard placement editor already exists for new
-  buttons; extend it to unlocked existing ones.
-- **Symbol control.** Symbol choice is delegated entirely to TD Snap's own search and surfaces only
-  as a warning when it fails. Show the candidates the search already returns, let the user pick, and
-  let them skip. No new file format is needed, and it is the control AAC editors are asked for most.
-- **Close the file-mode gap.** Exported-file mode can only *create* pages. Add an add-to-existing
-  path so all three providers converge on the same operation set.
+### 4c — Move, reorder, and symbol control — **shipped**
+
+- **Move and swap existing buttons.** Unlocked existing buttons are movable in the placement editor by
+  drag and by arrow key, and dropping one on another trades their places. Moves travel as
+  `moves: [{slot, to}]` in the same reviewed edit, verified in both cells.
+
+  TD Snap exposes no "put this button in that cell" command, so a move is a real drag — and only ever
+  onto a cell that is empty, because what TD Snap does when a button is dropped onto an occupied one is
+  not predictable from its accessibility surface. A swap is therefore built from that one primitive:
+  park one button in a spare cell, move the other, collect the first (`_move_order`, which breaks
+  longer rings the same way). A page with no spare cell refuses the swap by name.
+- **Symbol control** — *partially delivered; the gap is the accessibility surface, not the work.*
+  Per-button **skip** and per-button **search words** shipped (a phrase button labelled "more please"
+  can search "more"), and the result now names which buttons ended up without a symbol and which used a
+  web image instead of TD Snap's own library.
+
+  **Picking from the candidates did not ship.** TD Snap's symbol-search results expose neither readable
+  names nor images through UI Automation — the result list is matched on a control-type string alone —
+  and the search only opens inside the button editor, on a button that already exists. Rendering
+  thumbnails in the browser would mean screenshotting TD Snap, and offering an unlabelled "first /
+  second / third" is a lottery rather than control. Consistent with the rule this project holds
+  elsewhere, the feature stops at what the app exposes: control over the *query*, not the pick.
+  Revisit if a future TD Snap release names its results.
+- **Close the file-mode gap.** Exported files add to an existing page as well as creating one, through
+  `builder.add_buttons_to_page`, with a fingerprint guard, whole-file validation before and after, and
+  `validate.validate_added_buttons`. Existing buttons there are listed and locked: changing and
+  removing on the file path needs its own prior-content snapshot and rollback, and saying so beats
+  offering a control that would do something else.
 
 **Exit:** a user can fix a typo, retire a word, move a button, choose its symbol, and undo the last
 change — each with a review step and working rollback · destructive failures restore exact prior
-content, not merely prior shape · write-path coverage ≥75%.
+content, not merely prior shape · write-path coverage ≥75% (`builder.py` 95%, `validate.py` 88%;
+`live.py` sits at 63%, bounded by the Windows-only automation a Linux CI box cannot execute — its pure
+planning and verification logic is covered against fakes).
+
+Still outstanding for this phase, as for 4a: the `TDSNAP_LIVE_E2E=1` run on real hardware, the only
+thing that can confirm drag-to-move and the delete-action discovery against a live TD Snap editing
+panel.
 
 ---
 
@@ -446,12 +479,23 @@ Per PR:
 ```bash
 python -m pytest
 ruff check tdsnap tests packaging scripts
-mypy tdsnap                                     # from Phase 1 on
-coverage run -m pytest && coverage report       # must clear the phase's floor
-npx eslint . && npx prettier --check .          # from Phase 1 on
+coverage run -m pytest && python scripts/check_coverage.py      # per-module floors
+npm run lint                                    # from Phase 1 on: eslint + stylelint
+npm run test:unit                               # from Phase 1 on
 npm ci && npx playwright install chromium && npm run test:e2e   # includes axe
-node --test tests/js                            # from Phase 1 on
 ```
+
+Two commands this list carried until Phase 4c have been corrected to what CI actually runs, because
+neither passed as written: `node --test tests/js` resolves the path as a module on current Node (the
+`test:unit` script globs the files), and `coverage report` alone checks the global floor rather than
+the per-module ones that matter on the write path. `mypy tdsnap` is dropped from the per-PR list — it
+has never been wired into CI and reports ~125 pre-existing errors, most of them the `Item = Union[str,
+dict[str, object]]` weakness in `builder.py`. Typing the item model properly is worth a phase entry of
+its own; a command in this list that nobody can pass is worth less than no command.
+
+`npx prettier --check .` is also not a gate: the repo has never been prettier-clean (`npm run format`
+would rewrite 300+ files). Formatting is applied to the frontend as it is split into modules — see
+`.prettierignore`.
 
 End to end, per phase:
 
