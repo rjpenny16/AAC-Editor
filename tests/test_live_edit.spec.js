@@ -63,7 +63,11 @@ async function mockTD(page, options = {}) {
    rather than hitting it — the same store persisting across page.goto calls
    in one test lets a test simulate "the next launch" without a real restart. */
 async function mockSettings(page, initial = {}) {
-  const store = { preferences: initial.preferences || {}, draft: initial.draft || null };
+  const store = {
+    preferences: initial.preferences || {},
+    draft: initial.draft || null,
+    templates: initial.templates || [],
+  };
   await page.route('**/api/settings', (route) => {
     const method = route.request().method();
     if (method === 'GET') return fulfillJson(route, { ok: true, ...store });
@@ -71,11 +75,15 @@ async function mockSettings(page, initial = {}) {
       const body = route.request().postDataJSON() || {};
       store.preferences = body.preferences || {};
       store.draft = body.draft || null;
+      // Mirrors the server: an absent key leaves saved templates alone, so the
+      // draft autosave cannot wipe them.
+      if ('templates' in body) store.templates = body.templates || [];
       return fulfillJson(route, { ok: true });
     }
     if (method === 'DELETE') {
       store.preferences = {};
       store.draft = null;
+      store.templates = [];
       return fulfillJson(route, { ok: true });
     }
     return route.continue();
@@ -2400,5 +2408,253 @@ test.describe('duplicates elsewhere in the page set', () => {
     await expect(summary).toContainText('Already elsewhere in this page set');
     await expect(summary).toContainText('“more” on Core Words');
     await expect(summary).toContainText('“help” on Core Words');
+  });
+});
+
+
+/* Reusable topic templates.
+ *
+ * The caseload case: an SLP builds a good Swimming page once and wants it for
+ * the next client, and the next. These pin the parts that make that reuse
+ * safe — a template carries vocabulary and nothing tied to one page set, it
+ * survives the draft autosave that runs between saving and reusing it, and
+ * applying it to a page that cannot hold it all says so rather than dropping
+ * words quietly.
+ */
+test.describe('reusable topic templates', () => {
+  // More options may already be open from an earlier step in the same test;
+  // clicking the summary again would close it.
+  async function openTemplates(page) {
+    const options = page.locator('.more-options');
+    if (!(await options.evaluate((node) => node.open))) {
+      await options.locator('> summary').click();
+    }
+    await page.locator('#templates-btn').click();
+    await expect(page.locator('#templates-dialog')).toBeVisible();
+  }
+
+  test('a topic page saved once is added to a different page set', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Topics Menu Page'], grid: { cols: 4, rows: 3 } }),
+      layout: defaultLayout('Topics Menu Page', {
+        grid: { cols: 4, rows: 3 },
+        free_slots: Array.from({ length: 12 }, (_, index) => index),
+        fingerprint: 'topics-v1',
+      }),
+    });
+
+    await newItems(page, 'Swimming');
+    await page.locator('.more-options > summary').click();
+    await page.locator('#layout-options-btn').click();
+    await page.locator('#style-topic').click();
+    await page.locator('#layout-back-btn').click();
+    await page.locator('#word-input').fill('Splash, Jump in, Too cold');
+    await page.locator('#word-input').press('Enter');
+    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+
+    await openTemplates(page);
+    await page.locator('#template-name').fill('Swimming');
+    await page.locator('#template-save-btn').click();
+    await expect(page.locator('#template-save-hint')).toContainText('Saved “Swimming”');
+    await expect(page.locator('#template-list li')).toContainText('3 buttons');
+    await expect(page.locator('#template-list li')).toContainText('topic-page rows');
+
+    // What was stored is vocabulary, not this page set: no page id, no
+    // fingerprint, no title.
+    expect(store.templates).toHaveLength(1);
+    const saved = JSON.stringify(store.templates[0]);
+    expect(saved).not.toContain('topics-v1');
+    expect(saved).not.toContain('Topics Menu Page');
+    expect(store.templates[0].page_style).toBe('topic');
+    expect(store.templates[0].items.map((item) => item.label))
+      .toEqual(['Splash', 'Jump in', 'Too cold']);
+
+    // The next launch, against a different page set, reuses it.
+    await page.locator('#templates-dialog button[value="close"]').click();
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Activities'], grid: { cols: 4, rows: 3 } }),
+      layout: defaultLayout('Activities', {
+        grid: { cols: 4, rows: 3 },
+        free_slots: Array.from({ length: 12 }, (_, index) => index),
+        fingerprint: 'activities-v1',
+      }),
+    });
+    await newItems(page, 'Pool');
+    await openTemplates(page);
+    await page.locator('#template-list button[aria-label="Use template Swimming"]').click();
+
+    await expect(page.locator('#template-summary')).toContainText('Added 3 buttons from “Swimming”');
+    await page.locator('#templates-dialog button[value="close"]').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+    // The saved page style came with it, so the topic-page rows are back.
+    await expect(page.locator('#style-topic')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('the autosaved draft does not wipe a saved template', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-input').press('Enter');
+    await openTemplates(page);
+    await page.locator('#template-name').fill('Snacks');
+    await page.locator('#template-save-btn').click();
+    await expect(page.locator('#template-save-hint')).toContainText('Saved “Snacks”');
+    await page.locator('#templates-dialog button[value="close"]').click();
+
+    // The draft autosave writes preferences and draft every few seconds and
+    // says nothing about templates; the template must still be there after.
+    await page.locator('#word-input').fill('pear');
+    await page.locator('#word-input').press('Enter');
+    await expect.poll(() => store.draft && store.draft.items.length).toBe(2);
+    expect(store.templates.map((template) => template.name)).toEqual(['Snacks']);
+
+    await openTemplates(page);
+    await expect(page.locator('#template-list li')).toContainText('Snacks');
+  });
+
+  test('a template too big for the page names what would not fit', async ({ page }) => {
+    await mockSettings(page, {
+      templates: [{
+        name: 'Swimming',
+        page_style: 'words',
+        saved_at: 1700000000,
+        items: [
+          { label: 'Splash', message: null, fn: '', slot: 0, symbol: true, symbol_query: null },
+          { label: 'Jump in', message: null, fn: '', slot: 1, symbol: true, symbol_query: null },
+          { label: 'Too cold', message: null, fn: '', slot: 2, symbol: true, symbol_query: null },
+          { label: 'apple', message: null, fn: '', slot: 3, symbol: true, symbol_query: null },
+        ],
+      }],
+    });
+    // One free cell besides the two the template will fill, and "apple" is
+    // already on the page.
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating', {
+        buttons: [{
+          slot: 0, label: 'apple', message: null, function: null, symbol: true,
+          editable: false, locked_reason: 'Existing TD Snap button',
+        }],
+        free_slots: [1, 2],
+      }),
+    });
+
+    await existingItems(page);
+    await openTemplates(page);
+    await page.locator('#template-list button[aria-label="Use template Swimming"]').click();
+
+    const summary = page.locator('#template-summary');
+    await expect(summary).toContainText('Added 2 buttons from “Swimming”');
+    await expect(summary).toContainText('Already on Eating');
+    await expect(summary).toContainText('apple');
+    await expect(summary).toContainText('Eating does not have room for');
+    await expect(summary).toContainText('Too cold');
+
+    await page.locator('#templates-dialog button[value="close"]').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#capacity')).toHaveText('2 added · 0 spaces left');
+  });
+
+  test('a template saved on a bigger grid keeps its words and re-slots them', async ({ page }) => {
+    await mockSettings(page, {
+      templates: [{
+        name: 'Swimming',
+        page_style: 'words',
+        saved_at: 1700000000,
+        // Cells from an 8x5 page; none of these exist on a 3x2 one.
+        items: [
+          { label: 'Splash', message: 'Big splash', fn: '', slot: 31, symbol: true, symbol_query: null },
+          { label: 'Jump in', message: null, fn: '', slot: 37, symbol: false, symbol_query: null },
+        ],
+      }],
+    });
+    await mockTD(page);
+
+    await existingItems(page);
+    await openTemplates(page);
+    await page.locator('#template-list button[aria-label="Use template Swimming"]').click();
+    await expect(page.locator('#template-summary')).toContainText('Added 2 buttons');
+    await page.locator('#templates-dialog button[value="close"]').click();
+
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#preview .cell.used')).toHaveCount(2);
+    // The message and the "no symbol" choice travelled with the words.
+    await expect(page.locator('.chip-body').filter({ hasText: 'Splash' }))
+      .toHaveAttribute('title', 'Speaks: “Big splash”');
+  });
+
+  test('deleting a template removes it for the next launch too', async ({ page }) => {
+    const store = await mockSettings(page, {
+      templates: [
+        { name: 'Swimming', page_style: 'words', saved_at: 1, items: [{ label: 'Splash', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+        { name: 'Zoo', page_style: 'words', saved_at: 2, items: [{ label: 'Lion', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+      ],
+    });
+    await mockTD(page);
+
+    await existingItems(page);
+    await openTemplates(page);
+    // Sorted by name, so Swimming is first and Zoo second.
+    await expect(page.locator('#template-list li strong')).toHaveText(['Swimming', 'Zoo']);
+
+    await page.locator('#template-list button[aria-label="Delete template Swimming"]').click();
+    await expect(page.locator('#template-list li strong')).toHaveText(['Zoo']);
+    await expect(page.locator('#template-save-hint')).toContainText('Deleted “Swimming”');
+    expect(store.templates.map((template) => template.name)).toEqual(['Zoo']);
+  });
+
+  test('the settings panel names the templates Clear all would throw away', async ({ page }) => {
+    await mockSettings(page, {
+      templates: [
+        { name: 'Zoo', page_style: 'words', saved_at: 2, items: [{ label: 'Lion', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+        { name: 'Swimming', page_style: 'words', saved_at: 1, items: [{ label: 'Splash', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+      ],
+    });
+    await mockTD(page);
+    await openEditor(page);
+
+    await page.locator('#settings-panel-btn').click();
+    await expect(page.locator('#settings-panel')).toBeVisible();
+    // Named, and never "Nothing saved yet" while they are on disk.
+    await expect(page.locator('#settings-panel-list')).toContainText('Saved templates');
+    await expect(page.locator('#settings-panel-list')).toContainText('Swimming, Zoo');
+
+    await page.locator('#settings-clear-btn').click();
+    await expect(page.locator('#settings-panel-list')).toContainText('Nothing saved yet');
+  });
+
+  test('saving without a name says so instead of saving', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-input').press('Enter');
+    await openTemplates(page);
+    await page.locator('#template-save-btn').click();
+
+    await expect(page.locator('#template-save-hint'))
+      .toContainText('Give the template a name');
+    await expect(page.locator('#template-name')).toBeFocused();
+    expect(store.templates).toEqual([]);
+  });
+
+  test('the templates dialog has no serious or critical accessibility violations', async ({ page }) => {
+    await mockSettings(page, {
+      templates: [{
+        name: 'Swimming', page_style: 'words', saved_at: 1,
+        items: [{ label: 'Splash', message: null, fn: '', slot: null, symbol: true, symbol_query: null }],
+      }],
+    });
+    await mockTD(page);
+
+    await existingItems(page);
+    await openTemplates(page);
+    await expect(page.locator('#template-list li')).toContainText('Swimming');
+
+    expect(await blockingViolations(page)).toEqual([]);
   });
 });

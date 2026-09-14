@@ -251,6 +251,7 @@
           <div class="more-options-body">
             <button type="button" id="layout-options-btn" class="btn btn-secondary">Change page layout</button>
             <button type="button" id="import-list-btn" class="btn btn-secondary">Import a word list</button>
+            <button type="button" id="templates-btn" class="btn btn-secondary">Templates</button>
 
             <details class="ai-suggest" id="ai-suggest">
               <summary><span id="ai-summary-text">Help me think of words</span> <span class="optional-tag">Optional · local by default</span></summary>
@@ -475,6 +476,32 @@
     <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
   </div>
 </footer>
+
+<dialog id="templates-dialog" class="chip-dialog import-dialog" aria-labelledby="templates-dialog-title">
+  <form method="dialog" id="templates-form">
+    <h2 id="templates-dialog-title">Templates</h2>
+    <p class="field-hint">A template is a set of words, their layout, and their topic-page rows,
+      saved on this computer. Build a topic page once and reuse it for anyone.</p>
+
+    <div class="field">
+      <label for="template-name">Save what you have now as</label>
+      <div class="import-file-row">
+        <input id="template-name" type="text" autocomplete="off" maxlength="60"
+          placeholder="For example, Swimming">
+        <button type="button" id="template-save-btn" class="btn btn-secondary btn-compact">Save template</button>
+      </div>
+      <p id="template-save-hint" class="field-hint"></p>
+    </div>
+
+    <h3>Saved templates</h3>
+    <ul id="template-list" class="template-list"></ul>
+    <div id="template-summary" class="import-summary" role="status" aria-live="polite" hidden></div>
+
+    <div class="dialog-actions">
+      <button type="submit" class="btn btn-ghost" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="import-dialog" class="chip-dialog import-dialog" aria-labelledby="import-dialog-title">
   <form method="dialog" id="import-form">

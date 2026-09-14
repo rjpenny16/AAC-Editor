@@ -422,7 +422,7 @@ def test_settings_start_empty_and_read_needs_no_token(client, monkeypatch, tmp_p
     response = client.get("/api/settings")
     assert response.status_code == 200
     data = response.get_json()
-    assert data == {"ok": True, "preferences": {}, "draft": None}
+    assert data == {"ok": True, "preferences": {}, "draft": None, "templates": []}
 
 
 def test_settings_write_requires_token(client):
@@ -522,6 +522,115 @@ def test_settings_rejects_malformed_draft_items(client, monkeypatch, tmp_path):
         headers=token_headers(),
     )
     assert response.status_code == 400
+
+
+# ---------- reusable topic templates ----------
+
+
+def _saved_template(name="Swimming", **overrides):
+    template = {
+        "name": name,
+        "page_style": "topic",
+        "saved_at": 1700000000,
+        "items": [
+            {"label": "Splash", "message": "Big splash", "fn": "comment", "slot": 4,
+             "symbol": True, "symbol_query": "water"},
+        ],
+    }
+    template.update(overrides)
+    return template
+
+
+def test_templates_roundtrip_through_the_settings_endpoint(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": [_saved_template()]},
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    stored = client.get("/api/settings").get_json()["templates"]
+    assert stored == [_saved_template()]
+
+
+def test_a_draft_autosave_cannot_wipe_saved_templates(client, monkeypatch, tmp_path):
+    """The autosave PUTs preferences and draft every few seconds and says
+    nothing about templates; an absent key must mean "leave them alone"."""
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": [_saved_template()]},
+        headers=token_headers(),
+    )
+    client.put(
+        "/api/settings",
+        json={"preferences": {"provider": "tdsnap"}, "draft": {"items": [{"label": "pear"}]}},
+        headers=token_headers(),
+    )
+    data = client.get("/api/settings").get_json()
+    assert [template["name"] for template in data["templates"]] == ["Swimming"]
+    assert data["draft"]["items"][0]["label"] == "pear"
+
+    # An explicit empty list is still how they are cleared.
+    client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": []},
+        headers=token_headers(),
+    )
+    assert client.get("/api/settings").get_json()["templates"] == []
+
+
+def test_a_template_carries_nothing_tied_to_one_page_set(client, monkeypatch, tmp_path):
+    """Vocabulary transfers between clients; page ids and fingerprints do not."""
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": [
+            _saved_template(page_id=7, fingerprint="eating-v1", target_page="Eating"),
+        ]},
+        headers=token_headers(),
+    )
+    stored = client.get("/api/settings").get_json()["templates"][0]
+    assert set(stored) == {"name", "page_style", "saved_at", "items"}
+
+
+@pytest.mark.parametrize(
+    "templates, reason",
+    [
+        ("not-a-list", "templates must be a list"),
+        ([{"page_style": "topic", "items": [{"label": "x"}]}], "a template needs a name"),
+        ([{"name": "x" * 61, "page_style": "topic", "items": [{"label": "x"}]}], "name too long"),
+        ([{"name": "Swimming", "page_style": "sideways", "items": [{"label": "x"}]}], "bad style"),
+        ([{"name": "Swimming", "page_style": "topic", "items": []}], "nothing to save"),
+        ([{"name": "Swimming", "page_style": "topic",
+           "items": [{"label": "x", "fn": "not-a-function"}]}], "bad item"),
+        ([{"name": "Swim", "page_style": "topic", "items": [{"label": "x"}]},
+          {"name": "swim", "page_style": "topic", "items": [{"label": "y"}]}], "same name twice"),
+        ([_saved_template(name=f"t{index}") for index in range(51)], "too many"),
+    ],
+)
+def test_settings_rejects_malformed_templates(client, monkeypatch, tmp_path, templates, reason):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": templates},
+        headers=token_headers(),
+    )
+    assert response.status_code == 400, reason
+    # A rejected write changes nothing, so a good template already saved stays.
+    assert client.get("/api/settings").get_json()["templates"] == []
+
+
+def test_the_template_limit_admits_a_full_caseload(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None,
+              "templates": [_saved_template(name=f"t{index}") for index in range(50)]},
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    assert len(client.get("/api/settings").get_json()["templates"]) == 50
 
 
 # ---------- session survivability ----------

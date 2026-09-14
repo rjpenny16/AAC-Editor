@@ -52,7 +52,12 @@ def settings_path() -> str:
 
 
 def _empty() -> dict:
-    return {"version": SETTINGS_VERSION, "preferences": {}, "draft": None}
+    return {
+        "version": SETTINGS_VERSION,
+        "preferences": {},
+        "draft": None,
+        "templates": [],
+    }
 
 
 def _quarantine(path: str) -> None:
@@ -84,25 +89,38 @@ def load() -> dict:
         _quarantine(path)
         return _empty()
     draft = data.get("draft")
+    templates = data.get("templates")
     return {
         "version": SETTINGS_VERSION,
         "preferences": data["preferences"],
         "draft": draft if isinstance(draft, dict) else None,
+        # A file written before templates existed simply has none, rather than
+        # being treated as corrupt — the whole point of quarantining a bad file
+        # is that a merely *older* one is not bad.
+        "templates": templates if isinstance(templates, list) else [],
     }
 
 
-def save(preferences: dict, draft: Optional[dict]) -> None:
-    """Atomically write *preferences* and *draft*.
+def save(preferences: dict, draft: Optional[dict], templates: Optional[list] = None) -> None:
+    """Atomically write *preferences*, *draft*, and *templates*.
 
     This is the only function that creates the file — a fresh install writes
     nothing until a caller reaches this. Temp-then-``os.replace`` mirrors
     ``Pageset.save_as``, so a crash mid-write leaves the previous file intact
     rather than a half-written one.
+
+    ``templates=None`` keeps whatever is already stored. A saved template is
+    work the user did deliberately and expects to find later, so a caller that
+    does not mention templates — the draft autosave, every few seconds — must
+    not be able to erase them. Passing ``[]`` is how they are actually cleared.
     """
+    if templates is None:
+        templates = load()["templates"]
     payload = {
         "version": SETTINGS_VERSION,
         "preferences": preferences,
         "draft": draft,
+        "templates": templates,
     }
     encoded = json.dumps(payload, indent=2)
     directory = _data_dir()

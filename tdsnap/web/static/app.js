@@ -17,6 +17,7 @@ import "./ai.js";
 import "./review.js";
 import "./draft.js";
 import "./importer.js";
+import "./templates.js";
 import "./settings-panel.js";
 
 

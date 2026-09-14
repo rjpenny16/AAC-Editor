@@ -270,6 +270,56 @@ def _validated_draft_items(value) -> list:
     return items
 
 
+# A saved template is the one thing in the settings file that is deliberate,
+# reusable work rather than a convenience, so it is bounded on its own terms:
+# enough for a real caseload, far short of anything that could bloat the file.
+MAX_TEMPLATES = 50
+MAX_TEMPLATE_NAME_CHARS = 60
+
+
+def _validated_templates(value) -> Optional[list]:
+    """Bound ``[{name, page_style, items}]``, or ``None`` to leave them alone.
+
+    Absent means "unchanged": the draft autosave PUTs every few seconds and
+    says nothing about templates, and it must not be able to wipe them. An
+    explicit empty list is how they are cleared.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise PagesetError("'templates' must be a list of saved templates.")
+    if len(value) > MAX_TEMPLATES:
+        raise PagesetError(f"No more than {MAX_TEMPLATES} templates can be saved.")
+    templates = []
+    names = set()
+    for template in value:
+        if not isinstance(template, dict):
+            raise PagesetError("Each template must be an object.")
+        name = _bounded_text(
+            template.get("name"), "template name", MAX_TEMPLATE_NAME_CHARS, required=True
+        )
+        folded = name.casefold()
+        if folded in names:
+            raise PagesetError(f"Two templates cannot both be called {name!r}.")
+        names.add(folded)
+        style = template.get("page_style")
+        if style not in {"words", "topic"}:
+            raise PagesetError("Each template's page style must be 'words' or 'topic'.")
+        saved_at = template.get("saved_at")
+        if saved_at is not None:
+            saved_at = _bounded_int(saved_at, "template saved_at", 0, 2**63 - 1)
+        items = _validated_draft_items(template.get("items", []))
+        if not items:
+            raise PagesetError(f"Template {name!r} has no buttons to save.")
+        templates.append({
+            "name": name,
+            "page_style": style,
+            "saved_at": saved_at,
+            "items": items,
+        })
+    return templates
+
+
 def _validated_draft(value) -> Optional[dict]:
     """Bound and shape a draft, or drop it entirely if there's nothing in it.
 
@@ -699,7 +749,12 @@ def diagnostics_report():
 def get_settings():
     """Remembered preferences and any recoverable draft — never page-set content."""
     data = settings.load()
-    return jsonify({"ok": True, "preferences": data["preferences"], "draft": data["draft"]})
+    return jsonify({
+        "ok": True,
+        "preferences": data["preferences"],
+        "draft": data["draft"],
+        "templates": data["templates"],
+    })
 
 
 @app.put("/api/settings")
@@ -710,7 +765,8 @@ def put_settings():
     payload = _json_payload()
     preferences = _validated_preferences(payload.get("preferences"))
     draft = _validated_draft(payload.get("draft"))
-    settings.save(preferences, draft)
+    templates = _validated_templates(payload.get("templates"))
+    settings.save(preferences, draft, templates)
     return jsonify({"ok": True})
 
 
