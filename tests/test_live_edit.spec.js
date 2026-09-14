@@ -2658,3 +2658,233 @@ test.describe('reusable topic templates', () => {
     expect(await blockingViolations(page)).toEqual([]);
   });
 });
+
+
+/* Multi-page batch.
+ *
+ * A caseload session is rarely one page. What these pin is that queueing does
+ * not weaken any of the guarantees a single page has: each queued page carries
+ * the payload its own review froze, the batch is reviewed as one list before
+ * anything is written, and every queued page is reported on afterwards —
+ * including the ones never attempted, which is the failure mode a batch is
+ * uniquely able to hide.
+ */
+test.describe('queueing several pages and applying them together', () => {
+  function threePages() {
+    return {
+      status: defaultStatus({ pages: ['Eating', 'Games', 'Swimming'] }),
+      layout: (requested) => defaultLayout(requested || 'Eating'),
+    };
+  }
+
+  async function composeFor(page, pageName, word) {
+    await page.locator('#wizard-items .wizard-back').click();
+    await expect(page.locator('#wizard-destination')).toBeVisible();
+    await page.locator('#parent-select').selectOption(pageName);
+    await page.locator('#wizard-destination .wizard-next').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await page.locator('#word-input').fill(word);
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#step-result')).toBeVisible();
+  }
+
+  async function queueFor(page, pageName, word) {
+    await composeFor(page, pageName, word);
+    await page.locator('#queue-add-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+  }
+
+  test('two queued pages are applied in order and each is reported', async ({ page }) => {
+    let submitted = null;
+    await mockTD(page, threePages());
+    await page.route('**/api/tdsnap/batch', (route) => {
+      submitted = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true,
+        applied: 2,
+        undo_page: 'Games',
+        undo: null,
+        results: [
+          { page: 'Eating', status: 'applied',
+            report: { page: 'Eating', buttons: 1, changed: 0, removed: 0, moved: 0,
+                      checks: { td_snap_edit: 'pass', content: 'pass', positions: 'pass' },
+                      warnings: [] } },
+          { page: 'Games', status: 'applied',
+            report: { page: 'Games', buttons: 1, changed: 0, removed: 0, moved: 0,
+                      checks: { td_snap_edit: 'pass', content: 'pass', positions: 'pass' },
+                      warnings: [] } },
+        ],
+      });
+    });
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    // The queue is visible while the next page is composed, and the chip box
+    // was cleared rather than carrying the first page's words along.
+    await expect(page.locator('#queue-banner')).toBeVisible();
+    await expect(page.locator('#queue-list li')).toHaveCount(1);
+    await expect(page.locator('#chipbox .chip')).toHaveCount(0);
+
+    await queueFor(page, 'Games', 'chess');
+    await expect(page.locator('#queue-list li')).toHaveCount(2);
+
+    await page.locator('#queue-review-btn').click();
+    await expect(page.locator('#step-result')).toBeVisible();
+    await expect(page.locator('#result-eyebrow')).toHaveText('Review');
+    await expect(page.locator('#review-action')).toContainText('Apply 2 queued pages');
+    await expect(page.locator('#review-queue li')).toHaveCount(2);
+    await expect(page.locator('#review-queue li').first()).toContainText('Eating');
+    // Undo is single-level; the review says so rather than leaving it to be
+    // discovered after two pages have been written.
+    await expect(page.locator('#review-undo-note')).toContainText('Undo reaches back one page only');
+
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#success-state')).toBeVisible();
+
+    // Each queued page went over as its own entry, in the order queued, with
+    // the fingerprint its own review was checked against.
+    expect(submitted.entries.map((entry) => entry.page)).toEqual(['Eating', 'Games']);
+    expect(submitted.entries[0].items.map((item) => item.label)).toEqual(['apple']);
+    expect(submitted.entries[0].fingerprint).toBe('eating-v1');
+    expect(submitted.entries[1].fingerprint).toBe('games-v1');
+
+    await expect(page.locator('#result-heading')).toContainText('2 pages were updated');
+    await expect(page.locator('#batch-outcome li')).toHaveCount(2);
+    await expect(page.locator('#batch-outcome li').first()).toContainText('Applied');
+    // The queue is spent, not silently still holding the pages just written.
+    await expect(page.locator('#queue-banner')).toBeHidden();
+  });
+
+  test('a page that could not be applied is named, and so is the one never tried', async ({ page }) => {
+    await mockTD(page, threePages());
+    await page.route('**/api/tdsnap/batch', (route) => fulfillJson(route, {
+      ok: true,
+      applied: 1,
+      undo_page: 'Eating',
+      undo: null,
+      results: [
+        { page: 'Eating', status: 'applied',
+          report: { page: 'Eating', buttons: 1, changed: 0, removed: 0, moved: 0,
+                    checks: { td_snap_edit: 'pass', content: 'pass', symbols: 'partial' },
+                    warnings: ['TD Snap found no symbol for “apple”.'] } },
+        { page: 'Games', status: 'failed',
+          error: 'TD Snap did not verify it. The original page was restored.' },
+        { page: 'Swimming', status: 'skipped' },
+      ],
+    }));
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    await queueFor(page, 'Games', 'chess');
+    await queueFor(page, 'Swimming', 'splash');
+    await page.locator('#queue-review-btn').click();
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#success-state')).toBeVisible();
+
+    await expect(page.locator('#result-eyebrow')).toHaveText('Partly complete');
+    await expect(page.locator('#result-heading')).toContainText('1 of 3 pages were applied');
+    const outcome = page.locator('#batch-outcome li');
+    await expect(outcome).toHaveCount(3);
+    await expect(outcome.nth(1)).toContainText('put back the way it was');
+    await expect(outcome.nth(1)).toContainText('The original page was restored');
+    // The page nobody touched says so, rather than being left off the list.
+    await expect(outcome.nth(2)).toContainText('Swimming');
+    await expect(outcome.nth(2)).toContainText('Not attempted');
+    // A warning stays attached to the page that raised it.
+    await expect(page.locator('#result-warnings')).toContainText('Eating: TD Snap found no symbol');
+    // One page's partial check is not hidden behind the other page's pass.
+    await expect(page.locator('#checks li.warning')).toContainText('needs review');
+  });
+
+  test('a page already in the queue cannot be queued twice, and says why', async ({ page }) => {
+    await mockTD(page, threePages());
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    await composeFor(page, 'Eating', 'pear');
+
+    await expect(page.locator('#queue-add-btn')).toBeHidden();
+    await expect(page.locator('#queue-add-note'))
+      .toContainText('“Eating” is already in the queue');
+    // Applying this one page on its own is still available.
+    await expect(page.locator('#confirm-update-btn')).toBeVisible();
+  });
+
+  test('a queued page can be taken back out', async ({ page }) => {
+    await mockTD(page, threePages());
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    await queueFor(page, 'Games', 'chess');
+    await expect(page.locator('#queue-list li')).toHaveCount(2);
+
+    await page.locator('#queue-list button[aria-label="Remove Eating from the queue"]').click();
+    await expect(page.locator('#queue-list li')).toHaveCount(1);
+    await expect(page.locator('#queue-list li')).toContainText('Games');
+    await expect(page.locator('#queue-review-btn')).toHaveText('Review and apply 1 page');
+  });
+
+  test('work left in the chip box is named as not being in the batch', async ({ page }) => {
+    await mockTD(page, threePages());
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    // Compose something for another page but do not queue it.
+    await page.locator('#wizard-items .wizard-back').click();
+    await page.locator('#parent-select').selectOption('Games');
+    await page.locator('#wizard-destination .wizard-next').click();
+    await page.locator('#word-input').fill('chess');
+    await page.locator('#word-input').press('Enter');
+
+    await page.locator('#queue-review-btn').click();
+    await expect(page.locator('#review-undo-note'))
+      .toContainText('Not in this batch, and not applied by it');
+    await expect(page.locator('#review-undo-note')).toContainText('Games');
+  });
+
+  test('the queue is not offered where a batch cannot be applied', async ({ page }) => {
+    // Creating a new page is not an edit to an existing one, so there is
+    // nothing to batch — the button must not promise otherwise.
+    await mockTD(page, threePages());
+
+    await newItems(page, 'Dinosaurs');
+    await page.locator('#word-input').fill('Roar');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#step-result')).toBeVisible();
+    await expect(page.locator('#queue-add-btn')).toBeHidden();
+    await expect(page.locator('#queue-add-note')).toBeHidden();
+  });
+
+  test('quitting with pages queued warns that they would be lost', async ({ page }) => {
+    // The queue is held only in this tab and deliberately not autosaved: every
+    // entry carries a live fingerprint that would be stale on the next launch.
+    // So losing it has to be hard, which is what this guards.
+    await mockTD(page, threePages());
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+
+    let asked = "";
+    page.on('dialog', (dialog) => {
+      asked = dialog.message();
+      return dialog.dismiss();
+    });
+    await page.locator('#quit-btn').click();
+    await expect.poll(() => asked).toContain('1 page queued but not yet applied');
+    // Dismissed, so the app is still running and the queue is still there.
+    await expect(page.locator('#queue-list li')).toHaveCount(1);
+  });
+
+  test('the batch review has no serious or critical accessibility violations', async ({ page }) => {
+    await mockTD(page, threePages());
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    await queueFor(page, 'Games', 'chess');
+    await page.locator('#queue-review-btn').click();
+    await expect(page.locator('#review-queue li')).toHaveCount(2);
+
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});

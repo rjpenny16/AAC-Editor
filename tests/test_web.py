@@ -726,6 +726,80 @@ def test_edit_plan_bounds_changes_and_removals_before_the_write_path(client):
     ]
 
 
+# ---------- multi-page batch ----------
+
+
+def _batch(client, entries, headers=None):
+    return client.post(
+        "/api/tdsnap/batch",
+        json={"entries": entries},
+        headers={**token_headers(), "X-TDSnap-Editor": "1"} if headers is None else headers,
+    )
+
+
+def test_a_batch_needs_the_same_header_every_other_live_mutation_needs(client):
+    """The header forces a cross-origin preflight, so no other page can drive it."""
+    entries = [{"page": "Eating", "items": [{"label": "apple", "slot": 0}],
+                "fingerprint": "v1"}]
+    assert _batch(client, entries, headers=token_headers()).status_code == 400
+    assert client.post(
+        "/api/tdsnap/batch", json={"entries": entries},
+        headers={"X-TDSnap-Editor": "1"},
+    ).status_code == 403
+
+
+def test_a_batch_bounds_every_queued_page_before_the_write_path(client, monkeypatch):
+    """A batch adds sequencing, not a new way to describe an edit — so each
+    entry has to clear exactly the checks a single-page edit clears."""
+    called = []
+    monkeypatch.setattr(server.live, "apply_batch",
+                        lambda entries: called.append(entries) or {"results": [], "applied": 0,
+                                                                   "undo_page": None})
+    monkeypatch.setattr(server.live, "last_edit", lambda: None)
+
+    good = {"page": "Eating", "items": [{"label": "apple", "slot": 0}], "fingerprint": "v1"}
+    assert _batch(client, [good]).status_code == 200
+    assert called == [[{"page": "Eating", "items": [{"label": "apple", "slot": 0}],
+                        "changes": [], "removals": [], "moves": [], "fingerprint": "v1"}]]
+
+    called.clear()
+    assert _batch(client, "not a list").status_code == 400
+    assert _batch(client, ["not an object"]).status_code == 400
+    assert _batch(client, [{**good, "page": ""}]).status_code == 400
+    assert _batch(client, [{**good, "page": "x" * 121}]).status_code == 400
+    assert _batch(client, [{**good, "items": [{"label": "x" * 61}]}]).status_code == 400
+    assert _batch(client, [{**good, "items": [{"label": "x"}] * 201}]).status_code == 400
+    assert _batch(client, [{**good, "changes": [{"slot": -1}]}]).status_code == 400
+    assert _batch(client, [{**good, "removals": [1.5]}]).status_code == 400
+    assert _batch(client, [{**good, "moves": "not a list"}]).status_code == 400
+    assert _batch(client, [dict(good, page=f"Page {i}") for i in range(11)]).status_code == 400
+    assert called == []  # nothing malformed reached the write path
+
+
+def test_a_batch_reports_every_queued_page_including_the_ones_not_attempted(client, monkeypatch):
+    monkeypatch.setattr(server.live, "apply_batch", lambda entries: {
+        "results": [
+            {"page": "Eating", "status": "applied", "report": {"page": "Eating", "buttons": 2}},
+            {"page": "Games", "status": "failed", "error": "restored"},
+            {"page": "Swimming", "status": "skipped"},
+        ],
+        "applied": 1,
+        "undo_page": "Eating",
+    })
+    monkeypatch.setattr(server.live, "last_edit", lambda: {"page": "Eating", "summary": "2 buttons"})
+
+    data = _batch(client, [
+        {"page": page, "items": [{"label": "apple", "slot": 0}], "fingerprint": "v1"}
+        for page in ("Eating", "Games", "Swimming")
+    ]).get_json()
+
+    assert [entry["status"] for entry in data["results"]] == ["applied", "failed", "skipped"]
+    assert data["applied"] == 1
+    # Undo is single-level, so the response names the one page it would reverse.
+    assert data["undo_page"] == "Eating"
+    assert data["undo"]["page"] == "Eating"
+
+
 # ---------------------------------------------------------------------------
 # Phase 4c: adding to a page that already exists in an exported file
 

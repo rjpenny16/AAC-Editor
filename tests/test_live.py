@@ -1820,3 +1820,178 @@ def test_named_lists_read_as_a_sentence():
     assert live._named_list(["apple"]) == '"apple"'
     assert live._named_list(["apple", "pear"]) == '"apple" and "pear"'
     assert live._named_list(["a", "b", "c"]) == '"a", "b" and "c"'
+
+
+# ---------- multi-page batch ----------
+
+
+def _batch_entry(page, label="apple"):
+    return {"page": page, "items": [{"label": label, "slot": 0}], "fingerprint": "v1"}
+
+
+def _fake_apply(monkeypatch, behaviour):
+    """Replace the single-page write path so a batch's sequencing is what's tested.
+
+    *behaviour* maps a page name to what that page does: a dict is returned as
+    its report, an exception is raised.
+    """
+    seen = []
+
+    def apply_one(page, items=(), changes=(), removals=(), moves=(), fingerprint=None):
+        seen.append(page)
+        outcome = behaviour[page]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(live, "apply_page_edits", apply_one)
+    return seen
+
+
+def _report(page, buttons=1):
+    return {"page": page, "buttons": buttons, "changed": 0, "removed": 0, "moved": 0,
+            "checks": {"td_snap_edit": "pass"}, "symbols": [], "warnings": []}
+
+
+def test_a_batch_applies_each_page_in_the_order_it_was_queued(monkeypatch):
+    seen = _fake_apply(monkeypatch, {
+        "Eating": _report("Eating"),
+        "Games": _report("Games"),
+        "Swimming": _report("Swimming"),
+    })
+
+    result = live.apply_batch(
+        [_batch_entry("Eating"), _batch_entry("Games"), _batch_entry("Swimming")]
+    )
+
+    assert seen == ["Eating", "Games", "Swimming"]
+    assert [entry["status"] for entry in result["results"]] == ["applied"] * 3
+    assert result["applied"] == 3
+    # Single-level undo covers the last page applied, and says which one.
+    assert result["undo_page"] == "Swimming"
+
+
+def test_a_refused_page_does_not_strand_the_pages_queued_behind_it(monkeypatch):
+    """A refusal wrote nothing, so the rest of the queue is still safe to run."""
+    refusal = PagesetError("The target page changed after preview.")
+    assert refusal.page_touched is False
+    seen = _fake_apply(monkeypatch, {
+        "Eating": _report("Eating"),
+        "Games": refusal,
+        "Swimming": _report("Swimming"),
+    })
+
+    result = live.apply_batch(
+        [_batch_entry("Eating"), _batch_entry("Games"), _batch_entry("Swimming")]
+    )
+
+    assert seen == ["Eating", "Games", "Swimming"]
+    assert [entry["status"] for entry in result["results"]] == [
+        "applied", "refused", "applied",
+    ]
+    assert "changed after preview" in result["results"][1]["error"]
+    assert result["applied"] == 2
+    assert result["undo_page"] == "Swimming"
+
+
+def test_a_page_that_was_edited_and_restored_stops_the_batch(monkeypatch):
+    """Continuing would drive a different page while TD Snap is in a state the
+    automation already failed to understand."""
+    failure = PagesetError("TD Snap did not verify it. The original page was restored.")
+    failure.page_touched = True
+    seen = _fake_apply(monkeypatch, {
+        "Eating": _report("Eating"),
+        "Games": failure,
+        "Swimming": _report("Swimming"),
+    })
+
+    result = live.apply_batch(
+        [_batch_entry("Eating"), _batch_entry("Games"), _batch_entry("Swimming")]
+    )
+
+    # Swimming was never attempted, and says so rather than being left out.
+    assert seen == ["Eating", "Games"]
+    assert result["results"] == [
+        {"page": "Eating", "status": "applied", "report": _report("Eating")},
+        {"page": "Games", "status": "failed",
+         "error": "TD Snap did not verify it. The original page was restored."},
+        {"page": "Swimming", "status": "skipped"},
+    ]
+    assert result["applied"] == 1
+    assert result["undo_page"] == "Eating"
+
+
+def test_a_batch_that_fails_on_its_first_page_applied_nothing(monkeypatch):
+    failure = PagesetError("The original page was restored.")
+    failure.page_touched = True
+    _fake_apply(monkeypatch, {"Eating": failure})
+
+    result = live.apply_batch([_batch_entry("Eating"), _batch_entry("Games")])
+
+    assert result["applied"] == 0
+    assert result["undo_page"] is None
+    assert [entry["status"] for entry in result["results"]] == ["failed", "skipped"]
+
+
+def test_the_same_page_queued_twice_is_refused_before_anything_runs(monkeypatch):
+    """The second entry's fingerprint predates the first one landing."""
+    seen = _fake_apply(monkeypatch, {"Eating": _report("Eating")})
+
+    with pytest.raises(PagesetError, match="queued more than once"):
+        live.apply_batch([_batch_entry("Eating"), _batch_entry("eating", "pear")])
+
+    assert seen == []
+
+
+def test_an_empty_batch_is_refused(monkeypatch):
+    with pytest.raises(PagesetError, match="Queue at least one page"):
+        live.apply_batch([])
+
+
+def test_a_batch_longer_than_the_cap_is_refused_before_anything_runs(monkeypatch):
+    seen = _fake_apply(monkeypatch, {})
+
+    with pytest.raises(PagesetError, match="No more than 10 pages"):
+        live.apply_batch([_batch_entry(f"Page {index}") for index in range(11)])
+
+    assert seen == []
+
+
+def test_a_rollback_marks_the_error_as_having_touched_the_page(monkeypatch):
+    """The marker `apply_batch` stops on is set by the real write path.
+
+    Without this the batch's stop rule would rest on an assumption about
+    `apply_page_edits` rather than on what it actually does.
+    """
+    _stub_live_page(
+        monkeypatch,
+        layouts=[[{"slot": 0, "label": "aple"}]],
+        content={"aple": {"label": "aple", "message": None, "kind": "speak"}},
+        grid=live.Grid((10, 20), (30,), 8, 8),
+    )
+
+    def fail(*_args):
+        raise PagesetError("TD Snap did not save the new label.")
+
+    monkeypatch.setattr(live, "_change_button", fail)
+    monkeypatch.setattr(live, "_restore_page_state", lambda *_args: None)
+
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits("Eating", [], [{"slot": 0, "label": "apple"}], [], [], "v1")
+    assert caught.value.page_touched is True
+
+
+def test_a_refusal_before_any_writing_is_not_marked_as_touching_the_page(monkeypatch):
+    """The other half: a stale fingerprint must not stop a whole batch."""
+    _stub_live_page(
+        monkeypatch,
+        layouts=[[{"slot": 0, "label": "apple"}]],
+        content={"apple": {"label": "apple", "message": None, "kind": "speak"}},
+        grid=live.Grid((10, 20), (30,), 8, 8),
+        fingerprint="moved-on",
+    )
+
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits("Eating", [{"label": "pear", "slot": 1}], [], [], [], "v1")
+    assert "changed after preview" in str(caught.value)
+    assert caught.value.page_touched is False

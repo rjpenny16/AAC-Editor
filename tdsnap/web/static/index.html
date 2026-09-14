@@ -246,6 +246,14 @@
           <p id="items-error" class="step-error" data-error-for="items" role="alert" tabindex="-1" hidden></p>
         </div>
 
+        <section id="queue-banner" class="queue-banner" aria-labelledby="queue-heading" hidden>
+          <h3 id="queue-heading">Pages waiting to be applied</h3>
+          <ul id="queue-list" class="queue-list"></ul>
+          <div class="queue-actions">
+            <button type="button" id="queue-review-btn" class="btn btn-secondary">Review and apply all</button>
+          </div>
+        </section>
+
         <details class="more-options">
           <summary>More options</summary>
           <div class="more-options-body">
@@ -385,6 +393,12 @@
         <p class="field-hint">These are removed from the page. TD Snap keeps the rest of the page as it is.</p>
         <ul id="review-removals" class="review-items"></ul>
       </div>
+      <div class="review-list-wrap" id="review-queue-wrap" hidden>
+        <h3>Pages in this batch</h3>
+        <p class="field-hint">Each page is applied on its own, in this order. If one cannot be
+          applied, the pages after it are reported rather than silently skipped.</p>
+        <ol id="review-queue" class="review-items review-queue"></ol>
+      </div>
       <div id="review-undo-note" class="alert warning" role="status" hidden></div>
       <section class="review-placement-preview" id="review-placement-section" aria-labelledby="review-placement-heading">
         <div class="preview-heading">
@@ -402,12 +416,18 @@
       <div class="wizard-actions review-actions">
         <button type="button" id="review-back-btn" class="btn btn-ghost">Back</button>
         <button type="button" id="adjust-placement-btn" class="btn btn-secondary">Change positions</button>
+        <button type="button" id="queue-add-btn" class="btn btn-secondary" hidden>Queue this page, edit another</button>
+        <p id="queue-add-note" class="field-hint queue-add-note" hidden></p>
         <button type="button" id="confirm-update-btn" class="btn btn-primary"><span id="confirm-update-label" class="btn-label">Confirm change</span></button>
       </div>
     </div>
 
     <div id="success-state" hidden>
       <span id="edit-count" class="sr-only"></span>
+      <div class="review-list-wrap" id="batch-outcome-wrap" hidden>
+        <h3>What happened to each page</h3>
+        <ul id="batch-outcome" class="batch-outcome"></ul>
+      </div>
       <ul id="checks" class="checks" aria-label="Verification results"></ul>
       <div id="result-warnings" class="alert warning" role="status" hidden></div>
       <div class="wizard-actions">

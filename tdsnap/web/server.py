@@ -847,6 +847,44 @@ def live_execute_plan():
     return jsonify({"ok": True, **report})
 
 
+@app.post("/api/tdsnap/batch")
+def live_execute_batch():
+    """Apply several reviewed page edits in one run, one page at a time.
+
+    Each queued entry is validated exactly as a single-page edit is — the
+    batch adds no new way to describe an edit, only a way to sequence several.
+    """
+    if request.headers.get("X-TDSnap-Editor") != "1":
+        raise PagesetError("Direct TD Snap edits must start in this app.")
+    payload = _json_payload()
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise PagesetError("'entries' must be a list of queued page edits.")
+    if len(entries) > live.MAX_BATCH_PAGES:
+        raise PagesetError(
+            f"No more than {live.MAX_BATCH_PAGES} pages can be applied in one go."
+        )
+    queued = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise PagesetError("Each queued page must be an object.")
+        queued.append({
+            "page": _bounded_text(
+                entry.get("page"), "page", MAX_PAGE_NAME_CHARS, required=True
+            ),
+            "items": _validated_items(entry.get("items", [])),
+            "changes": _validated_changes(entry.get("changes", [])),
+            "removals": _validated_removals(entry.get("removals", [])),
+            "moves": _validated_moves(entry.get("moves", [])),
+            "fingerprint": _bounded_text(entry.get("fingerprint"), "fingerprint", 256)
+            or None,
+        })
+    with _LIVE_LOCK:
+        report = live.apply_batch(queued)
+        report["undo"] = live.last_edit()
+    return jsonify({"ok": True, **report})
+
+
 @app.get("/api/tdsnap/vocabulary")
 def live_vocabulary():
     """Every label in the open page set, for advisory duplicate checking.
