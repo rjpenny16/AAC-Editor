@@ -42,8 +42,16 @@ the explicit administrator fallback for Grid 3.
 - Adds vocabulary to empty spaces AAC Editor can update safely on the grid open in Grid 3, preserving
   the grid-set file and each blank cell's existing style.
 - Creates word or color-coded topic pages and links them from an existing page.
+- Imports a word list: paste a spreadsheet column or open a CSV/TSV, map which
+  column is the label, the message, the function, and the symbol words, and see
+  everything that will not fit named before anything is added.
+- Saves a page you have built as a named template and reuses it for the next
+  person — one topic page built once, used across a caseload.
+- Queues several pages, reviews them as one list, and applies them in one go,
+  reporting what happened to every page including any it did not attempt.
 - Rejects duplicates, checks capacity, and never touches a button the review
-  step did not name.
+  step did not name. A word that already exists elsewhere in the page set is
+  pointed out but never blocked.
 - Adds matching TD Snap symbols when TD Snap can find them, searching the words
   you choose — or none at all, per button.
 - Suggests AAC-friendly placement and optional words or phrases with local AI.
@@ -74,8 +82,9 @@ Wikipedia; button labels, page sets, and generated suggestions remain local.
 Administrators can hard-disable grounding with `TDSNAP_WEB_GROUNDING=0`.
 
 Nothing is written to disk until you save something. Remembering your last
-AAC app, your Ollama connection, and an unfinished page (so a crash or a
-reload can offer to resume it) all live in one `settings.json` in the same
+AAC app, your Ollama connection, an unfinished page (so a crash or a
+reload can offer to resume it), and any templates you save all live in one
+`settings.json` in the same
 per-user data folder the built-in AI model uses — never uploaded, never
 synced. **What AAC Editor saves**, in the app's footer, lists exactly what's
 stored in plain language, and **Clear all saved data** deletes the file.
