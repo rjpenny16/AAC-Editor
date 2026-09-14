@@ -250,6 +250,7 @@
           <summary>More options</summary>
           <div class="more-options-body">
             <button type="button" id="layout-options-btn" class="btn btn-secondary">Change page layout</button>
+            <button type="button" id="import-list-btn" class="btn btn-secondary">Import a word list</button>
 
             <details class="ai-suggest" id="ai-suggest">
               <summary><span id="ai-summary-text">Help me think of words</span> <span class="optional-tag">Optional · local by default</span></summary>
@@ -474,6 +475,48 @@
     <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
   </div>
 </footer>
+
+<dialog id="import-dialog" class="chip-dialog import-dialog" aria-labelledby="import-dialog-title">
+  <form method="dialog" id="import-form">
+    <h2 id="import-dialog-title">Import a word list</h2>
+    <p class="field-hint">Paste a column from a spreadsheet, or choose a CSV or TSV file.
+      Nothing is added until you review what fits.</p>
+
+    <div class="field">
+      <label for="import-text">Paste your list</label>
+      <textarea id="import-text" rows="6" spellcheck="false"
+        placeholder="more&#9;I want more, please&#10;all done&#9;I am all done"></textarea>
+      <div class="import-file-row">
+        <button type="button" id="import-file-btn" class="btn btn-secondary btn-compact">Choose a file</button>
+        <span id="import-file-name" class="field-hint"></span>
+        <input id="import-file" class="sr-only" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain"
+          aria-label="Choose a CSV or TSV word list">
+      </div>
+    </div>
+
+    <div id="import-mapping" hidden>
+      <h3 id="import-mapping-heading">Which column is which?</h3>
+      <p class="field-hint">AAC Editor's best guess is selected. Change anything it got wrong.</p>
+      <label class="inline-option" for="import-has-header">
+        <input id="import-has-header" type="checkbox">
+        The first row names the columns
+      </label>
+      <div id="import-columns" class="import-columns"></div>
+      <div class="preview-frame">
+        <table id="import-preview" class="import-preview"
+          aria-label="First rows of the list you are importing"></table>
+      </div>
+    </div>
+
+    <div id="import-summary" class="import-summary" role="status" aria-live="polite" hidden></div>
+    <p id="import-error" class="step-error" role="alert" tabindex="-1" hidden></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="import-add-btn" class="btn btn-primary" disabled>Add these buttons</button>
+      <button type="submit" class="btn btn-ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="settings-panel" class="chip-dialog support-dialog" aria-labelledby="settings-panel-title">
   <form method="dialog">

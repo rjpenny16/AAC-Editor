@@ -16,6 +16,7 @@ import { show } from "./wizard.js";
 import "./ai.js";
 import "./review.js";
 import "./draft.js";
+import "./importer.js";
 import "./settings-panel.js";
 
 

@@ -2163,3 +2163,242 @@ test('real TD Snap edit is explicit opt-in', async ({ page }) => {
     { timeout: 30_000 },
   );
 });
+
+
+/* Importing a word list.
+ *
+ * The chip box already took a comma-separated paste; this is the shape the
+ * work actually arrives in — a column of labels beside a column of sentences,
+ * out of a spreadsheet. These pin the two things that make it safe to use: a
+ * comma inside a phrase stays inside the phrase, and everything that will not
+ * fit is named on screen before a single button is added.
+ */
+test.describe('importing a word list', () => {
+  async function openImport(page) {
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#import-list-btn').click();
+    await expect(page.locator('#import-dialog')).toBeVisible();
+  }
+
+  test('a pasted spreadsheet column maps itself and keeps phrases intact', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill(
+      'Label\tWhat it says\tFunction\n'
+      + 'more\tI want more, please\tQuestion\n'
+      + 'all done\tI am all done\tPositive\n'
+      + 'help\t\t'
+    );
+
+    // The header is recognised and the columns are mapped without being asked.
+    await expect(page.locator('#import-has-header')).toBeChecked();
+    await expect(page.locator('#import-column-0')).toHaveValue('label');
+    await expect(page.locator('#import-column-1')).toHaveValue('message');
+    await expect(page.locator('#import-column-2')).toHaveValue('fn');
+    await expect(page.locator('#import-summary')).toContainText('3 buttons ready to add');
+    // The preview shows the rows as the mapping reads them.
+    await expect(page.locator('#import-preview tbody tr').first())
+      .toContainText('I want more, please');
+
+    await page.locator('#import-add-btn').click();
+    await expect(page.locator('#import-dialog')).toBeHidden();
+
+    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+    // The comma is punctuation inside the phrase, not a second button.
+    await expect(page.locator('.chip-body').filter({ hasText: 'more' }).first())
+      .toHaveAttribute('title', 'Speaks: “I want more, please”');
+  });
+
+  test('a single column of words needs no mapping at all', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill('apple\npear\nplum');
+
+    await expect(page.locator('#import-has-header')).not.toBeChecked();
+    await expect(page.locator('#import-summary')).toContainText('3 buttons ready to add');
+    await page.locator('#import-add-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+  });
+
+  test('what will not fit is named before anything is added', async ({ page }) => {
+    // Two free cells, and one of the imported words is already on the page.
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating', {
+        buttons: [{
+          slot: 0, label: 'apple', message: null, function: null, symbol: true,
+          editable: false, locked_reason: 'Existing TD Snap button',
+        }],
+        free_slots: [1, 2],
+      }),
+    });
+    await openImport(page);
+
+    await page.locator('#import-text').fill('apple\npear\nplum\ncherry\nmango');
+
+    const summary = page.locator('#import-summary');
+    await expect(summary).toContainText('2 buttons ready to add');
+    await expect(summary).toContainText('Already on Eating');
+    await expect(summary).toContainText('apple');
+    await expect(summary).toContainText('does not have room for 2 of these');
+    await expect(summary).toContainText('cherry');
+    await expect(page.locator('#import-add-btn')).toHaveText('Add 2 buttons');
+
+    await page.locator('#import-add-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#capacity')).toHaveText('2 added · 0 spaces left');
+  });
+
+  test('a row that cannot become a button says which row and why', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill(
+      'Label,Message\n'
+      + 'more,I want more\n'
+      + ',orphan message\n'
+      + 'more,repeated label\n'
+    );
+
+    const summary = page.locator('#import-summary');
+    await expect(summary).toContainText('1 button ready to add');
+    // A row with no label is still identified by what it does hold, so the
+    // user can find it in their file.
+    await expect(summary).toContainText('Row 3, “orphan message” — no label');
+    await expect(summary).toContainText('Row 4, “more” — repeated in this list');
+  });
+
+  test('an unrecognised header is visible in the preview and correctable', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill('col1\tcol2\napple\tI want an apple');
+
+    // Nothing in the header is recognisable, so the first row is treated as
+    // vocabulary — and the preview shows exactly that, rather than hiding it.
+    await expect(page.locator('#import-has-header')).not.toBeChecked();
+    await expect(page.locator('#import-summary')).toContainText('2 buttons ready to add');
+    await expect(page.locator('#import-preview tbody')).toContainText('col1');
+
+    // One checkbox fixes it, and the second column can then be mapped.
+    await page.locator('#import-has-header').check();
+    await page.locator('#import-column-1').selectOption('message');
+    await expect(page.locator('#import-summary')).toContainText('1 button ready to add');
+
+    await page.locator('#import-add-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await expect(page.locator('.chip-body').filter({ hasText: 'apple' }))
+      .toHaveAttribute('title', 'Speaks: “I want an apple”');
+  });
+
+  test('an import waits until a label column is chosen', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill('col1\tcol2\napple\tI want an apple');
+    await page.locator('#import-column-0').selectOption('');
+
+    await expect(page.locator('#import-summary'))
+      .toContainText('Choose which column holds the button label');
+    await expect(page.locator('#import-add-btn')).toBeDisabled();
+  });
+
+  test('the import dialog has no serious or critical accessibility violations', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+    await page.locator('#import-text').fill('Label\tMessage\napple\tI want an apple');
+    await expect(page.locator('#import-mapping')).toBeVisible();
+
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
+
+/* Page-set-wide duplicate detection.
+ *
+ * The blocking per-page check is unchanged: a word already on *this* page is
+ * still skipped. This is the other half — the same word on some *other* page
+ * is worth knowing about and must never be blocked, because two pages
+ * deliberately carrying "more" is a normal thing for a page set to do.
+ */
+test.describe('duplicates elsewhere in the page set', () => {
+  async function withVocabulary(page, labels) {
+    await page.route('**/api/tdsnap/vocabulary', (route) =>
+      fulfillJson(route, { ok: true, available: true, labels }));
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating'),
+    });
+  }
+
+  test('a word already on another page is noted, and still added', async ({ page }) => {
+    await withVocabulary(page, { more: ['Core Words', 'Feelings'] });
+    await existingItems(page);
+
+    await page.locator('#word-input').fill('more');
+    await page.locator('#word-add-btn').click();
+
+    const note = page.locator('#chip-note');
+    await expect(note).toContainText('Already elsewhere in this page set');
+    await expect(note).toContainText('“more” on Core Words, Feelings');
+    await expect(note).toContainText('nothing is skipped');
+    // Advisory means advisory: the button is on the list and reviewable.
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-action')).toContainText('Add 1 button');
+  });
+
+  test('the page being edited is not named twice', async ({ page }) => {
+    // "apple" is on Eating, which is the page being edited, and on Snacks.
+    await withVocabulary(page, { apple: ['Eating', 'Snacks'] });
+    await existingItems(page);
+
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+
+    const note = page.locator('#chip-note');
+    await expect(note).toContainText('“apple” on Snacks');
+    await expect(note).not.toContainText('Eating');
+  });
+
+  test('a word that exists nowhere else says nothing at all', async ({ page }) => {
+    await withVocabulary(page, { more: ['Core Words'] });
+    await existingItems(page);
+
+    await page.locator('#word-input').fill('kayak');
+    await page.locator('#word-add-btn').click();
+
+    await expect(page.locator('#chip-note')).toHaveText('');
+  });
+
+  test('an unreadable page set simply says nothing', async ({ page }) => {
+    await page.route('**/api/tdsnap/vocabulary', (route) =>
+      fulfillJson(route, { ok: true, available: false, labels: {} }));
+    await mockTD(page);
+    await existingItems(page);
+
+    await page.locator('#word-input').fill('more');
+    await page.locator('#word-add-btn').click();
+
+    await expect(page.locator('#chip-note')).toHaveText('');
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+  });
+
+  test('an import names what already exists elsewhere', async ({ page }) => {
+    await withVocabulary(page, { more: ['Core Words'], help: ['Core Words'] });
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#import-list-btn').click();
+
+    await page.locator('#import-text').fill('more\nhelp\nkayak');
+
+    const summary = page.locator('#import-summary');
+    await expect(summary).toContainText('3 buttons ready to add');
+    await expect(summary).toContainText('Already elsewhere in this page set');
+    await expect(summary).toContainText('“more” on Core Words');
+    await expect(summary).toContainText('“help” on Core Words');
+  });
+});

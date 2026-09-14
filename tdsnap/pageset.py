@@ -37,6 +37,45 @@ def default_output_path(source: str) -> str:
     return f"{base}.edited{ext}"
 
 
+def labels_by_page(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    """Every button label in the page set, mapped to the pages carrying it.
+
+    Duplicate checking has only ever looked at the page being edited, so a
+    clinician adding "more" to Snacks was never told it already exists on Core
+    Words — and finding that out later, on a device, is how one concept ends up
+    with two buttons that behave differently.
+
+    Keyed by casefolded label, matched in Python rather than SQL because
+    SQLite's ``LOWER`` is ASCII-only and AAC vocabulary is not. Returns an
+    empty mapping rather than raising: this is advisory, and a page set it
+    cannot read must never block an edit that would otherwise work.
+    """
+    labels: dict[str, list[str]] = {}
+    try:
+        rows = conn.execute(
+            "SELECT button.Label AS Label, "
+            "COALESCE(NULLIF(page.Title, ''), 'Page ' || page.Id) AS PageTitle "
+            "FROM Button button "
+            "JOIN ElementReference ref ON ref.Id = button.ElementReferenceId "
+            "JOIN Page page ON page.Id = ref.PageId "
+            "WHERE page.PageType = ?",
+            (PAGE_TYPE_VOCAB,),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    for row in rows:
+        label = (row["Label"] or "").strip()
+        title = (row["PageTitle"] or "").strip()
+        if not label or not title:
+            continue
+        pages = labels.setdefault(label.casefold(), [])
+        if title not in pages:
+            pages.append(title)
+    for pages in labels.values():
+        pages.sort(key=str.casefold)
+    return labels
+
+
 def grid_dimension(conn: sqlite3.Connection) -> tuple[int, int]:
     """Return the page set's ``(cols, rows)`` grid.
 

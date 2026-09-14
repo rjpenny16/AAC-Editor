@@ -41,7 +41,7 @@ from contextlib import closing, suppress
 from ctypes import wintypes
 from dataclasses import dataclass
 
-from . import colors, templates, uia
+from . import colors, pageset, templates, uia
 from .builder import MAX_LABEL_LENGTH, MAX_MESSAGE_LENGTH, _normalize_items
 from .errors import PagesetError
 
@@ -1802,6 +1802,25 @@ def status(include_pages=True):
             pages = [DEFAULT_PARENT, *detected]
         result["pages"] = list(dict.fromkeys([result["page"], *pages]))
     return result
+
+
+def vocabulary(visible_page=None, visible_labels=()):
+    """Every label in the open page set, and which pages carry it.
+
+    Read once per connection and answered in the browser afterwards, so the
+    advisory "already on Core Words" costs nothing per keystroke. Unavailable
+    rather than fatal when the page set cannot be identified — this only ever
+    tells a user something useful, and never stops an edit.
+    """
+    path = _active_pageset_path(visible_page, visible_labels)
+    if not path:
+        return {"available": False, "labels": {}}
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+            conn.row_factory = sqlite3.Row
+            return {"available": True, "labels": pageset.labels_by_page(conn)}
+    except (OSError, sqlite3.Error):
+        return {"available": False, "labels": {}}
 
 
 def inspect_page(page=None):

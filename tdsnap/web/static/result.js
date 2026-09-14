@@ -12,6 +12,7 @@ import { clearUndoHistory, renderWords } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor } from "./connect.js";
 import { clearDraft } from "./draft.js";
 import { emptyEdits, undoAvailable } from "./edits.js";
+import { forget as forgetVocabulary } from "./vocabulary.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
 import { recordError } from "./support.js";
 import { setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
@@ -261,6 +262,7 @@ function resetConnection() {
       .catch((error) => recordError("undo-forget", error.message));
   }
   state.lastEdit = null;
+  forgetVocabulary();
   state.mode = "live";
   state.connected = false;
   state.sessionId = null;

@@ -823,3 +823,69 @@ def test_moves_are_bounded_at_the_edge_of_the_web_api():
     assert server._validated_moves([{"slot": 1, "to": 2, "extra": "ignored"}]) == [
         {"slot": 1, "to": 2}
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: page-set-wide duplicate detection
+
+
+def test_the_vocabulary_index_names_every_page_a_label_is_on(client, seeded_source):
+    session = upload(client, seeded_source).get_json()
+    session_id = session["session_id"]
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+    layout = client.get(
+        f"/api/pageset/{session_id}/page/{page['id']}/layout"
+    ).get_json()
+    # Put the same label on a second page, which is exactly the case the
+    # per-page check has always missed.
+    client.post(
+        f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+        json={
+            "items": [{"label": "Chips", "slot": layout["free_slots"][0]}],
+            "fingerprint": layout["fingerprint"],
+        },
+        headers=token_headers(),
+    )
+    client.post(
+        f"/api/pageset/{session_id}/page",
+        json={"title": "Snacks", "items": ["Chips", "Apple"],
+              "parent_page_id": page["id"]},
+        headers=token_headers(),
+    )
+
+    index = client.get(f"/api/pageset/{session_id}/vocabulary").get_json()
+
+    assert index["ok"] and index["available"] is True
+    # Keyed casefolded, and every page carrying the label is named.
+    assert index["labels"]["chips"] == ["Home Page", "Snacks"]
+    assert index["labels"]["apple"] == ["Snacks"]
+
+
+def test_the_vocabulary_index_is_advisory_and_never_fatal(tmp_path):
+    from tdsnap import pageset
+
+    # A file with no page-set tables at all: the reader reports nothing rather
+    # than raising, because this only ever adds a sentence to the UI.
+    path = tmp_path / "empty.sqlite"
+    conn = sqlite3.connect(str(path))
+    conn.execute("CREATE TABLE Unrelated (x INTEGER)")
+    conn.commit()
+    conn.close()
+
+    with sqlite3.connect(str(path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert pageset.labels_by_page(conn) == {}
+
+
+def test_a_label_is_listed_once_per_page_however_often_it_appears(seeded_pageset):
+    from tdsnap import builder, pageset
+
+    ps = seeded_pageset
+    page_id = ps.find_page_id_by_name("Home Page")
+    layout = builder.layout_for_page(ps.conn, page_id, ps.grid_dimension())
+    free = builder.free_slots(ps.conn, layout)
+    builder.add_buttons_to_page(ps, page_id, [{"label": "more", "slot": free[0]}])
+
+    labels = pageset.labels_by_page(ps.conn)
+
+    assert labels["more"] == ["Home Page"]

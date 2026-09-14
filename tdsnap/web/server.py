@@ -791,6 +791,18 @@ def live_execute_plan():
     return jsonify({"ok": True, **report})
 
 
+@app.get("/api/tdsnap/vocabulary")
+def live_vocabulary():
+    """Every label in the open page set, for advisory duplicate checking.
+
+    Read once per connection; the browser answers "where else does this word
+    live?" from it. Advisory only — a page set this cannot read reports
+    ``available: false`` and nothing downstream is blocked by it.
+    """
+    with _LIVE_LOCK:
+        return jsonify({"ok": True, **live.vocabulary()})
+
+
 @app.get("/api/tdsnap/last-edit")
 def live_last_edit():
     """What "Undo my last change" would do, or ``null`` when there is nothing.
@@ -909,6 +921,21 @@ def pages(session_id):
 def capacity(session_id, page_id):
     current = _current_path(session_id)
     return jsonify({"ok": True, "free_cells": _free_cells(current, page_id)})
+
+
+@app.get("/api/pageset/<session_id>/vocabulary")
+def pageset_vocabulary(session_id):
+    """The exported-file counterpart of ``/api/tdsnap/vocabulary``."""
+    current = _current_path(session_id)
+    try:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+        ) as conn:
+            conn.row_factory = sqlite3.Row
+            labels = pageset.labels_by_page(conn)
+    except sqlite3.Error:
+        return jsonify({"ok": True, "available": False, "labels": {}})
+    return jsonify({"ok": True, "available": True, "labels": labels})
 
 
 @app.get("/api/pageset/<session_id>/page/<int:page_id>/layout")
