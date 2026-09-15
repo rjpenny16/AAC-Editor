@@ -243,6 +243,9 @@ def test_environment_override_replaces_the_registry(monkeypatch):
     override = localai._environment_override()
     assert override is not None
     assert override.key == "custom" and override.file == "m.gguf"
+    # Named after the file: this reaches the support report and the eval
+    # report, where "set by an environment variable" names no model at all.
+    assert "m.gguf" in override.name
     # No hash was supplied, so the file is checked for GGUF magic and nothing
     # more — that is the operator's call to make, and it is never memory-gated.
     assert override.sha256 is None and override.min_memory_bytes == 0

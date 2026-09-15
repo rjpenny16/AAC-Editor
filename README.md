@@ -215,7 +215,10 @@ holds a fixed set of category prompts and the rules the prompt already states �
 *"Harry Potter characters"* must not return *"wand"*, and must return somebody
 from the books. The scoring runs offline on every CI build
 (`tests/test_ai_eval_rules.py`); the same rules run against the real model, and
-record a pass rate, when opted in:
+record a pass rate, when opted in. The recorded rate is a trend to compare
+release to release rather than a bar to clear — CI runs a model a third the
+size of the one that ships — so it does not fail a build unless
+`TDSNAP_AI_EVAL_FLOOR` is set:
 
 ```bash
 TDSNAP_AI_SMOKE=1 python -m pytest tests/test_ai_eval.py

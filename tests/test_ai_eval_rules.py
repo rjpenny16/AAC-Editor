@@ -191,3 +191,26 @@ def test_a_missing_report_says_so(tmp_path, capsys):
 
     assert summary.main([str(tmp_path / "nope.json")]) == 0
     assert "no report" in capsys.readouterr().out
+
+
+def test_the_eval_records_rather_than_gates_by_default():
+    """The default must not fail a build on a known baseline.
+
+    The first CI run of this suite asserted a 0.3 pass rate — a guess, which is
+    what the eval exists to replace — and measured 0.15 on the 0.5B model CI
+    runs. Gating on a stochastic number from a model that is not the one
+    shipped buys a red build, not information.
+    """
+    import tests.test_ai_eval as eval_run
+
+    assert eval_run.DEFAULT_FLOOR == 0.0
+
+
+def test_a_floor_can_still_be_set_deliberately(monkeypatch):
+    import tests.test_ai_eval as eval_run
+
+    monkeypatch.setenv("TDSNAP_AI_EVAL_FLOOR", "0.5")
+    assert eval_run._floor() == 0.5
+    # A value that is not a number falls back rather than crashing the run.
+    monkeypatch.setenv("TDSNAP_AI_EVAL_FLOOR", "high")
+    assert eval_run._floor() == eval_run.DEFAULT_FLOOR

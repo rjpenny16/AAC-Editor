@@ -134,11 +134,15 @@ def _environment_override() -> Optional[ModelChoice]:
     if not url and not file:
         return None
     size = os.environ.get("TDSNAP_MODEL_SIZE", "").strip()
+    chosen_file = file or SMALL.file
     return ModelChoice(
         key="custom",
-        name="Model set by TDSNAP_MODEL_URL",
+        # Named after the file, not after the variable that set it: this name
+        # reaches the support report and the eval report, where "the model set
+        # by an environment variable" says nothing about which model ran.
+        name=f"Custom model ({chosen_file})",
         license="as supplied",
-        file=file or SMALL.file,
+        file=chosen_file,
         repo="",
         revision="",
         url_override=url or SMALL.url,

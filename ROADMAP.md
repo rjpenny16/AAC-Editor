@@ -423,8 +423,14 @@ It was one shot, N items, take it or leave it.
   The scorer is pure and its rules are tested offline on every CI run, each with an answer that must
   pass and one that must fail. A check that accepts everything passes every release and says nothing.
 
-  The floor is a tripwire, not a quality bar: CI runs the smallest model the project supports to keep
-  the job cheap, and the number to read is the recorded rate against the previous release.
+  It records rather than gates, and the first CI run is why. The file shipped asserting a 0.3 pass
+  rate — a guess, which is the exact thing this bullet exists to replace — and CI measured 0.15. That
+  number is honest: the job runs Qwen2.5 **0.5B**, the cheapest model that exercises the real code
+  path and a third the size of the one that ships, and at that size it mostly echoes the page title
+  back (*"farm animals"* for Farm animals, *"Hogwarts"* for Harry Potter characters). Gating on a
+  stochastic number from a model nobody uses buys a red build, not information. A collapse is still
+  caught on every build, by the smoke test and by the offline rule tests; `TDSNAP_AI_EVAL_FLOOR` gates
+  deliberately where that is wanted.
 
 - **Grounding transparency** — *shipped.* `grounding.lookup` returns the article used, its URL, and
   the runners-up; the response names it and the panel shows it with a link. Rejecting one, or choosing

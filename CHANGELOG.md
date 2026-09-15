@@ -63,6 +63,13 @@ file starts tracking changes in detail from 2.2.0 onward.
   integration job, and the pass rate is written to the job summary and kept as a build artifact, so a
   prompt edit has a number attached to it instead of a feeling.
 
+  That number **records rather than gates**. CI runs Qwen2.5 0.5B — the cheapest model that exercises
+  the real code path, a third the size of the one that ships — and at that size it mostly echoes the
+  page title back, scoring around 15%. It is a trend to compare release to release, not a verdict on
+  what a user gets, and failing a build on it would mean red on a known baseline. What still gates on
+  every build: the offline rule tests, and the smoke test, which fails outright if generation or
+  parsing breaks. `TDSNAP_AI_EVAL_FLOOR` gates deliberately where that is wanted.
+
 - **Import a word list.** **More options → Import a word list** takes a paste or a CSV/TSV file. It
   detects the delimiter, works out whether the first row is a header, and guesses which column holds
   the label, the spoken message, the communicative function, and the symbol search words — every guess

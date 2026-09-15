@@ -84,10 +84,12 @@ jobs:
           TDSNAP_AI_SMOKE: "1"
         run: python -m pytest -v tests/test_integration_example.py tests/test_ai_smoke.py
 
-      # The eval set turns "does this prompt still work?" into a number. The
-      # floor is a tripwire against a prompt edit that makes answers much
-      # worse; the value to compare release to release is the recorded rate,
-      # which is why the report is kept as an artifact.
+      # The eval set turns "does this prompt still work?" into a number. It
+      # records rather than gates: this job runs the 0.5B model, which is the
+      # cheapest one that exercises the real code path and not the one that
+      # ships, so its rate is a trend to compare release to release rather
+      # than a bar to clear. A collapse is still caught, by the smoke test
+      # above and by the offline rule tests. See tests/test_ai_eval.py.
       - name: Run the AI eval set and record its pass rate
         env:
           TDSNAP_AI_SMOKE: "1"
