@@ -40,6 +40,11 @@ function currentComposition() {
     active_fn: state.activeFn || "",
     target_page: state.operation === "existing" ? titleOf(state.parentId) : "",
     title: state.operation === "new" && titleInput ? titleInput.value.trim() : "",
+    // `source` is deliberately not carried. It marks a suggestion this session
+    // made, and the steering it enables — regenerate, more like this — only
+    // means anything alongside the rejections and the page-set context that a
+    // relaunch has already lost. A resumed draft is vocabulary, the same as a
+    // template is.
     items: state.words.map((item) => ({
       label: item.label,
       message: item.message,

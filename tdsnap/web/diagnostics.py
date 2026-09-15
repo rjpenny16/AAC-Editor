@@ -71,10 +71,17 @@ def _grid3() -> dict:
 
 
 def _ai() -> dict:
+    # Which model, not just whether one is present: a support report that says
+    # "downloaded" without naming it cannot explain why one machine's
+    # suggestions are better than another's.
+    active = localai.choice_for(localai.active_key())
+    memory = localai.total_memory_bytes()
     report = {
         "engine_available": localai.engine_available(),
-        "model_downloaded": localai.is_downloaded(),
-        "model": localai.MODEL_NAME,
+        "model_downloaded": localai.is_downloaded(active.key),
+        "model": active.name,
+        "models_downloaded": localai.downloaded_keys(),
+        "memory_gb": round(memory / localai.GIB, 1) if memory else "unknown",
     }
     try:
         report["ollama_reachable"] = bool(ollama.status(ollama.DEFAULT_HOST).get("reachable"))

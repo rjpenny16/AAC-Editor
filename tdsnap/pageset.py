@@ -76,6 +76,61 @@ def labels_by_page(conn: sqlite3.Connection) -> dict[str, list[str]]:
     return labels
 
 
+def label_samples(conn: sqlite3.Connection, limit: int = 40) -> list[str]:
+    """A spread of real button labels, written the way the page set writes them.
+
+    ``labels_by_page`` casefolds its keys because it answers "where else does
+    this word live?", where capitalization is noise. Style is the opposite
+    question — *how does this page set word a button?* — so this reads the
+    labels again with their capitalization intact.
+
+    Taken round-robin across pages, sorted, so one large page cannot speak for
+    the whole set and the same page set always yields the same sample. Empty
+    rather than raising: this only ever makes a suggestion read more like the
+    user's own vocabulary, and must never stop an edit that would otherwise
+    work.
+    """
+    if limit <= 0:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT button.Label AS Label, "
+            "COALESCE(NULLIF(page.Title, ''), 'Page ' || page.Id) AS PageTitle "
+            "FROM Button button "
+            "JOIN ElementReference ref ON ref.Id = button.ElementReferenceId "
+            "JOIN Page page ON page.Id = ref.PageId "
+            "WHERE page.PageType = ?",
+            (PAGE_TYPE_VOCAB,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    by_page: dict[str, list[str]] = {}
+    for row in rows:
+        label = (row["Label"] or "").strip()
+        title = (row["PageTitle"] or "").strip()
+        if label and title:
+            by_page.setdefault(title, []).append(label)
+    pages = [
+        sorted(by_page[title], key=str.casefold)
+        for title in sorted(by_page, key=str.casefold)
+    ]
+    sample: list[str] = []
+    seen: set = set()
+    deepest = max((len(labels) for labels in pages), default=0)
+    for index in range(deepest):
+        for labels in pages:
+            if index >= len(labels):
+                continue
+            folded = labels[index].casefold()
+            if folded in seen:
+                continue
+            seen.add(folded)
+            sample.append(labels[index])
+            if len(sample) >= limit:
+                return sample
+    return sample
+
+
 def grid_dimension(conn: sqlite3.Connection) -> tuple[int, int]:
     """Return the page set's ``(cols, rows)`` grid.
 

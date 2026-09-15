@@ -265,15 +265,33 @@
               <summary><span id="ai-summary-text">Help me think of words</span> <span class="optional-tag">Optional · local by default</span></summary>
               <div class="ai-body">
                 <p>Suggestions run on this computer. Nothing is required to finish your edit.</p>
+                <label class="ai-grounding-option" for="ai-style">
+                  <input id="ai-style" type="checkbox" checked>
+                  Match the wording style of this page set
+                </label>
+                <p class="field-hint">Sends a sample of your existing button labels to the model on this computer, so suggestions read the way your page set already reads. Never sent anywhere else.</p>
                 <label class="ai-grounding-option" for="ai-grounding">
                   <input id="ai-grounding" type="checkbox">
                   Look up public reference facts on Wikipedia
                 </label>
                 <p class="field-hint">When enabled, AAC Editor sends only this page title to Wikipedia for this request.</p>
+                <div id="ai-grounding-source" class="ai-grounding-source" hidden>
+                  <p>Reference article used: <a id="ai-grounding-link" href="https://en.wikipedia.org" target="_blank" rel="noopener noreferrer"></a></p>
+                  <div class="ai-grounding-pick">
+                    <label for="ai-grounding-pick">Wrong article?</label>
+                    <select id="ai-grounding-pick"></select>
+                  </div>
+                  <p id="ai-grounding-note" class="field-hint" role="status" aria-live="polite"></p>
+                </div>
                 <p><strong>Status:</strong> <span id="ai-engine-state" role="status" aria-live="polite">Check when you are ready.</span></p>
                 <div id="ai-download-card" class="ai-download" hidden>
                   <h4>Recommended: use the built-in model</h4>
                   <p>Download the free built-in model once to use private suggestions.</p>
+                  <div class="field" id="ai-model-choice-row" hidden>
+                    <label for="ai-model-choice">Which built-in model</label>
+                    <select id="ai-model-choice"></select>
+                    <p id="ai-model-choice-note" class="field-hint"></p>
+                  </div>
                   <p><span id="ai-model-name"></span> · <span id="ai-model-size"></span> · <span id="ai-model-license"></span></p>
                   <button type="button" id="ai-download-btn" class="btn btn-secondary"><span class="btn-label">Download AI model</span></button>
                   <div class="download-progress" id="ai-progress" hidden role="progressbar" aria-label="Model download progress" aria-valuemin="0" aria-valuemax="100"><div id="ai-progress-fill"></div></div>
@@ -467,6 +485,14 @@
         <p class="field-hint">Useful when the label is a phrase: search <strong>more</strong>
           for a button that says “more please”.</p>
       </div>
+    </div>
+    <div class="field ai-item-field" id="edit-ai-field" hidden>
+      <span class="label-text">Suggested by AI</span>
+      <div class="ai-item-actions">
+        <button type="button" id="edit-ai-regenerate" class="btn btn-ghost"><span class="btn-label">Suggest a different one</span></button>
+        <button type="button" id="edit-ai-more" class="btn btn-ghost"><span class="btn-label">More like this</span></button>
+      </div>
+      <p class="field-hint" id="edit-ai-status" role="status" aria-live="polite">Removing this also tells the next round of suggestions not to offer it again.</p>
     </div>
     <div class="field" id="edit-fn-field">
       <span class="label-text">Topic-page row</span>

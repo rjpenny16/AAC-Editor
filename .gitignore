@@ -65,6 +65,7 @@ td_snap_coordinates.json
 tests/fixtures/*
 !tests/fixtures/*.sql
 !tests/fixtures/phrase_function_cases.json
+!tests/fixtures/ai_eval_set.json
 
 # Web app working copies
 .tdsnap-sessions/
@@ -72,3 +73,6 @@ tests/fixtures/*
 # Local AI model files (downloaded at runtime, ~1 GB)
 *.gguf
 *.gguf.part
+
+# The AI eval run's report: a build artifact, recorded per release by CI.
+ai-eval-report.json

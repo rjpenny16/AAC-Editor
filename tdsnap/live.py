@@ -1814,13 +1814,20 @@ def vocabulary(visible_page=None, visible_labels=()):
     """
     path = _active_pageset_path(visible_page, visible_labels)
     if not path:
-        return {"available": False, "labels": {}}
+        return {"available": False, "labels": {}, "samples": []}
     try:
         with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
             conn.row_factory = sqlite3.Row
-            return {"available": True, "labels": pageset.labels_by_page(conn)}
+            # `samples` rides along on the same read: a spread of labels with
+            # their real capitalization, which the AI panel passes to a local
+            # model as style context. See pageset.label_samples.
+            return {
+                "available": True,
+                "labels": pageset.labels_by_page(conn),
+                "samples": pageset.label_samples(conn),
+            }
     except (OSError, sqlite3.Error):
-        return {"available": False, "labels": {}}
+        return {"available": False, "labels": {}, "samples": []}
 
 
 def inspect_page(page=None):

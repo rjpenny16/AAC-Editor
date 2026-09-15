@@ -67,6 +67,13 @@ configReady.then(async () => {
   if (typeof preferences.ai_grounding === "boolean") {
     $("ai-grounding").checked = preferences.ai_grounding;
   }
+  // Style matching is on unless the user turned it off: it costs nothing, goes
+  // no further than the local model, and a suggestion that reads like the rest
+  // of the page set is the better default.
+  if (typeof preferences.ai_style === "boolean") {
+    $("ai-style").checked = preferences.ai_style;
+  }
+  if (preferences.ai_model) $("ai-model-choice").dataset.preferred = preferences.ai_model;
 
   selectProvider(state.provider);
 });

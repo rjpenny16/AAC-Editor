@@ -65,7 +65,20 @@ const state = {
   gridBackground: null,
   layoutFingerprint: null,
   pages: [],
-  words: [], // [{label, message|null, fn|"", slot, symbol}]
+  words: [], // [{label, message|null, fn|"", slot, symbol, source|""}]
+  // Suggestions the user threw away. Fed back to the next request as negative
+  // constraints, so "no, not that" is answered once rather than every round.
+  // Labels only — it never leaves this computer, and never reaches the one
+  // outbound request the app can make (see the grounding note in ai.js).
+  aiRejected: [],
+  // Which Wikipedia article the last grounded suggestion actually used, plus
+  // the runners-up, so the user can see it and say it is the wrong one:
+  // {title, url, alternatives} or null when nothing was grounded.
+  aiSource: null,
+  // Articles the user rejected, and the one they picked instead. Both ride on
+  // the next grounded request.
+  aiExcluded: [],
+  aiChosenArticle: "",
   pageStyle: "words", // "words" | "topic"
   activeFn: "",
   autoTopicRows: false,

@@ -23,9 +23,15 @@ import { api } from "./api.js";
 
 /* Casefolded label -> page titles carrying it, or null when unavailable. */
 let index = null;
+/* Labels as the page set actually spells them, for style matching. The index
+   above casefolds, because "chips" and "Chips" are the same concept; style is
+   the opposite question — how does this page set word a button? — so the
+   server sends these separately rather than reusing the index keys. */
+let samples = [];
 
 function forget() {
   index = null;
+  samples = [];
 }
 
 /* Fetch the index for whichever provider is connected. Never throws: this is
@@ -39,6 +45,7 @@ async function loadVocabulary() {
     if (state.provider === "grid3") return;
     const data = await api(path);
     if (data && data.available && data.labels) index = data.labels;
+    if (data && Array.isArray(data.samples)) samples = data.samples;
   } catch {
     // Unavailable is the normal outcome for a page set AAC Editor cannot
     // identify; the UI simply says nothing about other pages.
@@ -78,4 +85,13 @@ function isLoaded() {
   return index !== null;
 }
 
-export { elsewhereNote, forget, isLoaded, loadVocabulary, pagesWith };
+/* A bounded sample of real labels for the AI panel to match against. Empty
+   whenever the page set could not be read, which is the same thing as having
+   no style to match — the caller simply asks for suggestions without it. */
+function styleSample(limit = 24) {
+  return samples.slice(0, Math.max(0, limit));
+}
+
+export {
+  elsewhereNote, forget, isLoaded, loadVocabulary, pagesWith, styleSample,
+};

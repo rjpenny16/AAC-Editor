@@ -1042,6 +1042,9 @@ def test_the_vocabulary_index_names_every_page_a_label_is_on(client, seeded_sour
     # Keyed casefolded, and every page carrying the label is named.
     assert index["labels"]["chips"] == ["Home Page", "Snacks"]
     assert index["labels"]["apple"] == ["Snacks"]
+    # The same read also carries style samples, spelled as the page set spells
+    # them, for the AI panel to match against.
+    assert "Chips" in index["samples"] and "Apple" in index["samples"]
 
 
 def test_the_vocabulary_index_is_advisory_and_never_fatal(tmp_path):
@@ -1058,6 +1061,49 @@ def test_the_vocabulary_index_is_advisory_and_never_fatal(tmp_path):
     with sqlite3.connect(str(path)) as conn:
         conn.row_factory = sqlite3.Row
         assert pageset.labels_by_page(conn) == {}
+
+
+def test_style_samples_keep_the_capitalization_the_index_throws_away(seeded_pageset):
+    """Style is about *how* a page set writes a button, so case survives.
+
+    The duplicate index casefolds, because "chips" and "Chips" are the same
+    concept. The style sample cannot: a page set that writes "I want more" and
+    one that writes "want more" are asking for different suggestions.
+    """
+    from tdsnap import builder, pageset
+
+    ps = seeded_pageset
+    page_id = ps.find_page_id_by_name("Home Page")
+    layout = builder.layout_for_page(ps.conn, page_id, ps.grid_dimension())
+    free = builder.free_slots(ps.conn, layout)
+    builder.add_buttons_to_page(
+        ps, page_id,
+        [{"label": "I want more", "slot": free[0]},
+         {"label": "All done", "slot": free[1]}],
+    )
+
+    samples = pageset.label_samples(ps.conn)
+
+    assert "I want more" in samples and "All done" in samples
+    assert all(sample == sample.strip() for sample in samples)
+    # Deterministic: the same page set always describes its style the same way.
+    assert pageset.label_samples(ps.conn) == samples
+    # Bounded, and de-duplicated without case folding away the real spelling.
+    assert len(pageset.label_samples(ps.conn, limit=1)) == 1
+    assert pageset.label_samples(ps.conn, limit=0) == []
+
+
+def test_style_samples_are_advisory_and_never_fatal(tmp_path):
+    from tdsnap import pageset
+
+    path = tmp_path / "empty.sqlite"
+    conn = sqlite3.connect(str(path))
+    conn.execute("CREATE TABLE Unrelated (x INTEGER)")
+    conn.commit()
+    conn.close()
+    with sqlite3.connect(str(path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert pageset.label_samples(conn) == []
 
 
 def test_a_label_is_listed_once_per_page_however_often_it_appears(seeded_pageset):

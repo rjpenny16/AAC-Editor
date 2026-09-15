@@ -30,6 +30,13 @@ FLOORS = {
     "tdsnap/pageset.py": 82,
     "tdsnap/colors.py": 85,
     "tdsnap/web/diagnostics.py": 90,
+    # Raised in Phase 6. These three decide what a model is asked for, what
+    # comes back into someone's communication system, and whether a ~1 GB
+    # download is trusted enough to load — the same kind of consequence as the
+    # write path, even though none of them touches a page set.
+    "tdsnap/web/prompts.py": 95,
+    "tdsnap/web/grounding.py": 85,
+    "tdsnap/web/localai.py": 75,
 }
 
 

@@ -8,6 +8,7 @@
 import { state } from "./state.js";
 import { $, setBusy, setActivity } from "./dom.js";
 import { api } from "./api.js";
+import { clearGroundingSource } from "./ai.js";
 import { clearUndoHistory, renderWords } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor } from "./connect.js";
 import { clearDraft } from "./draft.js";
@@ -266,6 +267,14 @@ $("another-btn").addEventListener("click", async () => {
   state.parentTouched = false;
   state.pendingEdit = null;
   state.placementAdjusted = false;
+  // Rejected suggestions and the article they were grounded on describe one
+  // page set's vocabulary. Carrying them into the next one would steer
+  // somebody else's suggestions away from words nobody here rejected.
+  state.aiRejected = [];
+  state.aiSource = null;
+  state.aiExcluded = [];
+  state.aiChosenArticle = "";
+  clearGroundingSource();
   $("title-input").value = "";
   $("parent-capacity").textContent = "";
   $("chip-note").textContent = "";
@@ -372,6 +381,14 @@ function resetConnection() {
   state.gridBackground = null;
   state.pendingEdit = null;
   state.placementAdjusted = false;
+  // Rejected suggestions and the article they were grounded on describe one
+  // page set's vocabulary. Carrying them into the next one would steer
+  // somebody else's suggestions away from words nobody here rejected.
+  state.aiRejected = [];
+  state.aiSource = null;
+  state.aiExcluded = [];
+  state.aiChosenArticle = "";
+  clearGroundingSource();
   // Every queued page names a page in the page set being left, and holds the
   // fingerprint it was reviewed against. Carrying that into a different page
   // set would be meaningless at best.

@@ -198,6 +198,23 @@ def _validated_existing(value) -> list:
     ]
 
 
+def _validated_labels(value, name: str, limit: int) -> list:
+    """A bounded list of short label-shaped strings, for the AI steering lists.
+
+    Rejected suggestions, kept ones, and style samples are all user text headed
+    for a prompt, so each gets the same length and count bound rather than
+    being trusted because it came from this app's own UI.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise PagesetError(f"'{name}' must be a list of button labels.")
+    if len(value) > limit:
+        raise PagesetError(f"No more than {limit} '{name}' labels are allowed.")
+    labels = [_bounded_text(label, f"{name} label", 120) for label in value]
+    return [label for label in labels if label]
+
+
 # Communicative functions a draft or topic-page item may carry; mirrors
 # FUNCTIONS in static/state.js. "" means "no function" (a plain word button).
 _DRAFT_FUNCTIONS = {"", "question", "comment", "positive", "negative", "personal"}
@@ -211,6 +228,8 @@ _PREFERENCE_SCHEMA = {
     "ollama_host": {"max_len": 200},
     "ollama_model": {"max_len": 120},
     "ai_grounding": {"bool": True},
+    "ai_style": {"bool": True},
+    "ai_model": {"max_len": 20},
 }
 
 
@@ -1027,9 +1046,12 @@ def pageset_vocabulary(session_id):
         ) as conn:
             conn.row_factory = sqlite3.Row
             labels = pageset.labels_by_page(conn)
+            samples = pageset.label_samples(conn)
     except sqlite3.Error:
-        return jsonify({"ok": True, "available": False, "labels": {}})
-    return jsonify({"ok": True, "available": True, "labels": labels})
+        return jsonify({"ok": True, "available": False, "labels": {}, "samples": []})
+    return jsonify(
+        {"ok": True, "available": True, "labels": labels, "samples": samples}
+    )
 
 
 @app.get("/api/pageset/<session_id>/page/<int:page_id>/layout")
@@ -1191,38 +1213,32 @@ def download(session_id):
 
 @app.get("/api/ai/status")
 def ai_status():
-    """Which suggestion engines are usable right now."""
+    """Which suggestion engines are usable right now.
+
+    ``local`` also describes every built-in model this build will download, so
+    the panel can offer a bigger one on a machine measured to have the memory
+    for it — and say plainly why it is not offering one otherwise.
+    """
     try:
         host = ollama.normalize_host(request.args.get("host", ollama.DEFAULT_HOST))
     except ValueError as exc:
         raise PagesetError(str(exc)) from exc
-    return jsonify(
-        {
-            "ollama": ollama.status(host),
-            "local": {
-                "engine_available": localai.engine_available(),
-                "downloaded": localai.is_downloaded(),
-                "download": localai.download_state(),
-                "model": {
-                    "name": localai.MODEL_NAME,
-                    "license": localai.MODEL_LICENSE,
-                    "size": localai.MODEL_SIZE_HINT,
-                },
-            },
-        }
-    )
+    preferred = _bounded_text(request.args.get("model_key"), "model_key", 20) or None
+    return jsonify({"ollama": ollama.status(host), "local": localai.status(preferred)})
 
 
 @app.post("/api/ai/download")
 def ai_download():
-    """One-time download of the built-in model (user-initiated)."""
+    """One-time download of a built-in model (user-initiated)."""
     if not localai.engine_available():
         return jsonify(
             {"ok": False,
              "error": "This install doesn't include the built-in AI engine; "
                       "use Ollama instead or install llama-cpp-python."}
         ), 400
-    return jsonify({"ok": True, "download": localai.start_download()})
+    payload = _json_payload()
+    key = _bounded_text(payload.get("model_key"), "model_key", 20) or None
+    return jsonify({"ok": True, "download": localai.start_download(key)})
 
 
 @app.get("/api/ai/download")
@@ -1252,12 +1268,27 @@ def ai_words():
     grounding_requested = payload.get("grounding", False)
     if not isinstance(grounding_requested, bool):
         raise PagesetError("'grounding' must be true or false.")
+    # Steering: what the user rejected, what they kept and want more of, and
+    # how their page set already words its buttons. All three only ever reach a
+    # local model — see the grounding call below, which they never touch.
+    avoid = _validated_labels(payload.get("avoid"), "avoid", 60)
+    like = _validated_labels(payload.get("like"), "like", 20)
+    style = _validated_labels(payload.get("style"), "style", 40)
+    grounding_title = _bounded_text(
+        payload.get("grounding_title"), "grounding_title", MAX_PAGE_NAME_CHARS
+    )
+    grounding_exclude = _validated_labels(
+        payload.get("grounding_exclude"), "grounding_exclude", 20
+    )
     args = {
         "category": category,
         "count": count,
         "kind": kind,
         "function": function,
         "existing": existing,
+        "avoid": avoid,
+        "like": like,
+        "style": style,
     }
     try:
         host = ollama.normalize_host(payload.get("host", ollama.DEFAULT_HOST))
@@ -1266,6 +1297,7 @@ def ai_words():
     model = _bounded_text(
         payload.get("model", ollama.DEFAULT_MODEL), "model", 120, required=True
     )
+    model_key = _bounded_text(payload.get("model_key"), "model_key", 20) or None
     ollama_state = ollama.status(host)
     # An Ollama server with no models can't generate anything; fall through
     # to the built-in engine instead of failing with "model not found".
@@ -1273,8 +1305,12 @@ def ai_words():
         engine, generate = "ollama", lambda: ollama.generate_words(
             host=host, model=model, **args
         )
-    elif localai.engine_available() and localai.is_downloaded():
-        engine, generate = "local", lambda: localai.generate_words(**args)
+    elif localai.engine_available() and localai.is_downloaded(
+        localai.active_key(model_key)
+    ):
+        engine, generate = "local", lambda: localai.generate_words(
+            model_key=model_key, **args
+        )
     else:
         return jsonify(
             {"ok": False, "words": [],
@@ -1283,16 +1319,30 @@ def ai_words():
         ), 400
     # Only look up reference facts once we know a model will actually run. Real
     # facts about the title stop a small model naming the wrong thing (e.g.
-    # cartoon characters for "Roblox characters"). Best-effort: "" if offline.
-    args["reference"] = (
-        grounding.reference_text(category, requested=True)
-        if grounding_requested else ""
+    # cartoon characters for "Roblox characters"). Best-effort: unused if
+    # offline.
+    #
+    # The page title is the only thing that goes out, and this call is written
+    # so that nothing else *can*: `category` is the page title, and the
+    # remaining arguments are Wikipedia article titles this server named in an
+    # earlier answer. The user's own words — `existing`, `avoid`, `like`,
+    # `style` — are not in scope of this call by construction, and a test pins
+    # that they never reach it.
+    source = grounding.lookup(
+        category,
+        requested=grounding_requested,
+        title=grounding_title or None,
+        exclude=grounding_exclude,
     )
+    args["reference"] = source["text"]
     words, error = generate()
+    reported = {key: value for key, value in source.items() if key != "text"}
     if error:
         return jsonify({"ok": False, "error": error, "words": [],
-                        "engine": engine}), 502
-    return jsonify({"ok": True, "words": words, "engine": engine})
+                        "engine": engine, "grounding": reported}), 502
+    return jsonify({
+        "ok": True, "words": words, "engine": engine, "grounding": reported,
+    })
 
 
 def instance_running(port: int) -> bool:

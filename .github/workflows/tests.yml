@@ -84,6 +84,29 @@ jobs:
           TDSNAP_AI_SMOKE: "1"
         run: python -m pytest -v tests/test_integration_example.py tests/test_ai_smoke.py
 
+      # The eval set turns "does this prompt still work?" into a number. It
+      # records rather than gates: this job runs the 0.5B model, which is the
+      # cheapest one that exercises the real code path and not the one that
+      # ships, so its rate is a trend to compare release to release rather
+      # than a bar to clear. A collapse is still caught, by the smoke test
+      # above and by the offline rule tests. See tests/test_ai_eval.py.
+      - name: Run the AI eval set and record its pass rate
+        env:
+          TDSNAP_AI_SMOKE: "1"
+        run: python -m pytest -v tests/test_ai_eval.py
+
+      - name: Record the pass rate in the job summary
+        if: always()
+        run: python scripts/ai_eval_summary.py >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the eval report with the build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-eval-report
+          path: ai-eval-report.json
+          if-no-files-found: ignore
+
   windows:
     runs-on: windows-latest
     steps:

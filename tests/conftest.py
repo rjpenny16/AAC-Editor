@@ -8,8 +8,13 @@ real navigation chain. Unit tests run against this without needing the
 proprietary fixture file.
 """
 
+import contextlib
+import importlib
+import os
 import pathlib
+import re
 import sqlite3
+import time
 import uuid
 
 import pytest
@@ -146,3 +151,77 @@ def require_example() -> pathlib.Path:
             "Real page-set fixture missing; run scripts/fetch_fixture.py"
         )
     return EXAMPLE
+
+
+# --- the real built-in model -----------------------------------------------
+#
+# Downloads a small GGUF (Qwen2.5 0.5B, ~400 MB) and runs actual generations
+# through llama.cpp, proving the exact code path the packaged app uses. Both
+# opt-in real-model suites — the smoke test and the eval set — share this one
+# fixture so CI fetches the model once rather than once per file.
+
+SMOKE_MODEL_URL = (
+    "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/"
+    "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+)
+SMOKE_MODEL_FILE = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+
+# Fetching ~400 MB from a third-party CDN fails for reasons that say nothing
+# about this code: rate limits, 5xx, DNS, a dropped connection. Those skip.
+# Anything else — above all a failed integrity check, a wrong size, or a file
+# that is not GGUF — is a real defect in the download path and must fail.
+TRANSPORT_FAILURE = re.compile(
+    r"HTTP Error (?:429|5\d\d)"
+    r"|timed out|timeout"
+    r"|name resolution|nodename nor servname|getaddrinfo"
+    r"|[Cc]onnection (?:reset|refused|aborted)"
+    r"|Remote end closed"
+    r"|URLError",
+)
+
+
+@pytest.fixture(scope="session")
+def smoke_localai(tmp_path_factory):
+    """The built-in engine, pointed at a small real model in a temp home.
+
+    Restores the environment and reloads the module afterwards: the override
+    replaces the whole model registry, and leaving it in place would change
+    what the ordinary unit tests see.
+    """
+    pytest.importorskip("llama_cpp")
+    tmp = tmp_path_factory.mktemp("model-home")
+    previous = {
+        name: os.environ.get(name)
+        for name in ("XDG_DATA_HOME", "LOCALAPPDATA",
+                     "TDSNAP_MODEL_URL", "TDSNAP_MODEL_FILE")
+    }
+    os.environ["XDG_DATA_HOME"] = str(tmp)
+    os.environ["LOCALAPPDATA"] = str(tmp)
+    os.environ["TDSNAP_MODEL_URL"] = SMOKE_MODEL_URL
+    os.environ["TDSNAP_MODEL_FILE"] = SMOKE_MODEL_FILE
+
+    from tdsnap.web import localai
+
+    importlib.reload(localai)  # pick up the env overrides
+    try:
+        localai.start_download()
+        deadline = time.time() + 600
+        while time.time() < deadline:
+            if localai.download_state()["status"] in ("ready", "error"):
+                break
+            time.sleep(2)
+        final = localai.download_state()
+        if final["status"] != "ready":
+            error = str(final.get("error") or "")
+            if TRANSPORT_FAILURE.search(error):
+                pytest.skip(f"could not fetch the model from the CDN: {error}")
+            pytest.fail(f"model download failed: {final}")
+        yield localai
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        with contextlib.suppress(Exception):
+            importlib.reload(localai)
