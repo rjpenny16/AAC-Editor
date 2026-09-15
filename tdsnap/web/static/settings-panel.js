@@ -4,7 +4,7 @@
  */
 
 import { $ } from "./dom.js";
-import { clearAll, getDraft, getPreferences } from "./settings.js";
+import { clearAll, getDraft, getPreferences, getTemplates } from "./settings.js";
 
 const PREFERENCE_LABELS = {
   provider: "Last AAC app used",
@@ -25,12 +25,14 @@ function renderEntry(list, term, description) {
 async function renderPanel() {
   const list = $("settings-panel-list");
   list.innerHTML = "";
-  const [preferences, draft] = await Promise.all([getPreferences(), getDraft()]);
+  const [preferences, draft, templates] = await Promise.all([
+    getPreferences(), getDraft(), getTemplates(),
+  ]);
   const preferenceEntries = Object.entries(preferences).filter(
     ([, value]) => value !== "" && value !== null,
   );
 
-  if (!preferenceEntries.length && !draft) {
+  if (!preferenceEntries.length && !draft && !templates.length) {
     renderEntry(
       list,
       "Nothing saved yet",
@@ -51,6 +53,18 @@ async function renderPanel() {
       list,
       "Unfinished page",
       `${count} button${count === 1 ? "" : "s"} planned for “${target}”, saved so you can resume it.`,
+    );
+  }
+  // Clearing wipes these too, so the listing has to name them by name — this
+  // is the one place a user finds out what they would be throwing away.
+  if (templates.length) {
+    const names = [...templates]
+      .map((template) => template.name)
+      .sort((left, right) => left.localeCompare(right));
+    renderEntry(
+      list,
+      `Saved template${names.length === 1 ? "" : "s"}`,
+      `${names.join(", ")} — reusable word lists, kept until you delete them.`,
     );
   }
 }

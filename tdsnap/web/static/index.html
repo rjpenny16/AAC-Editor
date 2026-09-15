@@ -246,10 +246,20 @@
           <p id="items-error" class="step-error" data-error-for="items" role="alert" tabindex="-1" hidden></p>
         </div>
 
+        <section id="queue-banner" class="queue-banner" aria-labelledby="queue-heading" hidden>
+          <h3 id="queue-heading">Pages waiting to be applied</h3>
+          <ul id="queue-list" class="queue-list"></ul>
+          <div class="queue-actions">
+            <button type="button" id="queue-review-btn" class="btn btn-secondary">Review and apply all</button>
+          </div>
+        </section>
+
         <details class="more-options">
           <summary>More options</summary>
           <div class="more-options-body">
             <button type="button" id="layout-options-btn" class="btn btn-secondary">Change page layout</button>
+            <button type="button" id="import-list-btn" class="btn btn-secondary">Import a word list</button>
+            <button type="button" id="templates-btn" class="btn btn-secondary">Templates</button>
 
             <details class="ai-suggest" id="ai-suggest">
               <summary><span id="ai-summary-text">Help me think of words</span> <span class="optional-tag">Optional · local by default</span></summary>
@@ -383,6 +393,12 @@
         <p class="field-hint">These are removed from the page. TD Snap keeps the rest of the page as it is.</p>
         <ul id="review-removals" class="review-items"></ul>
       </div>
+      <div class="review-list-wrap" id="review-queue-wrap" hidden>
+        <h3>Pages in this batch</h3>
+        <p class="field-hint">Each page is applied on its own, in this order. If one cannot be
+          applied, the pages after it are reported rather than silently skipped.</p>
+        <ol id="review-queue" class="review-items review-queue"></ol>
+      </div>
       <div id="review-undo-note" class="alert warning" role="status" hidden></div>
       <section class="review-placement-preview" id="review-placement-section" aria-labelledby="review-placement-heading">
         <div class="preview-heading">
@@ -400,12 +416,18 @@
       <div class="wizard-actions review-actions">
         <button type="button" id="review-back-btn" class="btn btn-ghost">Back</button>
         <button type="button" id="adjust-placement-btn" class="btn btn-secondary">Change positions</button>
+        <button type="button" id="queue-add-btn" class="btn btn-secondary" hidden>Queue this page, edit another</button>
+        <p id="queue-add-note" class="field-hint queue-add-note" hidden></p>
         <button type="button" id="confirm-update-btn" class="btn btn-primary"><span id="confirm-update-label" class="btn-label">Confirm change</span></button>
       </div>
     </div>
 
     <div id="success-state" hidden>
       <span id="edit-count" class="sr-only"></span>
+      <div class="review-list-wrap" id="batch-outcome-wrap" hidden>
+        <h3>What happened to each page</h3>
+        <ul id="batch-outcome" class="batch-outcome"></ul>
+      </div>
       <ul id="checks" class="checks" aria-label="Verification results"></ul>
       <div id="result-warnings" class="alert warning" role="status" hidden></div>
       <div class="wizard-actions">
@@ -474,6 +496,74 @@
     <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
   </div>
 </footer>
+
+<dialog id="templates-dialog" class="chip-dialog import-dialog" aria-labelledby="templates-dialog-title">
+  <form method="dialog" id="templates-form">
+    <h2 id="templates-dialog-title">Templates</h2>
+    <p class="field-hint">A template is a set of words, their layout, and their topic-page rows,
+      saved on this computer. Build a topic page once and reuse it for anyone.</p>
+
+    <div class="field">
+      <label for="template-name">Save what you have now as</label>
+      <div class="import-file-row">
+        <input id="template-name" type="text" autocomplete="off" maxlength="60"
+          placeholder="For example, Swimming">
+        <button type="button" id="template-save-btn" class="btn btn-secondary btn-compact">Save template</button>
+      </div>
+      <p id="template-save-hint" class="field-hint"></p>
+    </div>
+
+    <h3>Saved templates</h3>
+    <ul id="template-list" class="template-list"></ul>
+    <div id="template-summary" class="import-summary" role="status" aria-live="polite" hidden></div>
+
+    <div class="dialog-actions">
+      <button type="submit" class="btn btn-ghost" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="import-dialog" class="chip-dialog import-dialog" aria-labelledby="import-dialog-title">
+  <form method="dialog" id="import-form">
+    <h2 id="import-dialog-title">Import a word list</h2>
+    <p class="field-hint">Paste a column from a spreadsheet, or choose a CSV or TSV file.
+      Nothing is added until you review what fits.</p>
+
+    <div class="field">
+      <label for="import-text">Paste your list</label>
+      <textarea id="import-text" rows="6" spellcheck="false"
+        placeholder="more&#9;I want more, please&#10;all done&#9;I am all done"></textarea>
+      <div class="import-file-row">
+        <button type="button" id="import-file-btn" class="btn btn-secondary btn-compact">Choose a file</button>
+        <span id="import-file-name" class="field-hint"></span>
+        <input id="import-file" class="sr-only" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain"
+          aria-label="Choose a CSV or TSV word list">
+      </div>
+    </div>
+
+    <div id="import-mapping" hidden>
+      <h3 id="import-mapping-heading">Which column is which?</h3>
+      <p class="field-hint">AAC Editor's best guess is selected. Change anything it got wrong.</p>
+      <label class="inline-option" for="import-has-header">
+        <input id="import-has-header" type="checkbox">
+        The first row names the columns
+      </label>
+      <div id="import-columns" class="import-columns"></div>
+      <div class="preview-frame">
+        <table id="import-preview" class="import-preview"
+          aria-label="First rows of the list you are importing"></table>
+      </div>
+    </div>
+
+    <div id="import-summary" class="import-summary" role="status" aria-live="polite" hidden></div>
+    <p id="import-error" class="step-error" role="alert" tabindex="-1" hidden></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="import-add-btn" class="btn btn-primary" disabled>Add these buttons</button>
+      <button type="submit" class="btn btn-ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="settings-panel" class="chip-dialog support-dialog" aria-labelledby="settings-panel-title">
   <form method="dialog">

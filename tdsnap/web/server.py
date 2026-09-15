@@ -270,6 +270,56 @@ def _validated_draft_items(value) -> list:
     return items
 
 
+# A saved template is the one thing in the settings file that is deliberate,
+# reusable work rather than a convenience, so it is bounded on its own terms:
+# enough for a real caseload, far short of anything that could bloat the file.
+MAX_TEMPLATES = 50
+MAX_TEMPLATE_NAME_CHARS = 60
+
+
+def _validated_templates(value) -> Optional[list]:
+    """Bound ``[{name, page_style, items}]``, or ``None`` to leave them alone.
+
+    Absent means "unchanged": the draft autosave PUTs every few seconds and
+    says nothing about templates, and it must not be able to wipe them. An
+    explicit empty list is how they are cleared.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise PagesetError("'templates' must be a list of saved templates.")
+    if len(value) > MAX_TEMPLATES:
+        raise PagesetError(f"No more than {MAX_TEMPLATES} templates can be saved.")
+    templates = []
+    names = set()
+    for template in value:
+        if not isinstance(template, dict):
+            raise PagesetError("Each template must be an object.")
+        name = _bounded_text(
+            template.get("name"), "template name", MAX_TEMPLATE_NAME_CHARS, required=True
+        )
+        folded = name.casefold()
+        if folded in names:
+            raise PagesetError(f"Two templates cannot both be called {name!r}.")
+        names.add(folded)
+        style = template.get("page_style")
+        if style not in {"words", "topic"}:
+            raise PagesetError("Each template's page style must be 'words' or 'topic'.")
+        saved_at = template.get("saved_at")
+        if saved_at is not None:
+            saved_at = _bounded_int(saved_at, "template saved_at", 0, 2**63 - 1)
+        items = _validated_draft_items(template.get("items", []))
+        if not items:
+            raise PagesetError(f"Template {name!r} has no buttons to save.")
+        templates.append({
+            "name": name,
+            "page_style": style,
+            "saved_at": saved_at,
+            "items": items,
+        })
+    return templates
+
+
 def _validated_draft(value) -> Optional[dict]:
     """Bound and shape a draft, or drop it entirely if there's nothing in it.
 
@@ -699,7 +749,12 @@ def diagnostics_report():
 def get_settings():
     """Remembered preferences and any recoverable draft — never page-set content."""
     data = settings.load()
-    return jsonify({"ok": True, "preferences": data["preferences"], "draft": data["draft"]})
+    return jsonify({
+        "ok": True,
+        "preferences": data["preferences"],
+        "draft": data["draft"],
+        "templates": data["templates"],
+    })
 
 
 @app.put("/api/settings")
@@ -710,7 +765,8 @@ def put_settings():
     payload = _json_payload()
     preferences = _validated_preferences(payload.get("preferences"))
     draft = _validated_draft(payload.get("draft"))
-    settings.save(preferences, draft)
+    templates = _validated_templates(payload.get("templates"))
+    settings.save(preferences, draft, templates)
     return jsonify({"ok": True})
 
 
@@ -789,6 +845,56 @@ def live_execute_plan():
         )
         report["undo"] = live.last_edit()
     return jsonify({"ok": True, **report})
+
+
+@app.post("/api/tdsnap/batch")
+def live_execute_batch():
+    """Apply several reviewed page edits in one run, one page at a time.
+
+    Each queued entry is validated exactly as a single-page edit is — the
+    batch adds no new way to describe an edit, only a way to sequence several.
+    """
+    if request.headers.get("X-TDSnap-Editor") != "1":
+        raise PagesetError("Direct TD Snap edits must start in this app.")
+    payload = _json_payload()
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise PagesetError("'entries' must be a list of queued page edits.")
+    if len(entries) > live.MAX_BATCH_PAGES:
+        raise PagesetError(
+            f"No more than {live.MAX_BATCH_PAGES} pages can be applied in one go."
+        )
+    queued = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise PagesetError("Each queued page must be an object.")
+        queued.append({
+            "page": _bounded_text(
+                entry.get("page"), "page", MAX_PAGE_NAME_CHARS, required=True
+            ),
+            "items": _validated_items(entry.get("items", [])),
+            "changes": _validated_changes(entry.get("changes", [])),
+            "removals": _validated_removals(entry.get("removals", [])),
+            "moves": _validated_moves(entry.get("moves", [])),
+            "fingerprint": _bounded_text(entry.get("fingerprint"), "fingerprint", 256)
+            or None,
+        })
+    with _LIVE_LOCK:
+        report = live.apply_batch(queued)
+        report["undo"] = live.last_edit()
+    return jsonify({"ok": True, **report})
+
+
+@app.get("/api/tdsnap/vocabulary")
+def live_vocabulary():
+    """Every label in the open page set, for advisory duplicate checking.
+
+    Read once per connection; the browser answers "where else does this word
+    live?" from it. Advisory only — a page set this cannot read reports
+    ``available: false`` and nothing downstream is blocked by it.
+    """
+    with _LIVE_LOCK:
+        return jsonify({"ok": True, **live.vocabulary()})
 
 
 @app.get("/api/tdsnap/last-edit")
@@ -909,6 +1015,21 @@ def pages(session_id):
 def capacity(session_id, page_id):
     current = _current_path(session_id)
     return jsonify({"ok": True, "free_cells": _free_cells(current, page_id)})
+
+
+@app.get("/api/pageset/<session_id>/vocabulary")
+def pageset_vocabulary(session_id):
+    """The exported-file counterpart of ``/api/tdsnap/vocabulary``."""
+    current = _current_path(session_id)
+    try:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+        ) as conn:
+            conn.row_factory = sqlite3.Row
+            labels = pageset.labels_by_page(conn)
+    except sqlite3.Error:
+        return jsonify({"ok": True, "available": False, "labels": {}})
+    return jsonify({"ok": True, "available": True, "labels": labels})
 
 
 @app.get("/api/pageset/<session_id>/page/<int:page_id>/layout")

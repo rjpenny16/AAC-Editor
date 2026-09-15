@@ -17,12 +17,13 @@ item model, review-before-write, layout fingerprinting, automatic rollback, 136 
 Playwright tests, a five-job CI matrix, axe-checked end-to-end coverage, and a fail-closed signed
 release pipeline. There are no TODO/FIXME markers in the tree.
 
-The gaps are elsewhere, and three of them are serious:
+The gaps are elsewhere. Three were serious; one still is:
 
-1. **A browser refresh silently destroys unsaved work.** There is no `beforeunload` guard, no draft,
-   no autosave, no recovery. Composing a large topic page — labels, spoken messages, function
-   assignments, drag placements — and then reloading loses all of it. This is the clearest
-   user-facing failure mode in the product and it is small to fix.
+1. ~~**A browser refresh silently destroys unsaved work.**~~ *Closed in Phase 2. A `beforeunload`
+   guard covers anything composed but not applied, and the in-progress item list is autosaved to the
+   opt-in settings file and offered back on the next launch.* One thing is deliberately excluded: the
+   Phase 5 multi-page queue is guarded but not autosaved, because its entries hold live TD Snap
+   fingerprints that a relaunch invalidates — see Phase 5.
 2. ~~**The app is add-only.**~~ *Closed across Phase 4. TD Snap live can change, move, swap, and
    remove a speaking button; an applied edit can be undone once, through the same review step; and
    exported files add to an existing page rather than only creating one. Symbol control landed as
@@ -32,9 +33,9 @@ The gaps are elsewhere, and three of them are serious:
    identically-named functions exist in both files and have already diverged in behaviour. Building
    Grid 3 parity on top of that multiplies the divergence.
 
-Alongside those: 1.48 MB of orphaned images ship in every installer, there is no JavaScript linter,
-formatter, type checker, or unit test, and the app is English-only in a field where bilingual
-families are the norm.
+Alongside those, three items on this list have since been dealt with: the orphaned installer images
+were removed, and ESLint, Stylelint, a Prettier config, and a `node --test` unit suite now cover the
+frontend. The app is still English-only, in a field where bilingual families are the norm.
 
 ## Direction
 
@@ -306,27 +307,66 @@ panel.
 
 ---
 
-## Phase 5 — Caseload-scale vocabulary work *(~2–3 weeks)*
+## Phase 5 — Caseload-scale vocabulary work *(~2–3 weeks)* — **shipped**
 
 Where "saves hours" becomes literal for the primary audience.
 
-- **List import.** Paste or open CSV/TSV with column mapping (label, message, function, symbol hint).
-  The chip box already accepts comma-separated paste; this is the structured version. Respect the
-  200-item cap and report what will not fit *before* the user commits.
-- **Reusable topic templates** (needs Phase 2). Save the current item set, layout, and function
-  assignments as a named template, then apply it to any page set. One topic page built once and reused
-  across many clients is the core caseload win.
-- **Page-set-wide duplicate detection.** Duplicates are checked only against the target page and
-  planned items today. Extend across the whole page set — straightforward SQL for the file path, the
-  existing page enumeration for live. Advisory (*"'apple' already exists on Food"*), never blocking.
-- **Multi-page batch.** Queue several page-and-items edits, review them as one list, and apply
-  sequentially with per-page rollback and per-page results. The live lock already serializes the
-  automation; the real work is the review UI and honest partial-failure reporting.
-- Raise the item cap only if the live path is *measured* to hold up. Note that the placement-order
-  renderer is O(n²) — harmless at 200, visible above it.
+- **List import** — *shipped.* **Import a word list** takes a paste or a CSV/TSV file, detects the
+  delimiter and whether there is a header, guesses which column is the label, the message, the
+  function, and the symbol hint, and lets any guess be corrected. The parse is a pure module
+  (`static/csv.js`) with its own `node --test` suite, so RFC4180 quoting — a comma inside a phrase
+  staying inside the phrase — is pinned away from the DOM. Everything that will not fit is named
+  before a single button is added: rows already on the page, rows repeated within the list, rows the
+  page has no room for, and rows that cannot become a button at all, each identified by row number
+  *and* by what it does hold, so it can be found in the file.
+- **Reusable topic templates** — *shipped.* A template is labels, spoken messages, topic-page rows,
+  symbol search words, and the page style they were composed for, saved by name in the Phase 2
+  settings file. What it deliberately does not carry is anything tied to one page set: no page ids, no
+  fingerprints, no client's name. Applying one fills the same `state.words` the chip box fills, so it
+  goes through the same capacity check, the same review, and the same confirm step as anything typed
+  by hand — a template can never write to a page set. It adds to what is there rather than replacing
+  it, and names what would not fit. Saved cells are a preference, not a promise: a template built on
+  an 8×5 grid keeps its words on a 4×3 page and takes whatever cells are free.
+
+  `settings.save(preferences, draft, templates=None)` leaves stored templates alone, so the draft
+  autosave running every few seconds cannot wipe work the user deliberately named; an explicit empty
+  list is how they are cleared. The Settings disclosure names saved templates, because **Clear all**
+  throws them away and that listing is where a user finds that out.
+- **Page-set-wide duplicate detection** — *shipped.* `GET /api/tdsnap/vocabulary` and
+  `GET /api/pageset/<id>/vocabulary` return every label in the page set by page, read once per
+  connection. Advisory throughout: a word already elsewhere is noted with the pages it is on and never
+  blocked, because two pages deliberately carrying "more" is a normal thing for a page set to do. The
+  blocking per-page check is unchanged. A page set whose labels cannot be read reports
+  `available: false` and nothing downstream is affected.
+- **Multi-page batch** — *shipped.* Pages are queued from the ordinary review screen, reviewed as one
+  list, and applied by `live.apply_batch` calling the single-page `apply_page_edits` once per page —
+  same fingerprint guard, same edit-mode session, same rollback. Nothing in the batch path reaches
+  past one page.
+
+  Every queued page is reported on afterwards — `applied`, `refused`, `failed`, or `skipped` — because
+  a run that stops after page two must not read as though pages three and four were fine. Warnings
+  stay attached to the page that raised them, and a check counts as passed only where every applied
+  page passed it.
+
+  Whether a failure stops the run turns on a distinction the write path already made but did not
+  expose: `PagesetError.page_touched`. A refusal wrote nothing and is local to that page, so the rest
+  of the queue still runs; a page that was written to and restored means the automation lost its
+  footing, and the next thing it would do is drive a *different* page in that state, so it stops.
+
+  Two limits are said up front rather than discovered: undo is single-level, so it reaches the last
+  page applied and no further; and a page can be queued once, because a second entry's fingerprint was
+  captured before the first one landed and is stale by construction.
+
+  **The queue is deliberately not autosaved,** unlike the chip box. Its entries hold live TD Snap
+  fingerprints that a relaunch invalidates, so restoring a queue would offer back work that could only
+  be refused. It is guarded against loss instead — `hasUnsavedWork` and the quit warning both count it.
+- **The item cap was not raised.** Doing so was conditional on the live path being *measured* to hold
+  up, and no such measurement exists yet; the 200-item cap stands, and the O(n²) placement-order
+  renderer is untouched. The import path respects the cap and reports the overflow by name.
 
 **Exit:** a clinician takes a 60-word spreadsheet, maps its columns, previews placement across three
-pages, applies once, and reuses the same set as a template later.
+pages, applies once, and reuses the same set as a template later. — *met, with the queue applied per
+page rather than as one atomic write; per-page rollback is what the automation can actually promise.*
 
 ---
 

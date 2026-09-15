@@ -13,6 +13,66 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Added
 
+- **Import a word list.** **More options → Import a word list** takes a paste or a CSV/TSV file. It
+  detects the delimiter, works out whether the first row is a header, and guesses which column holds
+  the label, the spoken message, the communicative function, and the symbol search words — every guess
+  correctable from a dropdown, with a live preview of the rows as the mapping reads them.
+
+  Nothing is added until what will not fit has been named: words already on the page, words repeated
+  within the list, words the page has no room for, and rows that cannot become a button at all. A row
+  that cannot is identified by its row number *and* by whatever it does hold — *"Row 3, "orphan
+  message" — no label"* — so it can be found in the original file. A comma inside a phrase stays inside
+  the phrase.
+
+- **Reusable topic templates.** A topic page built once can now be used for the next client.
+  **More options → Templates** saves the current buttons — labels, spoken messages, topic-page rows,
+  symbol search words, and the page style they were composed for — under a name, kept on that computer
+  only.
+
+  A template carries vocabulary and nothing tied to one page set: no page ids, no fingerprints, no
+  client's name. Applying one fills the same word list typing fills, so it goes through the same
+  capacity check, the same review, and the same confirm step as anything typed by hand — a template can
+  never write to a page set on its own. It adds to what is already there rather than replacing it, and
+  names anything that would not fit. The cells it was saved with are a preference, not a promise: a
+  template built on an 8×5 grid keeps its words on a 4×3 page and takes whatever cells are free.
+
+  The draft autosave, which runs every few seconds, cannot wipe a saved template — an absent
+  `templates` key means "leave them alone", and only an explicit empty list clears them. The Settings
+  disclosure now names saved templates, because **Clear all saved data** throws them away.
+
+- **Duplicates elsewhere in the page set are pointed out.** Until now a word was checked only against
+  the page being edited. The whole page set's labels are now read once per connection, and a word that
+  already exists somewhere else is noted with the pages it is on. This is **advisory and never
+  blocking**: two pages deliberately carrying "more" is a normal thing for a page set to do. The
+  blocking per-page check is unchanged, and a page set whose labels cannot be read simply reports
+  nothing rather than affecting anything. New endpoints: `GET /api/tdsnap/vocabulary` and
+  `GET /api/pageset/<session_id>/vocabulary`.
+
+- **Multi-page batch edits.** A caseload session is rarely one page. **Queue this page, edit another**
+  on the review screen sets a reviewed page aside; the word list then shows what is queued, and
+  **Review and apply all** presents the whole batch as one list before anything is written.
+
+  A batch is not a second write path. Each queued page carries the payload its own review froze, and
+  the server applies them one page at a time through the same single-page write path — same
+  fingerprint guard, same edit-mode session, same rollback. Nothing reaches past one page.
+
+  Every queued page is reported on afterwards: applied, not applied (and why), failed and put back, or
+  explicitly not attempted. A run that stops partway must not read as though the pages after it were
+  fine, so the ones never tried are named rather than left off the list; warnings stay attached to the
+  page that raised them, and a check is shown as passed only where every applied page passed it.
+
+  Whether a failure stops the run depends on what it was. A page that was *refused* — a fingerprint
+  that moved, a cell that filled — was never written to, so the rest of the queue still runs. A page
+  that was written to and restored means something on screen was not what the app expected, and the
+  next thing it would do is drive a different page in that state; that stops the batch.
+
+  Two limits are stated before the batch runs, not after: undo reaches the last page applied and no
+  further, and a page can be queued once, because a second edit to it would have been reviewed against
+  the page as it is now rather than as the first edit will leave it. The queue is held in the browser
+  and deliberately not autosaved — its entries hold live TD Snap fingerprints that a relaunch would
+  invalidate — so closing the tab or quitting with pages queued warns first. New endpoint:
+  `POST /api/tdsnap/batch`.
+
 - **Undo my last change.** An edit that succeeded used to be final: rollback
   only ever ran on the failure path, so the one mistake this app makes easiest —
   a confident, verified edit to the wrong button — had no way back except doing
@@ -244,6 +304,11 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Fixed
 
+- **Settings read back stale values after any save.** The settings wrapper
+  cached the *load promise* rather than the loaded object, so every read after
+  a write still saw what the initial `GET` had returned. Invisible until
+  something both wrote and re-read in one session — a template saved from the
+  Templates dialog did not appear in the list it had just been saved into.
 - **`clone_row` could have copied NULL into every column of every cloned row.**
   `sqlite3.Row` implements the sequence protocol, so `name in row` searches
   values rather than column names — an edit that succeeds, validates, and only

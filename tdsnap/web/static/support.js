@@ -30,6 +30,10 @@ const MAX_RECENT_ERRORS = 5;
    that may have moved on — so the leave-warning is the only thing standing
    between the user and losing them. */
 function hasUnsavedWork() {
+  // A queued page is reviewed work held only in this tab, and it counts
+  // whatever else has already been applied this session — unlike the chip box,
+  // which an applied edit legitimately empties.
+  if (state.queue.length) return true;
   return !state.applied && Boolean(
     state.words.length || state.pendingEdit || countEdits(state.pageEdits)
   );

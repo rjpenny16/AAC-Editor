@@ -13,6 +13,7 @@ import {
 import { inferPhraseFunction } from "./phrases.js";
 import { titleOf } from "./parents.js";
 import { openSlots, renderPlacementOrder, renderPreview } from "./preview.js";
+import { elsewhereNote } from "./vocabulary.js";
 import { createUndoStack } from "./undo.js";
 import { clearStepError, setActiveFn } from "./wizard.js";
 
@@ -162,6 +163,7 @@ function addWords(raw, forcedFn = null) {
   const capacity = pageCapacity();
   const duplicates = [];
   const overflow = [];
+  const added = [];
   raw
     .split(",")
     .map((word) => word.trim())
@@ -188,17 +190,28 @@ function addWords(raw, forcedFn = null) {
         state.words.push({
           label: word, message: null, fn, slot, symbol: true, symbolQuery: null,
         });
+        added.push(word);
       }
     });
-  renderSkippedFeedback(duplicates, overflow);
+  renderSkippedFeedback(duplicates, overflow, added);
   renderWords();
 }
 
 
-function renderSkippedFeedback(duplicates, overflow) {
+function renderSkippedFeedback(duplicates, overflow, added = []) {
   const note = $("chip-note");
   note.innerHTML = "";
   const destination = titleOf(state.parentId);
+  // The word *was* added; this only says where else it already lives, because
+  // the same concept existing twice in one page set is worth knowing about and
+  // is sometimes exactly what was intended.
+  const elsewhere = elsewhereNote(added, destination);
+  if (elsewhere) {
+    const advisory = document.createElement("span");
+    advisory.className = "chip-note-advisory";
+    advisory.textContent = elsewhere;
+    note.append(advisory);
+  }
   if (duplicates.length === 1) {
     const text = document.createElement("span");
     text.textContent = `${duplicates[0]} is already on ${destination}, so it wasn’t added.`;

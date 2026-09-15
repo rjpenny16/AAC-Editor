@@ -422,7 +422,7 @@ def test_settings_start_empty_and_read_needs_no_token(client, monkeypatch, tmp_p
     response = client.get("/api/settings")
     assert response.status_code == 200
     data = response.get_json()
-    assert data == {"ok": True, "preferences": {}, "draft": None}
+    assert data == {"ok": True, "preferences": {}, "draft": None, "templates": []}
 
 
 def test_settings_write_requires_token(client):
@@ -524,6 +524,115 @@ def test_settings_rejects_malformed_draft_items(client, monkeypatch, tmp_path):
     assert response.status_code == 400
 
 
+# ---------- reusable topic templates ----------
+
+
+def _saved_template(name="Swimming", **overrides):
+    template = {
+        "name": name,
+        "page_style": "topic",
+        "saved_at": 1700000000,
+        "items": [
+            {"label": "Splash", "message": "Big splash", "fn": "comment", "slot": 4,
+             "symbol": True, "symbol_query": "water"},
+        ],
+    }
+    template.update(overrides)
+    return template
+
+
+def test_templates_roundtrip_through_the_settings_endpoint(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": [_saved_template()]},
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    stored = client.get("/api/settings").get_json()["templates"]
+    assert stored == [_saved_template()]
+
+
+def test_a_draft_autosave_cannot_wipe_saved_templates(client, monkeypatch, tmp_path):
+    """The autosave PUTs preferences and draft every few seconds and says
+    nothing about templates; an absent key must mean "leave them alone"."""
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": [_saved_template()]},
+        headers=token_headers(),
+    )
+    client.put(
+        "/api/settings",
+        json={"preferences": {"provider": "tdsnap"}, "draft": {"items": [{"label": "pear"}]}},
+        headers=token_headers(),
+    )
+    data = client.get("/api/settings").get_json()
+    assert [template["name"] for template in data["templates"]] == ["Swimming"]
+    assert data["draft"]["items"][0]["label"] == "pear"
+
+    # An explicit empty list is still how they are cleared.
+    client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": []},
+        headers=token_headers(),
+    )
+    assert client.get("/api/settings").get_json()["templates"] == []
+
+
+def test_a_template_carries_nothing_tied_to_one_page_set(client, monkeypatch, tmp_path):
+    """Vocabulary transfers between clients; page ids and fingerprints do not."""
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": [
+            _saved_template(page_id=7, fingerprint="eating-v1", target_page="Eating"),
+        ]},
+        headers=token_headers(),
+    )
+    stored = client.get("/api/settings").get_json()["templates"][0]
+    assert set(stored) == {"name", "page_style", "saved_at", "items"}
+
+
+@pytest.mark.parametrize(
+    "templates, reason",
+    [
+        ("not-a-list", "templates must be a list"),
+        ([{"page_style": "topic", "items": [{"label": "x"}]}], "a template needs a name"),
+        ([{"name": "x" * 61, "page_style": "topic", "items": [{"label": "x"}]}], "name too long"),
+        ([{"name": "Swimming", "page_style": "sideways", "items": [{"label": "x"}]}], "bad style"),
+        ([{"name": "Swimming", "page_style": "topic", "items": []}], "nothing to save"),
+        ([{"name": "Swimming", "page_style": "topic",
+           "items": [{"label": "x", "fn": "not-a-function"}]}], "bad item"),
+        ([{"name": "Swim", "page_style": "topic", "items": [{"label": "x"}]},
+          {"name": "swim", "page_style": "topic", "items": [{"label": "y"}]}], "same name twice"),
+        ([_saved_template(name=f"t{index}") for index in range(51)], "too many"),
+    ],
+)
+def test_settings_rejects_malformed_templates(client, monkeypatch, tmp_path, templates, reason):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None, "templates": templates},
+        headers=token_headers(),
+    )
+    assert response.status_code == 400, reason
+    # A rejected write changes nothing, so a good template already saved stays.
+    assert client.get("/api/settings").get_json()["templates"] == []
+
+
+def test_the_template_limit_admits_a_full_caseload(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {}, "draft": None,
+              "templates": [_saved_template(name=f"t{index}") for index in range(50)]},
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    assert len(client.get("/api/settings").get_json()["templates"]) == 50
+
+
 # ---------- session survivability ----------
 
 
@@ -615,6 +724,80 @@ def test_edit_plan_bounds_changes_and_removals_before_the_write_path(client):
     assert server._validated_changes([{"slot": 0, "label": " apple "}]) == [
         {"slot": 0, "label": "apple"}
     ]
+
+
+# ---------- multi-page batch ----------
+
+
+def _batch(client, entries, headers=None):
+    return client.post(
+        "/api/tdsnap/batch",
+        json={"entries": entries},
+        headers={**token_headers(), "X-TDSnap-Editor": "1"} if headers is None else headers,
+    )
+
+
+def test_a_batch_needs_the_same_header_every_other_live_mutation_needs(client):
+    """The header forces a cross-origin preflight, so no other page can drive it."""
+    entries = [{"page": "Eating", "items": [{"label": "apple", "slot": 0}],
+                "fingerprint": "v1"}]
+    assert _batch(client, entries, headers=token_headers()).status_code == 400
+    assert client.post(
+        "/api/tdsnap/batch", json={"entries": entries},
+        headers={"X-TDSnap-Editor": "1"},
+    ).status_code == 403
+
+
+def test_a_batch_bounds_every_queued_page_before_the_write_path(client, monkeypatch):
+    """A batch adds sequencing, not a new way to describe an edit — so each
+    entry has to clear exactly the checks a single-page edit clears."""
+    called = []
+    monkeypatch.setattr(server.live, "apply_batch",
+                        lambda entries: called.append(entries) or {"results": [], "applied": 0,
+                                                                   "undo_page": None})
+    monkeypatch.setattr(server.live, "last_edit", lambda: None)
+
+    good = {"page": "Eating", "items": [{"label": "apple", "slot": 0}], "fingerprint": "v1"}
+    assert _batch(client, [good]).status_code == 200
+    assert called == [[{"page": "Eating", "items": [{"label": "apple", "slot": 0}],
+                        "changes": [], "removals": [], "moves": [], "fingerprint": "v1"}]]
+
+    called.clear()
+    assert _batch(client, "not a list").status_code == 400
+    assert _batch(client, ["not an object"]).status_code == 400
+    assert _batch(client, [{**good, "page": ""}]).status_code == 400
+    assert _batch(client, [{**good, "page": "x" * 121}]).status_code == 400
+    assert _batch(client, [{**good, "items": [{"label": "x" * 61}]}]).status_code == 400
+    assert _batch(client, [{**good, "items": [{"label": "x"}] * 201}]).status_code == 400
+    assert _batch(client, [{**good, "changes": [{"slot": -1}]}]).status_code == 400
+    assert _batch(client, [{**good, "removals": [1.5]}]).status_code == 400
+    assert _batch(client, [{**good, "moves": "not a list"}]).status_code == 400
+    assert _batch(client, [dict(good, page=f"Page {i}") for i in range(11)]).status_code == 400
+    assert called == []  # nothing malformed reached the write path
+
+
+def test_a_batch_reports_every_queued_page_including_the_ones_not_attempted(client, monkeypatch):
+    monkeypatch.setattr(server.live, "apply_batch", lambda entries: {
+        "results": [
+            {"page": "Eating", "status": "applied", "report": {"page": "Eating", "buttons": 2}},
+            {"page": "Games", "status": "failed", "error": "restored"},
+            {"page": "Swimming", "status": "skipped"},
+        ],
+        "applied": 1,
+        "undo_page": "Eating",
+    })
+    monkeypatch.setattr(server.live, "last_edit", lambda: {"page": "Eating", "summary": "2 buttons"})
+
+    data = _batch(client, [
+        {"page": page, "items": [{"label": "apple", "slot": 0}], "fingerprint": "v1"}
+        for page in ("Eating", "Games", "Swimming")
+    ]).get_json()
+
+    assert [entry["status"] for entry in data["results"]] == ["applied", "failed", "skipped"]
+    assert data["applied"] == 1
+    # Undo is single-level, so the response names the one page it would reverse.
+    assert data["undo_page"] == "Eating"
+    assert data["undo"]["page"] == "Eating"
 
 
 # ---------------------------------------------------------------------------
@@ -823,3 +1006,69 @@ def test_moves_are_bounded_at_the_edge_of_the_web_api():
     assert server._validated_moves([{"slot": 1, "to": 2, "extra": "ignored"}]) == [
         {"slot": 1, "to": 2}
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: page-set-wide duplicate detection
+
+
+def test_the_vocabulary_index_names_every_page_a_label_is_on(client, seeded_source):
+    session = upload(client, seeded_source).get_json()
+    session_id = session["session_id"]
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+    layout = client.get(
+        f"/api/pageset/{session_id}/page/{page['id']}/layout"
+    ).get_json()
+    # Put the same label on a second page, which is exactly the case the
+    # per-page check has always missed.
+    client.post(
+        f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+        json={
+            "items": [{"label": "Chips", "slot": layout["free_slots"][0]}],
+            "fingerprint": layout["fingerprint"],
+        },
+        headers=token_headers(),
+    )
+    client.post(
+        f"/api/pageset/{session_id}/page",
+        json={"title": "Snacks", "items": ["Chips", "Apple"],
+              "parent_page_id": page["id"]},
+        headers=token_headers(),
+    )
+
+    index = client.get(f"/api/pageset/{session_id}/vocabulary").get_json()
+
+    assert index["ok"] and index["available"] is True
+    # Keyed casefolded, and every page carrying the label is named.
+    assert index["labels"]["chips"] == ["Home Page", "Snacks"]
+    assert index["labels"]["apple"] == ["Snacks"]
+
+
+def test_the_vocabulary_index_is_advisory_and_never_fatal(tmp_path):
+    from tdsnap import pageset
+
+    # A file with no page-set tables at all: the reader reports nothing rather
+    # than raising, because this only ever adds a sentence to the UI.
+    path = tmp_path / "empty.sqlite"
+    conn = sqlite3.connect(str(path))
+    conn.execute("CREATE TABLE Unrelated (x INTEGER)")
+    conn.commit()
+    conn.close()
+
+    with sqlite3.connect(str(path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert pageset.labels_by_page(conn) == {}
+
+
+def test_a_label_is_listed_once_per_page_however_often_it_appears(seeded_pageset):
+    from tdsnap import builder, pageset
+
+    ps = seeded_pageset
+    page_id = ps.find_page_id_by_name("Home Page")
+    layout = builder.layout_for_page(ps.conn, page_id, ps.grid_dimension())
+    free = builder.free_slots(ps.conn, layout)
+    builder.add_buttons_to_page(ps, page_id, [{"label": "more", "slot": free[0]}])
+
+    labels = pageset.labels_by_page(ps.conn)
+
+    assert labels["more"] == ["Home Page"]

@@ -12,6 +12,8 @@ import { clearUndoHistory, renderWords } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor } from "./connect.js";
 import { clearDraft } from "./draft.js";
 import { emptyEdits, undoAvailable } from "./edits.js";
+import { clearQueue, renderBatchOutcome } from "./queue.js";
+import { forget as forgetVocabulary } from "./vocabulary.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
 import { recordError } from "./support.js";
 import { setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
@@ -139,7 +141,99 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
     });
     warningBox.append(list);
   }
+  $("batch-outcome-wrap").hidden = true;
+}
 
+/* ---------- the result of a multi-page batch ---------- */
+
+/* A check passed only if every page that ran passed it. Rolling them up any
+   other way would let one page's "needs review" disappear behind four
+   successes, which is the opposite of what this screen is for. */
+function batchChecks(applied) {
+  const rolled = {};
+  applied.forEach((result) => {
+    Object.entries(result.report.checks || {}).forEach(([key, status]) => {
+      if (rolled[key] === undefined || status !== "pass") rolled[key] = status;
+    });
+  });
+  return rolled;
+}
+
+/* The batch's counterpart to renderResult. It reports per page, because a run
+   that stopped after page two must not read as though pages three and four
+   were fine — so the outcome list is the headline and the rolled-up checks sit
+   under it, not the other way round. */
+function renderBatchResult(data) {
+  const results = data.results || [];
+  const applied = results.filter((result) => result.status === "applied" && result.report);
+  const unapplied = results.filter((result) => result.status !== "applied");
+  const pages = results.length;
+
+  $("review-state").hidden = true;
+  $("success-state").hidden = false;
+  state.applied = applied.length > 0;
+  clearUndoHistory();
+  void clearDraft();
+  $("result-eyebrow").textContent = unapplied.length ? "Partly complete" : "Complete";
+  $("result-heading").textContent = !applied.length
+    ? "No pages were applied"
+    : unapplied.length
+      ? `${applied.length} of ${pages} pages were applied`
+      : `Done — ${pages} page${pages === 1 ? " was" : "s were"} updated in TD Snap`;
+  $("result-sub").textContent = !applied.length
+    ? "Nothing was changed in TD Snap. Each page below says why."
+    : unapplied.length
+      ? "Every queued page is listed below with what happened to it. The pages that "
+        + "were not applied are unchanged in TD Snap."
+      : `${applied.map((result) => `“${result.page}”`).join(", ")} `
+        + `${applied.length === 1 ? "was" : "were"} updated. Nothing else changed.`;
+
+  renderUndoControl();
+  $("edit-count").textContent =
+    state.edits > 1 ? `· ${state.edits} edits this session` : "";
+  $("another-btn").textContent = "Add more buttons";
+  $("file-save-btn").hidden = true;
+  renderBatchOutcome(data);
+
+  const checks = $("checks");
+  checks.innerHTML = "";
+  const rolled = batchChecks(applied);
+  Object.entries(CHECK_LABELS).forEach(([key, label]) => {
+    const status = rolled[key];
+    if (!status) return;
+    const item = document.createElement("li");
+    item.classList.toggle("warning", status !== "pass");
+    const icon = document.createElement("span");
+    icon.className = "check-icon";
+    if (status === "pass") icon.innerHTML = CHECK_SVG;
+    else icon.textContent = "!";
+    const text = document.createElement("span");
+    text.textContent = status === "pass"
+      ? `${label} — on every page applied`
+      : `${label} — needs review`;
+    item.append(icon, text);
+    checks.append(item);
+  });
+
+  // A warning belongs to the page that raised it, so it is named with it
+  // rather than pooled into an anonymous list.
+  const warningBox = $("result-warnings");
+  warningBox.innerHTML = "";
+  const warnings = applied.flatMap((result) =>
+    (result.report.warnings || []).map((warning) => `${result.page}: ${warning}`));
+  warningBox.hidden = warnings.length === 0;
+  if (warnings.length) {
+    const lead = document.createElement("strong");
+    lead.textContent = "TD Snap finished with a note:";
+    warningBox.append(lead);
+    const list = document.createElement("ul");
+    warnings.forEach((warning) => {
+      const item = document.createElement("li");
+      item.textContent = warning;
+      list.append(item);
+    });
+    warningBox.append(list);
+  }
 }
 
 $("file-save-btn").addEventListener("click", async (event) => {
@@ -261,6 +355,7 @@ function resetConnection() {
       .catch((error) => recordError("undo-forget", error.message));
   }
   state.lastEdit = null;
+  forgetVocabulary();
   state.mode = "live";
   state.connected = false;
   state.sessionId = null;
@@ -277,6 +372,10 @@ function resetConnection() {
   state.gridBackground = null;
   state.pendingEdit = null;
   state.placementAdjusted = false;
+  // Every queued page names a page in the page set being left, and holds the
+  // fingerprint it was reviewed against. Carrying that into a different page
+  // set would be meaningless at best.
+  clearQueue();
   $("file-badge").hidden = true;
   $("file-save-btn").hidden = true;
   $("file-save-btn").removeAttribute("href");
@@ -294,4 +393,4 @@ function resetConnection() {
 $("reset-btn").addEventListener("click", resetConnection);
 $("file-badge").addEventListener("click", resetConnection);
 
-export { renderResult };
+export { renderBatchResult, renderResult };

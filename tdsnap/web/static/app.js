@@ -16,15 +16,21 @@ import { show } from "./wizard.js";
 import "./ai.js";
 import "./review.js";
 import "./draft.js";
+import "./importer.js";
+import "./queue.js";
+import "./templates.js";
 import "./settings-panel.js";
 
 
 /* ---------- quit (browser mode) ---------- */
 
 $("quit-btn").addEventListener("click", async () => {
-  const warning = hasUnsavedWork()
-    ? "Quit AAC Editor? The buttons you have planned but not yet added will be lost."
-    : "Quit AAC Editor?";
+  const warning = state.queue.length
+    ? `Quit AAC Editor? ${state.queue.length} page${state.queue.length === 1 ? "" : "s"} `
+      + "queued but not yet applied will be lost."
+    : hasUnsavedWork()
+      ? "Quit AAC Editor? The buttons you have planned but not yet added will be lost."
+      : "Quit AAC Editor?";
   if (!window.confirm(warning)) return;
   state.leaving = true;
   setBusy($("quit-btn"), true, "Closing…");

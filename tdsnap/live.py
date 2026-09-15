@@ -41,7 +41,7 @@ from contextlib import closing, suppress
 from ctypes import wintypes
 from dataclasses import dataclass
 
-from . import colors, templates, uia
+from . import colors, pageset, templates, uia
 from .builder import MAX_LABEL_LENGTH, MAX_MESSAGE_LENGTH, _normalize_items
 from .errors import PagesetError
 
@@ -1804,6 +1804,25 @@ def status(include_pages=True):
     return result
 
 
+def vocabulary(visible_page=None, visible_labels=()):
+    """Every label in the open page set, and which pages carry it.
+
+    Read once per connection and answered in the browser afterwards, so the
+    advisory "already on Core Words" costs nothing per keystroke. Unavailable
+    rather than fatal when the page set cannot be identified — this only ever
+    tells a user something useful, and never stops an edit.
+    """
+    path = _active_pageset_path(visible_page, visible_labels)
+    if not path:
+        return {"available": False, "labels": {}}
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+            conn.row_factory = sqlite3.Row
+            return {"available": True, "labels": pageset.labels_by_page(conn)}
+    except (OSError, sqlite3.Error):
+        return {"available": False, "labels": {}}
+
+
 def inspect_page(page=None):
     """Inspect a visible/detected page without entering Edit mode."""
     if not _desktop_unlocked():
@@ -2185,12 +2204,19 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
             )
         settled = _fingerprint_token(final_group)
     except Exception as exc:
+        # Everything above this point refuses without writing; from here on the
+        # page has been edited, so a failure is marked as such — see
+        # ``PagesetError.page_touched`` and ``apply_batch``.
         steps = len(normalized) + len(changes) + len(removals) + len(move_steps)
         try:
             _restore_page_state(window, baseline, restore_content, steps * 6 + 8)
         except PagesetError as rollback_error:
-            raise PagesetError(f"{exc} {rollback_error}") from exc
-        raise PagesetError(f"{exc} The original page was restored.") from exc
+            failed = PagesetError(f"{exc} {rollback_error}")
+            failed.page_touched = True
+            raise failed from exc
+        restored = PagesetError(f"{exc} The original page was restored.")
+        restored.page_touched = True
+        raise restored from exc
     finally:
         _exit_edit_mode(window)
 
@@ -2254,6 +2280,111 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
 def add_to_existing_page(page, items, fingerprint=None):
     """Add reviewed buttons to empty cells on an existing TD Snap page."""
     return apply_page_edits(page, items, fingerprint=fingerprint)
+
+
+# ---------------------------------------------------------------------------
+# Multi-page batch
+#
+# A caseload session is rarely one page. Queueing several pages and applying
+# them in one go is the difference between "sit with the app for twenty
+# minutes" and "set it going". What makes that safe is that a batch is not a
+# new write path: it is ``apply_page_edits`` called once per page, each with
+# its own fingerprint guard, its own edit-mode session, and its own rollback.
+# Nothing here reaches past one page.
+#
+# What a batch adds is sequencing and an honest account of it. Every queued
+# page comes back with what actually happened to it, including the ones never
+# attempted — a run that stops after page two must not report as if pages
+# three and four were fine.
+
+
+MAX_BATCH_PAGES = 10
+
+
+def _batch_stop(error):
+    """Should a batch stop after this failure, or carry on to the next page?
+
+    A refusal is understood and local: this page's fingerprint moved, or its
+    cells filled up. Nothing was written, the next page is unaffected, and
+    stopping would strand work the user queued for no reason.
+
+    A page that was written to and restored is different. Something on screen
+    was not what the automation expected, and the next thing it would do is
+    drive a *different* page while in that state. That is the one situation
+    where continuing could write to the wrong place, so it stops.
+    """
+    return bool(getattr(error, "page_touched", False))
+
+
+def apply_batch(entries):
+    """Apply reviewed edits to several pages in order, one page at a time.
+
+    *entries* is a list of ``{page, items, changes, removals, moves,
+    fingerprint}`` dicts — each exactly what a single-page edit submits.
+
+    Returns ``{"results": [...], "applied": n, "undo_page": name|None}``. Every
+    entry appears in ``results`` with a ``status``:
+
+    ``applied``  the page's edit landed and verified; carries its full report.
+    ``refused``  nothing was written to this page, and why.
+    ``failed``   this page was edited and put back; the batch stopped here.
+    ``skipped``  never attempted, because an earlier page failed.
+
+    Single-level undo is unchanged and therefore covers the *last page
+    applied* only, which ``undo_page`` names so the caller can say so rather
+    than implying the whole batch can be taken back.
+    """
+    queued = list(entries or [])
+    if not queued:
+        raise PagesetError("Queue at least one page before applying.")
+    if len(queued) > MAX_BATCH_PAGES:
+        raise PagesetError(
+            f"No more than {MAX_BATCH_PAGES} pages can be applied in one go."
+        )
+    names = [str(entry.get("page") or "").strip().casefold() for entry in queued]
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        # The second entry's fingerprint was captured before the first one
+        # landed, so it is stale by construction and would be refused anyway —
+        # better to say so now than halfway through.
+        raise PagesetError(
+            "The same page is queued more than once: "
+            + _named_list(repeated)
+            + ". Combine those edits into one before applying."
+        )
+
+    results = []
+    stopped = False
+    for entry in queued:
+        page = str(entry.get("page") or "").strip()
+        if stopped:
+            results.append({"page": page, "status": "skipped"})
+            continue
+        try:
+            report = apply_page_edits(
+                page,
+                entry.get("items", ()),
+                entry.get("changes", ()),
+                entry.get("removals", ()),
+                entry.get("moves", ()),
+                entry.get("fingerprint"),
+            )
+        except PagesetError as error:
+            stopped = _batch_stop(error)
+            results.append({
+                "page": page,
+                "status": "failed" if stopped else "refused",
+                "error": str(error),
+            })
+            continue
+        results.append({"page": report["page"], "status": "applied", "report": report})
+
+    applied = [result for result in results if result["status"] == "applied"]
+    return {
+        "results": results,
+        "applied": len(applied),
+        "undo_page": applied[-1]["page"] if applied else None,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -63,7 +63,11 @@ async function mockTD(page, options = {}) {
    rather than hitting it — the same store persisting across page.goto calls
    in one test lets a test simulate "the next launch" without a real restart. */
 async function mockSettings(page, initial = {}) {
-  const store = { preferences: initial.preferences || {}, draft: initial.draft || null };
+  const store = {
+    preferences: initial.preferences || {},
+    draft: initial.draft || null,
+    templates: initial.templates || [],
+  };
   await page.route('**/api/settings', (route) => {
     const method = route.request().method();
     if (method === 'GET') return fulfillJson(route, { ok: true, ...store });
@@ -71,11 +75,15 @@ async function mockSettings(page, initial = {}) {
       const body = route.request().postDataJSON() || {};
       store.preferences = body.preferences || {};
       store.draft = body.draft || null;
+      // Mirrors the server: an absent key leaves saved templates alone, so the
+      // draft autosave cannot wipe them.
+      if ('templates' in body) store.templates = body.templates || [];
       return fulfillJson(route, { ok: true });
     }
     if (method === 'DELETE') {
       store.preferences = {};
       store.draft = null;
+      store.templates = [];
       return fulfillJson(route, { ok: true });
     }
     return route.continue();
@@ -2162,4 +2170,721 @@ test('real TD Snap edit is explicit opt-in', async ({ page }) => {
     'Done — TD Snap was updated',
     { timeout: 30_000 },
   );
+});
+
+
+/* Importing a word list.
+ *
+ * The chip box already took a comma-separated paste; this is the shape the
+ * work actually arrives in — a column of labels beside a column of sentences,
+ * out of a spreadsheet. These pin the two things that make it safe to use: a
+ * comma inside a phrase stays inside the phrase, and everything that will not
+ * fit is named on screen before a single button is added.
+ */
+test.describe('importing a word list', () => {
+  async function openImport(page) {
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#import-list-btn').click();
+    await expect(page.locator('#import-dialog')).toBeVisible();
+  }
+
+  test('a pasted spreadsheet column maps itself and keeps phrases intact', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill(
+      'Label\tWhat it says\tFunction\n'
+      + 'more\tI want more, please\tQuestion\n'
+      + 'all done\tI am all done\tPositive\n'
+      + 'help\t\t'
+    );
+
+    // The header is recognised and the columns are mapped without being asked.
+    await expect(page.locator('#import-has-header')).toBeChecked();
+    await expect(page.locator('#import-column-0')).toHaveValue('label');
+    await expect(page.locator('#import-column-1')).toHaveValue('message');
+    await expect(page.locator('#import-column-2')).toHaveValue('fn');
+    await expect(page.locator('#import-summary')).toContainText('3 buttons ready to add');
+    // The preview shows the rows as the mapping reads them.
+    await expect(page.locator('#import-preview tbody tr').first())
+      .toContainText('I want more, please');
+
+    await page.locator('#import-add-btn').click();
+    await expect(page.locator('#import-dialog')).toBeHidden();
+
+    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+    // The comma is punctuation inside the phrase, not a second button.
+    await expect(page.locator('.chip-body').filter({ hasText: 'more' }).first())
+      .toHaveAttribute('title', 'Speaks: “I want more, please”');
+  });
+
+  test('a single column of words needs no mapping at all', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill('apple\npear\nplum');
+
+    await expect(page.locator('#import-has-header')).not.toBeChecked();
+    await expect(page.locator('#import-summary')).toContainText('3 buttons ready to add');
+    await page.locator('#import-add-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+  });
+
+  test('what will not fit is named before anything is added', async ({ page }) => {
+    // Two free cells, and one of the imported words is already on the page.
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating', {
+        buttons: [{
+          slot: 0, label: 'apple', message: null, function: null, symbol: true,
+          editable: false, locked_reason: 'Existing TD Snap button',
+        }],
+        free_slots: [1, 2],
+      }),
+    });
+    await openImport(page);
+
+    await page.locator('#import-text').fill('apple\npear\nplum\ncherry\nmango');
+
+    const summary = page.locator('#import-summary');
+    await expect(summary).toContainText('2 buttons ready to add');
+    await expect(summary).toContainText('Already on Eating');
+    await expect(summary).toContainText('apple');
+    await expect(summary).toContainText('does not have room for 2 of these');
+    await expect(summary).toContainText('cherry');
+    await expect(page.locator('#import-add-btn')).toHaveText('Add 2 buttons');
+
+    await page.locator('#import-add-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#capacity')).toHaveText('2 added · 0 spaces left');
+  });
+
+  test('a row that cannot become a button says which row and why', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill(
+      'Label,Message\n'
+      + 'more,I want more\n'
+      + ',orphan message\n'
+      + 'more,repeated label\n'
+    );
+
+    const summary = page.locator('#import-summary');
+    await expect(summary).toContainText('1 button ready to add');
+    // A row with no label is still identified by what it does hold, so the
+    // user can find it in their file.
+    await expect(summary).toContainText('Row 3, “orphan message” — no label');
+    await expect(summary).toContainText('Row 4, “more” — repeated in this list');
+  });
+
+  test('an unrecognised header is visible in the preview and correctable', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill('col1\tcol2\napple\tI want an apple');
+
+    // Nothing in the header is recognisable, so the first row is treated as
+    // vocabulary — and the preview shows exactly that, rather than hiding it.
+    await expect(page.locator('#import-has-header')).not.toBeChecked();
+    await expect(page.locator('#import-summary')).toContainText('2 buttons ready to add');
+    await expect(page.locator('#import-preview tbody')).toContainText('col1');
+
+    // One checkbox fixes it, and the second column can then be mapped.
+    await page.locator('#import-has-header').check();
+    await page.locator('#import-column-1').selectOption('message');
+    await expect(page.locator('#import-summary')).toContainText('1 button ready to add');
+
+    await page.locator('#import-add-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await expect(page.locator('.chip-body').filter({ hasText: 'apple' }))
+      .toHaveAttribute('title', 'Speaks: “I want an apple”');
+  });
+
+  test('an import waits until a label column is chosen', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+
+    await page.locator('#import-text').fill('col1\tcol2\napple\tI want an apple');
+    await page.locator('#import-column-0').selectOption('');
+
+    await expect(page.locator('#import-summary'))
+      .toContainText('Choose which column holds the button label');
+    await expect(page.locator('#import-add-btn')).toBeDisabled();
+  });
+
+  test('the import dialog has no serious or critical accessibility violations', async ({ page }) => {
+    await mockTD(page);
+    await openImport(page);
+    await page.locator('#import-text').fill('Label\tMessage\napple\tI want an apple');
+    await expect(page.locator('#import-mapping')).toBeVisible();
+
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
+
+/* Page-set-wide duplicate detection.
+ *
+ * The blocking per-page check is unchanged: a word already on *this* page is
+ * still skipped. This is the other half — the same word on some *other* page
+ * is worth knowing about and must never be blocked, because two pages
+ * deliberately carrying "more" is a normal thing for a page set to do.
+ */
+test.describe('duplicates elsewhere in the page set', () => {
+  async function withVocabulary(page, labels) {
+    await page.route('**/api/tdsnap/vocabulary', (route) =>
+      fulfillJson(route, { ok: true, available: true, labels }));
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating'),
+    });
+  }
+
+  test('a word already on another page is noted, and still added', async ({ page }) => {
+    await withVocabulary(page, { more: ['Core Words', 'Feelings'] });
+    await existingItems(page);
+
+    await page.locator('#word-input').fill('more');
+    await page.locator('#word-add-btn').click();
+
+    const note = page.locator('#chip-note');
+    await expect(note).toContainText('Already elsewhere in this page set');
+    await expect(note).toContainText('“more” on Core Words, Feelings');
+    await expect(note).toContainText('nothing is skipped');
+    // Advisory means advisory: the button is on the list and reviewable.
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-action')).toContainText('Add 1 button');
+  });
+
+  test('the page being edited is not named twice', async ({ page }) => {
+    // "apple" is on Eating, which is the page being edited, and on Snacks.
+    await withVocabulary(page, { apple: ['Eating', 'Snacks'] });
+    await existingItems(page);
+
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+
+    const note = page.locator('#chip-note');
+    await expect(note).toContainText('“apple” on Snacks');
+    await expect(note).not.toContainText('Eating');
+  });
+
+  test('a word that exists nowhere else says nothing at all', async ({ page }) => {
+    await withVocabulary(page, { more: ['Core Words'] });
+    await existingItems(page);
+
+    await page.locator('#word-input').fill('kayak');
+    await page.locator('#word-add-btn').click();
+
+    await expect(page.locator('#chip-note')).toHaveText('');
+  });
+
+  test('an unreadable page set simply says nothing', async ({ page }) => {
+    await page.route('**/api/tdsnap/vocabulary', (route) =>
+      fulfillJson(route, { ok: true, available: false, labels: {} }));
+    await mockTD(page);
+    await existingItems(page);
+
+    await page.locator('#word-input').fill('more');
+    await page.locator('#word-add-btn').click();
+
+    await expect(page.locator('#chip-note')).toHaveText('');
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+  });
+
+  test('an import names what already exists elsewhere', async ({ page }) => {
+    await withVocabulary(page, { more: ['Core Words'], help: ['Core Words'] });
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#import-list-btn').click();
+
+    await page.locator('#import-text').fill('more\nhelp\nkayak');
+
+    const summary = page.locator('#import-summary');
+    await expect(summary).toContainText('3 buttons ready to add');
+    await expect(summary).toContainText('Already elsewhere in this page set');
+    await expect(summary).toContainText('“more” on Core Words');
+    await expect(summary).toContainText('“help” on Core Words');
+  });
+});
+
+
+/* Reusable topic templates.
+ *
+ * The caseload case: an SLP builds a good Swimming page once and wants it for
+ * the next client, and the next. These pin the parts that make that reuse
+ * safe — a template carries vocabulary and nothing tied to one page set, it
+ * survives the draft autosave that runs between saving and reusing it, and
+ * applying it to a page that cannot hold it all says so rather than dropping
+ * words quietly.
+ */
+test.describe('reusable topic templates', () => {
+  // More options may already be open from an earlier step in the same test;
+  // clicking the summary again would close it.
+  async function openTemplates(page) {
+    const options = page.locator('.more-options');
+    if (!(await options.evaluate((node) => node.open))) {
+      await options.locator('> summary').click();
+    }
+    await page.locator('#templates-btn').click();
+    await expect(page.locator('#templates-dialog')).toBeVisible();
+  }
+
+  test('a topic page saved once is added to a different page set', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Topics Menu Page'], grid: { cols: 4, rows: 3 } }),
+      layout: defaultLayout('Topics Menu Page', {
+        grid: { cols: 4, rows: 3 },
+        free_slots: Array.from({ length: 12 }, (_, index) => index),
+        fingerprint: 'topics-v1',
+      }),
+    });
+
+    await newItems(page, 'Swimming');
+    await page.locator('.more-options > summary').click();
+    await page.locator('#layout-options-btn').click();
+    await page.locator('#style-topic').click();
+    await page.locator('#layout-back-btn').click();
+    await page.locator('#word-input').fill('Splash, Jump in, Too cold');
+    await page.locator('#word-input').press('Enter');
+    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+
+    await openTemplates(page);
+    await page.locator('#template-name').fill('Swimming');
+    await page.locator('#template-save-btn').click();
+    await expect(page.locator('#template-save-hint')).toContainText('Saved “Swimming”');
+    await expect(page.locator('#template-list li')).toContainText('3 buttons');
+    await expect(page.locator('#template-list li')).toContainText('topic-page rows');
+
+    // What was stored is vocabulary, not this page set: no page id, no
+    // fingerprint, no title.
+    expect(store.templates).toHaveLength(1);
+    const saved = JSON.stringify(store.templates[0]);
+    expect(saved).not.toContain('topics-v1');
+    expect(saved).not.toContain('Topics Menu Page');
+    expect(store.templates[0].page_style).toBe('topic');
+    expect(store.templates[0].items.map((item) => item.label))
+      .toEqual(['Splash', 'Jump in', 'Too cold']);
+
+    // The next launch, against a different page set, reuses it.
+    await page.locator('#templates-dialog button[value="close"]').click();
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Activities'], grid: { cols: 4, rows: 3 } }),
+      layout: defaultLayout('Activities', {
+        grid: { cols: 4, rows: 3 },
+        free_slots: Array.from({ length: 12 }, (_, index) => index),
+        fingerprint: 'activities-v1',
+      }),
+    });
+    await newItems(page, 'Pool');
+    await openTemplates(page);
+    await page.locator('#template-list button[aria-label="Use template Swimming"]').click();
+
+    await expect(page.locator('#template-summary')).toContainText('Added 3 buttons from “Swimming”');
+    await page.locator('#templates-dialog button[value="close"]').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+    // The saved page style came with it, so the topic-page rows are back.
+    await expect(page.locator('#style-topic')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('the autosaved draft does not wipe a saved template', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-input').press('Enter');
+    await openTemplates(page);
+    await page.locator('#template-name').fill('Snacks');
+    await page.locator('#template-save-btn').click();
+    await expect(page.locator('#template-save-hint')).toContainText('Saved “Snacks”');
+    await page.locator('#templates-dialog button[value="close"]').click();
+
+    // The draft autosave writes preferences and draft every few seconds and
+    // says nothing about templates; the template must still be there after.
+    await page.locator('#word-input').fill('pear');
+    await page.locator('#word-input').press('Enter');
+    await expect.poll(() => store.draft && store.draft.items.length).toBe(2);
+    expect(store.templates.map((template) => template.name)).toEqual(['Snacks']);
+
+    await openTemplates(page);
+    await expect(page.locator('#template-list li')).toContainText('Snacks');
+  });
+
+  test('a template too big for the page names what would not fit', async ({ page }) => {
+    await mockSettings(page, {
+      templates: [{
+        name: 'Swimming',
+        page_style: 'words',
+        saved_at: 1700000000,
+        items: [
+          { label: 'Splash', message: null, fn: '', slot: 0, symbol: true, symbol_query: null },
+          { label: 'Jump in', message: null, fn: '', slot: 1, symbol: true, symbol_query: null },
+          { label: 'Too cold', message: null, fn: '', slot: 2, symbol: true, symbol_query: null },
+          { label: 'apple', message: null, fn: '', slot: 3, symbol: true, symbol_query: null },
+        ],
+      }],
+    });
+    // One free cell besides the two the template will fill, and "apple" is
+    // already on the page.
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating', {
+        buttons: [{
+          slot: 0, label: 'apple', message: null, function: null, symbol: true,
+          editable: false, locked_reason: 'Existing TD Snap button',
+        }],
+        free_slots: [1, 2],
+      }),
+    });
+
+    await existingItems(page);
+    await openTemplates(page);
+    await page.locator('#template-list button[aria-label="Use template Swimming"]').click();
+
+    const summary = page.locator('#template-summary');
+    await expect(summary).toContainText('Added 2 buttons from “Swimming”');
+    await expect(summary).toContainText('Already on Eating');
+    await expect(summary).toContainText('apple');
+    await expect(summary).toContainText('Eating does not have room for');
+    await expect(summary).toContainText('Too cold');
+
+    await page.locator('#templates-dialog button[value="close"]').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#capacity')).toHaveText('2 added · 0 spaces left');
+  });
+
+  test('a template saved on a bigger grid keeps its words and re-slots them', async ({ page }) => {
+    await mockSettings(page, {
+      templates: [{
+        name: 'Swimming',
+        page_style: 'words',
+        saved_at: 1700000000,
+        // Cells from an 8x5 page; none of these exist on a 3x2 one.
+        items: [
+          { label: 'Splash', message: 'Big splash', fn: '', slot: 31, symbol: true, symbol_query: null },
+          { label: 'Jump in', message: null, fn: '', slot: 37, symbol: false, symbol_query: null },
+        ],
+      }],
+    });
+    await mockTD(page);
+
+    await existingItems(page);
+    await openTemplates(page);
+    await page.locator('#template-list button[aria-label="Use template Swimming"]').click();
+    await expect(page.locator('#template-summary')).toContainText('Added 2 buttons');
+    await page.locator('#templates-dialog button[value="close"]').click();
+
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#preview .cell.used')).toHaveCount(2);
+    // The message and the "no symbol" choice travelled with the words.
+    await expect(page.locator('.chip-body').filter({ hasText: 'Splash' }))
+      .toHaveAttribute('title', 'Speaks: “Big splash”');
+  });
+
+  test('deleting a template removes it for the next launch too', async ({ page }) => {
+    const store = await mockSettings(page, {
+      templates: [
+        { name: 'Swimming', page_style: 'words', saved_at: 1, items: [{ label: 'Splash', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+        { name: 'Zoo', page_style: 'words', saved_at: 2, items: [{ label: 'Lion', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+      ],
+    });
+    await mockTD(page);
+
+    await existingItems(page);
+    await openTemplates(page);
+    // Sorted by name, so Swimming is first and Zoo second.
+    await expect(page.locator('#template-list li strong')).toHaveText(['Swimming', 'Zoo']);
+
+    await page.locator('#template-list button[aria-label="Delete template Swimming"]').click();
+    await expect(page.locator('#template-list li strong')).toHaveText(['Zoo']);
+    await expect(page.locator('#template-save-hint')).toContainText('Deleted “Swimming”');
+    expect(store.templates.map((template) => template.name)).toEqual(['Zoo']);
+  });
+
+  test('the settings panel names the templates Clear all would throw away', async ({ page }) => {
+    await mockSettings(page, {
+      templates: [
+        { name: 'Zoo', page_style: 'words', saved_at: 2, items: [{ label: 'Lion', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+        { name: 'Swimming', page_style: 'words', saved_at: 1, items: [{ label: 'Splash', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+      ],
+    });
+    await mockTD(page);
+    await openEditor(page);
+
+    await page.locator('#settings-panel-btn').click();
+    await expect(page.locator('#settings-panel')).toBeVisible();
+    // Named, and never "Nothing saved yet" while they are on disk.
+    await expect(page.locator('#settings-panel-list')).toContainText('Saved templates');
+    await expect(page.locator('#settings-panel-list')).toContainText('Swimming, Zoo');
+
+    await page.locator('#settings-clear-btn').click();
+    await expect(page.locator('#settings-panel-list')).toContainText('Nothing saved yet');
+  });
+
+  test('saving without a name says so instead of saving', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-input').press('Enter');
+    await openTemplates(page);
+    await page.locator('#template-save-btn').click();
+
+    await expect(page.locator('#template-save-hint'))
+      .toContainText('Give the template a name');
+    await expect(page.locator('#template-name')).toBeFocused();
+    expect(store.templates).toEqual([]);
+  });
+
+  test('the templates dialog has no serious or critical accessibility violations', async ({ page }) => {
+    await mockSettings(page, {
+      templates: [{
+        name: 'Swimming', page_style: 'words', saved_at: 1,
+        items: [{ label: 'Splash', message: null, fn: '', slot: null, symbol: true, symbol_query: null }],
+      }],
+    });
+    await mockTD(page);
+
+    await existingItems(page);
+    await openTemplates(page);
+    await expect(page.locator('#template-list li')).toContainText('Swimming');
+
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
+
+/* Multi-page batch.
+ *
+ * A caseload session is rarely one page. What these pin is that queueing does
+ * not weaken any of the guarantees a single page has: each queued page carries
+ * the payload its own review froze, the batch is reviewed as one list before
+ * anything is written, and every queued page is reported on afterwards —
+ * including the ones never attempted, which is the failure mode a batch is
+ * uniquely able to hide.
+ */
+test.describe('queueing several pages and applying them together', () => {
+  function threePages() {
+    return {
+      status: defaultStatus({ pages: ['Eating', 'Games', 'Swimming'] }),
+      layout: (requested) => defaultLayout(requested || 'Eating'),
+    };
+  }
+
+  async function composeFor(page, pageName, word) {
+    await page.locator('#wizard-items .wizard-back').click();
+    await expect(page.locator('#wizard-destination')).toBeVisible();
+    await page.locator('#parent-select').selectOption(pageName);
+    await page.locator('#wizard-destination .wizard-next').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await page.locator('#word-input').fill(word);
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#step-result')).toBeVisible();
+  }
+
+  async function queueFor(page, pageName, word) {
+    await composeFor(page, pageName, word);
+    await page.locator('#queue-add-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+  }
+
+  test('two queued pages are applied in order and each is reported', async ({ page }) => {
+    let submitted = null;
+    await mockTD(page, threePages());
+    await page.route('**/api/tdsnap/batch', (route) => {
+      submitted = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true,
+        applied: 2,
+        undo_page: 'Games',
+        undo: null,
+        results: [
+          { page: 'Eating', status: 'applied',
+            report: { page: 'Eating', buttons: 1, changed: 0, removed: 0, moved: 0,
+                      checks: { td_snap_edit: 'pass', content: 'pass', positions: 'pass' },
+                      warnings: [] } },
+          { page: 'Games', status: 'applied',
+            report: { page: 'Games', buttons: 1, changed: 0, removed: 0, moved: 0,
+                      checks: { td_snap_edit: 'pass', content: 'pass', positions: 'pass' },
+                      warnings: [] } },
+        ],
+      });
+    });
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    // The queue is visible while the next page is composed, and the chip box
+    // was cleared rather than carrying the first page's words along.
+    await expect(page.locator('#queue-banner')).toBeVisible();
+    await expect(page.locator('#queue-list li')).toHaveCount(1);
+    await expect(page.locator('#chipbox .chip')).toHaveCount(0);
+
+    await queueFor(page, 'Games', 'chess');
+    await expect(page.locator('#queue-list li')).toHaveCount(2);
+
+    await page.locator('#queue-review-btn').click();
+    await expect(page.locator('#step-result')).toBeVisible();
+    await expect(page.locator('#result-eyebrow')).toHaveText('Review');
+    await expect(page.locator('#review-action')).toContainText('Apply 2 queued pages');
+    await expect(page.locator('#review-queue li')).toHaveCount(2);
+    await expect(page.locator('#review-queue li').first()).toContainText('Eating');
+    // Undo is single-level; the review says so rather than leaving it to be
+    // discovered after two pages have been written.
+    await expect(page.locator('#review-undo-note')).toContainText('Undo reaches back one page only');
+
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#success-state')).toBeVisible();
+
+    // Each queued page went over as its own entry, in the order queued, with
+    // the fingerprint its own review was checked against.
+    expect(submitted.entries.map((entry) => entry.page)).toEqual(['Eating', 'Games']);
+    expect(submitted.entries[0].items.map((item) => item.label)).toEqual(['apple']);
+    expect(submitted.entries[0].fingerprint).toBe('eating-v1');
+    expect(submitted.entries[1].fingerprint).toBe('games-v1');
+
+    await expect(page.locator('#result-heading')).toContainText('2 pages were updated');
+    await expect(page.locator('#batch-outcome li')).toHaveCount(2);
+    await expect(page.locator('#batch-outcome li').first()).toContainText('Applied');
+    // The queue is spent, not silently still holding the pages just written.
+    await expect(page.locator('#queue-banner')).toBeHidden();
+  });
+
+  test('a page that could not be applied is named, and so is the one never tried', async ({ page }) => {
+    await mockTD(page, threePages());
+    await page.route('**/api/tdsnap/batch', (route) => fulfillJson(route, {
+      ok: true,
+      applied: 1,
+      undo_page: 'Eating',
+      undo: null,
+      results: [
+        { page: 'Eating', status: 'applied',
+          report: { page: 'Eating', buttons: 1, changed: 0, removed: 0, moved: 0,
+                    checks: { td_snap_edit: 'pass', content: 'pass', symbols: 'partial' },
+                    warnings: ['TD Snap found no symbol for “apple”.'] } },
+        { page: 'Games', status: 'failed',
+          error: 'TD Snap did not verify it. The original page was restored.' },
+        { page: 'Swimming', status: 'skipped' },
+      ],
+    }));
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    await queueFor(page, 'Games', 'chess');
+    await queueFor(page, 'Swimming', 'splash');
+    await page.locator('#queue-review-btn').click();
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#success-state')).toBeVisible();
+
+    await expect(page.locator('#result-eyebrow')).toHaveText('Partly complete');
+    await expect(page.locator('#result-heading')).toContainText('1 of 3 pages were applied');
+    const outcome = page.locator('#batch-outcome li');
+    await expect(outcome).toHaveCount(3);
+    await expect(outcome.nth(1)).toContainText('put back the way it was');
+    await expect(outcome.nth(1)).toContainText('The original page was restored');
+    // The page nobody touched says so, rather than being left off the list.
+    await expect(outcome.nth(2)).toContainText('Swimming');
+    await expect(outcome.nth(2)).toContainText('Not attempted');
+    // A warning stays attached to the page that raised it.
+    await expect(page.locator('#result-warnings')).toContainText('Eating: TD Snap found no symbol');
+    // One page's partial check is not hidden behind the other page's pass.
+    await expect(page.locator('#checks li.warning')).toContainText('needs review');
+  });
+
+  test('a page already in the queue cannot be queued twice, and says why', async ({ page }) => {
+    await mockTD(page, threePages());
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    await composeFor(page, 'Eating', 'pear');
+
+    await expect(page.locator('#queue-add-btn')).toBeHidden();
+    await expect(page.locator('#queue-add-note'))
+      .toContainText('“Eating” is already in the queue');
+    // Applying this one page on its own is still available.
+    await expect(page.locator('#confirm-update-btn')).toBeVisible();
+  });
+
+  test('a queued page can be taken back out', async ({ page }) => {
+    await mockTD(page, threePages());
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    await queueFor(page, 'Games', 'chess');
+    await expect(page.locator('#queue-list li')).toHaveCount(2);
+
+    await page.locator('#queue-list button[aria-label="Remove Eating from the queue"]').click();
+    await expect(page.locator('#queue-list li')).toHaveCount(1);
+    await expect(page.locator('#queue-list li')).toContainText('Games');
+    await expect(page.locator('#queue-review-btn')).toHaveText('Review and apply 1 page');
+  });
+
+  test('work left in the chip box is named as not being in the batch', async ({ page }) => {
+    await mockTD(page, threePages());
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    // Compose something for another page but do not queue it.
+    await page.locator('#wizard-items .wizard-back').click();
+    await page.locator('#parent-select').selectOption('Games');
+    await page.locator('#wizard-destination .wizard-next').click();
+    await page.locator('#word-input').fill('chess');
+    await page.locator('#word-input').press('Enter');
+
+    await page.locator('#queue-review-btn').click();
+    await expect(page.locator('#review-undo-note'))
+      .toContainText('Not in this batch, and not applied by it');
+    await expect(page.locator('#review-undo-note')).toContainText('Games');
+  });
+
+  test('the queue is not offered where a batch cannot be applied', async ({ page }) => {
+    // Creating a new page is not an edit to an existing one, so there is
+    // nothing to batch — the button must not promise otherwise.
+    await mockTD(page, threePages());
+
+    await newItems(page, 'Dinosaurs');
+    await page.locator('#word-input').fill('Roar');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#step-result')).toBeVisible();
+    await expect(page.locator('#queue-add-btn')).toBeHidden();
+    await expect(page.locator('#queue-add-note')).toBeHidden();
+  });
+
+  test('quitting with pages queued warns that they would be lost', async ({ page }) => {
+    // The queue is held only in this tab and deliberately not autosaved: every
+    // entry carries a live fingerprint that would be stale on the next launch.
+    // So losing it has to be hard, which is what this guards.
+    await mockTD(page, threePages());
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+
+    let asked = "";
+    page.on('dialog', (dialog) => {
+      asked = dialog.message();
+      return dialog.dismiss();
+    });
+    await page.locator('#quit-btn').click();
+    await expect.poll(() => asked).toContain('1 page queued but not yet applied');
+    // Dismissed, so the app is still running and the queue is still there.
+    await expect(page.locator('#queue-list li')).toHaveCount(1);
+  });
+
+  test('the batch review has no serious or critical accessibility violations', async ({ page }) => {
+    await mockTD(page, threePages());
+
+    await existingItems(page);
+    await queueFor(page, 'Eating', 'apple');
+    await queueFor(page, 'Games', 'chess');
+    await page.locator('#queue-review-btn').click();
+    await expect(page.locator('#review-queue li')).toHaveCount(2);
+
+    expect(await blockingViolations(page)).toEqual([]);
+  });
 });

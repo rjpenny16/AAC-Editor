@@ -54,6 +54,10 @@ const state = {
   // itself never comes here: the browser only ever renders the description and
   // asks the server to replay it. See the undo section in live.py.
   lastEdit: null,
+  // Pages reviewed and set aside to be applied together. Each holds the frozen
+  // payload its own review produced, so a queued page is reviewed material
+  // rather than something re-derived from live state later. See queue.js.
+  queue: [],
   placementReturn: "review", // which step the placement editor returns to
   availableSlots: null,
   grid3Cells: [],

@@ -17,7 +17,8 @@ import {
 } from "./edits.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
 import { placementSlots, renderPreview, showPlacement } from "./preview.js";
-import { renderResult } from "./result.js";
+import { clearQueue, syncQueueControls } from "./queue.js";
+import { renderBatchResult, renderResult } from "./result.js";
 import { FUNCTIONS } from "./state.js";
 import { clearBuildError, clearStepError, continueWizard, setOperation, show, showStepError } from "./wizard.js";
 
@@ -215,10 +216,13 @@ function prepareReview() {
     appendReviewRow(list, item.label, detail);
   });
   renderReviewEdits(edits);
-  // Both are the undo review's doing, and every other review restores them.
+  // All four are the undo or batch review's doing, and every other review
+  // restores them.
   $("review-undo-note").hidden = true;
+  $("review-queue-wrap").hidden = true;
   $("review-placement-section").hidden = false;
   $("adjust-placement-btn").hidden = false;
+  syncQueueControls();
   syncReviewPlacement();
   show("review");
 }
@@ -313,6 +317,9 @@ function prepareUndoReview() {
   // described by its lists instead of re-deriving a preview of the way back.
   $("review-placement-section").hidden = true;
   $("adjust-placement-btn").hidden = true;
+  $("review-queue-wrap").hidden = true;
+  $("queue-add-btn").hidden = true;
+  $("queue-add-note").hidden = true;
   show("review");
 }
 
@@ -389,21 +396,26 @@ $("confirm-update-btn").addEventListener("click", async () => {
   }
 
   const undoing = pending.kind === "undo";
+  const batching = pending.kind === "batch";
   const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
   const busyLabel = undoing
     ? `Undoing the change in ${product} and checking…`
-    : pending.operation === "existing"
-      ? `Updating ${product} and checking…`
-      : "Creating and checking…";
+    : batching
+      ? `Applying ${pending.displayTitle} in ${product} and checking…`
+      : pending.operation === "existing"
+        ? `Updating ${product} and checking…`
+        : "Creating and checking…";
   const button = $("confirm-update-btn");
   $("review-error").hidden = true;
   setBusy(button, true, busyLabel);
   $("step-result").setAttribute("aria-busy", "true");
   setActivity(undoing
     ? `Putting “${pending.displayTitle}” back and checking the result…`
-    : pending.operation === "existing"
-      ? `Updating ${product} and checking the result…`
-      : "Creating the page in TD Snap and checking the result…");
+    : batching
+      ? `Applying ${pending.displayTitle}, one at a time, and checking each…`
+      : pending.operation === "existing"
+        ? `Updating ${product} and checking the result…`
+        : "Creating the page in TD Snap and checking the result…");
   try {
     const data = await api(pending.path, {
       method: "POST",
@@ -417,7 +429,10 @@ $("confirm-update-btn").addEventListener("click", async () => {
       },
       body: JSON.stringify(pending.payload),
     }, 0);
-    state.edits = data.edits || state.edits + 1;
+    // A batch is several edits; counting it as one would understate the
+    // session, and a batch that applied nothing must not count as one either.
+    state.edits = data.edits
+      || state.edits + (batching ? data.applied || 0 : 1);
     // `undo` is absent from a Grid 3 or exported-file report; only TD Snap live
     // retains anything, and there it is always present (null when spent).
     if ("undo" in data) state.lastEdit = data.undo;
@@ -427,6 +442,24 @@ $("confirm-update-btn").addEventListener("click", async () => {
       } catch {
         // The requested edit is already verified. A later reconnect can refresh the list.
       }
+    }
+    // A batch reports per page rather than as one edit, so it renders its own
+    // outcome list and then finishes through the ordinary result screen.
+    if (batching) {
+      // Every queued page has now been reported on — applied, refused, failed,
+      // or explicitly not attempted — so nothing is left waiting silently.
+      clearQueue();
+      // The page still open may well have been one of the pages just written.
+      state.pageEdits = emptyEdits();
+      try {
+        await loadTargetLayout(titleOf(state.parentId));
+      } catch {
+        // Every applied page is already verified; the next poll re-reads this.
+      }
+      renderBatchResult(data);
+      state.pendingEdit = null;
+      show("result");
+      return;
     }
     // An undo has just rewritten the page it was reviewed against, so the
     // pending edits and the layout behind them are both stale.

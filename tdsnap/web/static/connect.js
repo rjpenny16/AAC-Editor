@@ -12,6 +12,7 @@ import { firstAvailableSlot, renderWords } from "./chips.js";
 import { emptyEdits, reconcile } from "./edits.js";
 import { parentFilter, parentSelect, renderParents } from "./parents.js";
 import { savePreference } from "./settings.js";
+import { loadVocabulary } from "./vocabulary.js";
 import { clearBuildError, setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
 
 /* Owned here because connect.js is the only writer, and a module-level `let`
@@ -182,6 +183,7 @@ async function useFileSession(data) {
   $("live-result-note").textContent =
     "Save the edited copy, review it, then import it into TD Snap.";
   setProviderState("file", "Ready", "ready");
+  await loadVocabulary();
   show("operation");
   return true;
 }
@@ -352,6 +354,9 @@ $("live-connect-btn").addEventListener("click", async () => {
     } catch {
       state.lastEdit = null;
     }
+    // Advisory duplicate checking across the whole page set; a failure here
+    // costs the advisory and nothing else, so it is never awaited for success.
+    await loadVocabulary();
     renderWords();
     if (state.layoutFingerprint) show("items");
     else show("destination");
