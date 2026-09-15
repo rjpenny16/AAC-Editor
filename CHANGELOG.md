@@ -13,6 +13,56 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Added
 
+- **Suggestions you can steer, one at a time.** The AI panel was one shot, N items, take it or
+  leave it. Opening a suggested button now offers **Suggest a different one** and **More like this**:
+  the first swaps that word for another in the same cell and the same topic-page row, the second asks
+  for more of whatever kind that one is. Removing a suggestion is remembered and sent back as a
+  negative constraint, so *"no, not that"* is answered once rather than every round.
+
+  Only suggestions are steerable. A word somebody typed is theirs; deleting it says nothing about
+  what a model should propose, so it is never recorded as a rejection, and renaming a suggestion
+  makes it theirs too. A swap is undoable through the same **Undo remove** the chip box already had.
+
+- **Suggestions match how your page set already writes.** A sample of the page set's real button
+  labels — with their real capitalization, unlike the duplicate index, which casefolds — goes with
+  the request as style context, so suggestions read like the rest of the vocabulary instead of like a
+  model. The page being edited leads the sample. Turn it off with **Match the wording style of this
+  page set**.
+
+  This goes to the model running on this computer and no further. The one outbound request AAC Editor
+  can make still carries the page title and nothing else, and a test pins that style samples, rejected
+  suggestions, and existing labels never reach it.
+
+- **The reference article is named, and can be refused.** Wikipedia grounding used to take the first
+  search result silently, which is the part of it a user could not argue with: "Mercury" the planet
+  and "Mercury" the element look identical in a page title. The article used is now shown under the
+  suggestions with a link, along with the runners-up; choosing another one, or **Don't use an article
+  at all**, applies to the next round rather than silently discarding suggestions that may already
+  have been edited. A candidate with no usable text is passed over instead of grounding nothing.
+
+- **More than one built-in model, chosen by measurement.** `localai` is now a registry of pinned
+  models rather than a single hard-coded one. Each entry carries its own publisher, immutable commit,
+  byte size and SHA-256; each downloads to its own file, so fetching a second never disturbs one that
+  already worked; and each verifies independently. Anything larger than the default is gated on the
+  memory this computer is *measured* to have, and a machine whose memory cannot be read is offered the
+  small model and nothing bigger — the small model stays the default, because a clinic laptop has to
+  be able to run whatever the app picks.
+
+  An entry missing any part of its pin is not offered at all, so nothing unverifiable can be
+  downloaded. `scripts/verify_model_pins.py` confirms each pin against the publisher's own metadata
+  without downloading the model, and prints the values for an entry that still needs one.
+
+- **An AI eval set with a recorded pass rate.** `tests/fixtures/ai_eval_set.json` is 20 fixed category
+  prompts and the rules the prompt already states: a characters page must not come back holding
+  "wand", a word button is one to three words, a phrase carries the function its own text supports —
+  and something recognisably *of* the category has to come back, so confident nonsense fails rather
+  than passing for avoiding the forbidden words.
+
+  The scoring is pure and runs offline on every CI build, because a check that accepts everything
+  passes every release and means nothing. The same rules run against the real model on the opt-in
+  integration job, and the pass rate is written to the job summary and kept as a build artifact, so a
+  prompt edit has a number attached to it instead of a feeling.
+
 - **Import a word list.** **More options → Import a word list** takes a paste or a CSV/TSV file. It
   detects the delimiter, works out whether the first row is a header, and guesses which column holds
   the label, the spoken message, the communicative function, and the symbol search words — every guess

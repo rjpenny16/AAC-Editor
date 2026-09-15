@@ -1,0 +1,686 @@
+[
+  {
+    "id": "harry-potter-characters",
+    "category": "Harry Potter characters",
+    "kind": "words",
+    "count": 8,
+    "why": "The named example in the prompt. Related vocabulary is not an example of a type.",
+    "checks": {
+      "forbids": [
+        "magic",
+        "wand",
+        "hogwarts",
+        "broom",
+        "spell",
+        "wizard",
+        "quidditch",
+        "potion"
+      ],
+      "expects_any": [
+        "harry",
+        "hermione",
+        "ron",
+        "dumbledore",
+        "hagrid",
+        "snape",
+        "malfoy",
+        "voldemort",
+        "neville",
+        "ginny",
+        "luna",
+        "sirius",
+        "weasley",
+        "potter",
+        "granger"
+      ],
+      "looks_like_names": true,
+      "min_items": 4,
+      "no_duplicates": true,
+      "max_words": 3
+    }
+  },
+  {
+    "id": "disney-characters",
+    "category": "Disney characters",
+    "kind": "words",
+    "count": 8,
+    "why": "Same rule, a franchise the small model is more likely to know.",
+    "checks": {
+      "forbids": [
+        "castle",
+        "movie",
+        "cartoon",
+        "magic",
+        "disneyland",
+        "song"
+      ],
+      "expects_any": [
+        "mickey",
+        "minnie",
+        "donald",
+        "goofy",
+        "pluto",
+        "elsa",
+        "anna",
+        "simba",
+        "ariel",
+        "belle",
+        "woody",
+        "buzz",
+        "moana",
+        "stitch",
+        "olaf",
+        "cinderella",
+        "dumbo",
+        "bambi",
+        "pooh",
+        "tinker bell",
+        "rapunzel",
+        "aladdin"
+      ],
+      "looks_like_names": true,
+      "min_items": 4,
+      "no_duplicates": true,
+      "max_words": 3
+    }
+  },
+  {
+    "id": "us-presidents",
+    "category": "US presidents",
+    "kind": "words",
+    "count": 6,
+    "why": "People, not offices: 'president' and 'White House' are the failure shape.",
+    "checks": {
+      "forbids": [
+        "president",
+        "white house",
+        "election",
+        "government",
+        "senate"
+      ],
+      "expects_any": [
+        "washington",
+        "lincoln",
+        "jefferson",
+        "adams",
+        "roosevelt",
+        "kennedy",
+        "obama",
+        "reagan",
+        "truman",
+        "madison",
+        "monroe",
+        "wilson",
+        "eisenhower",
+        "carter",
+        "clinton",
+        "bush",
+        "grant",
+        "jackson",
+        "biden",
+        "nixon"
+      ],
+      "looks_like_names": true,
+      "min_items": 4,
+      "no_duplicates": true,
+      "max_words": 3
+    }
+  },
+  {
+    "id": "farm-animals",
+    "category": "Farm animals",
+    "kind": "words",
+    "count": 8,
+    "why": "A plain concrete category. Places and equipment are not animals.",
+    "checks": {
+      "forbids": [
+        "barn",
+        "farm",
+        "tractor",
+        "field",
+        "farmer",
+        "hay"
+      ],
+      "expects_any": [
+        "cow",
+        "cows",
+        "pig",
+        "pigs",
+        "sheep",
+        "horse",
+        "horses",
+        "chicken",
+        "chickens",
+        "goat",
+        "goats",
+        "duck",
+        "ducks",
+        "hen",
+        "rooster",
+        "donkey",
+        "turkey",
+        "lamb",
+        "goose"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 2
+    }
+  },
+  {
+    "id": "breakfast-foods",
+    "category": "Breakfast foods",
+    "kind": "words",
+    "count": 8,
+    "why": "Meals are not foods; a time of day is not something to eat.",
+    "checks": {
+      "forbids": [
+        "breakfast",
+        "morning",
+        "kitchen",
+        "plate",
+        "meal"
+      ],
+      "expects_any": [
+        "egg",
+        "eggs",
+        "toast",
+        "cereal",
+        "pancake",
+        "pancakes",
+        "waffle",
+        "waffles",
+        "bacon",
+        "oatmeal",
+        "yogurt",
+        "bagel",
+        "muffin",
+        "sausage",
+        "juice",
+        "banana",
+        "porridge",
+        "coffee",
+        "fruit"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 3
+    }
+  },
+  {
+    "id": "pizza-toppings",
+    "category": "Pizza toppings",
+    "kind": "words",
+    "count": 8,
+    "why": "The thing itself is not a topping of itself.",
+    "checks": {
+      "forbids": [
+        "pizza",
+        "oven",
+        "delivery",
+        "restaurant",
+        "slice"
+      ],
+      "expects_any": [
+        "cheese",
+        "pepperoni",
+        "mushroom",
+        "mushrooms",
+        "onion",
+        "onions",
+        "pepper",
+        "peppers",
+        "olive",
+        "olives",
+        "sausage",
+        "ham",
+        "pineapple",
+        "bacon",
+        "tomato",
+        "tomatoes",
+        "spinach",
+        "basil",
+        "chicken"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 3
+    }
+  },
+  {
+    "id": "musical-instruments",
+    "category": "Musical instruments",
+    "kind": "words",
+    "count": 8,
+    "why": "Music, band and concert are the topic, not members of the type.",
+    "checks": {
+      "forbids": [
+        "music",
+        "band",
+        "concert",
+        "song",
+        "orchestra",
+        "instrument"
+      ],
+      "expects_any": [
+        "piano",
+        "guitar",
+        "drum",
+        "drums",
+        "violin",
+        "flute",
+        "trumpet",
+        "cello",
+        "saxophone",
+        "clarinet",
+        "harp",
+        "banjo",
+        "ukulele",
+        "keyboard",
+        "tambourine",
+        "xylophone",
+        "trombone",
+        "accordion"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 2
+    }
+  },
+  {
+    "id": "colors",
+    "category": "Colors",
+    "kind": "words",
+    "count": 8,
+    "why": "The simplest possible category; anything but a colour is a failure.",
+    "checks": {
+      "forbids": [
+        "color",
+        "colour",
+        "paint",
+        "rainbow",
+        "crayon"
+      ],
+      "expects_any": [
+        "red",
+        "blue",
+        "green",
+        "yellow",
+        "orange",
+        "purple",
+        "pink",
+        "black",
+        "white",
+        "brown",
+        "gray",
+        "grey"
+      ],
+      "min_items": 6,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 2
+    }
+  },
+  {
+    "id": "body-parts",
+    "category": "Body parts",
+    "kind": "words",
+    "count": 8,
+    "why": "Core AAC vocabulary; medical and clothing words are the drift.",
+    "checks": {
+      "forbids": [
+        "body",
+        "doctor",
+        "hospital",
+        "medicine",
+        "shirt"
+      ],
+      "expects_any": [
+        "head",
+        "hand",
+        "hands",
+        "arm",
+        "arms",
+        "leg",
+        "legs",
+        "foot",
+        "feet",
+        "eye",
+        "eyes",
+        "ear",
+        "ears",
+        "nose",
+        "mouth",
+        "hair",
+        "finger",
+        "fingers",
+        "toe",
+        "toes",
+        "knee",
+        "elbow",
+        "shoulder",
+        "back",
+        "tummy",
+        "stomach",
+        "neck",
+        "teeth"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 2
+    }
+  },
+  {
+    "id": "feelings",
+    "category": "Feelings",
+    "kind": "words",
+    "count": 8,
+    "why": "Feelings, not the things that cause them.",
+    "checks": {
+      "forbids": [
+        "feeling",
+        "emotion",
+        "therapy",
+        "mood chart"
+      ],
+      "expects_any": [
+        "happy",
+        "sad",
+        "angry",
+        "mad",
+        "scared",
+        "tired",
+        "excited",
+        "nervous",
+        "silly",
+        "calm",
+        "frustrated",
+        "worried",
+        "proud",
+        "bored",
+        "sick",
+        "lonely",
+        "surprised",
+        "afraid",
+        "upset"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 2
+    }
+  },
+  {
+    "id": "playground-equipment",
+    "category": "Playground equipment",
+    "kind": "words",
+    "count": 6,
+    "why": "Equipment, not the activity or the place.",
+    "checks": {
+      "forbids": [
+        "playground",
+        "recess",
+        "school",
+        "play",
+        "park"
+      ],
+      "expects_any": [
+        "swing",
+        "swings",
+        "slide",
+        "seesaw",
+        "see-saw",
+        "monkey bars",
+        "sandbox",
+        "sandpit",
+        "climbing frame",
+        "merry-go-round",
+        "roundabout",
+        "jungle gym",
+        "trampoline",
+        "spring rider",
+        "climbing wall"
+      ],
+      "min_items": 4,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 3
+    }
+  },
+  {
+    "id": "things-in-a-kitchen",
+    "category": "Things in a kitchen",
+    "kind": "words",
+    "count": 8,
+    "why": "A broad title: concrete things a person would want to name.",
+    "checks": {
+      "forbids": [
+        "kitchen"
+      ],
+      "expects_any": [
+        "fork",
+        "spoon",
+        "knife",
+        "plate",
+        "cup",
+        "bowl",
+        "fridge",
+        "refrigerator",
+        "oven",
+        "stove",
+        "sink",
+        "pot",
+        "pan",
+        "microwave",
+        "toaster",
+        "kettle",
+        "mug",
+        "glass",
+        "napkin",
+        "blender",
+        "dishwasher"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 3
+    }
+  },
+  {
+    "id": "school-subjects",
+    "category": "School subjects",
+    "kind": "words",
+    "count": 6,
+    "why": "Subjects, not the building, the people, or the objects in it.",
+    "checks": {
+      "forbids": [
+        "school",
+        "teacher",
+        "classroom",
+        "backpack",
+        "subject"
+      ],
+      "expects_any": [
+        "math",
+        "maths",
+        "science",
+        "reading",
+        "english",
+        "history",
+        "art",
+        "music",
+        "geography",
+        "spelling",
+        "writing",
+        "gym",
+        "pe",
+        "computer",
+        "biology",
+        "chemistry",
+        "physics"
+      ],
+      "min_items": 4,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 3
+    }
+  },
+  {
+    "id": "zoo-animals",
+    "category": "Zoo animals",
+    "kind": "words",
+    "count": 8,
+    "why": "Animals, not the outing.",
+    "checks": {
+      "forbids": [
+        "zoo",
+        "cage",
+        "ticket",
+        "keeper",
+        "visit"
+      ],
+      "expects_any": [
+        "lion",
+        "lions",
+        "tiger",
+        "tigers",
+        "elephant",
+        "elephants",
+        "giraffe",
+        "zebra",
+        "monkey",
+        "monkeys",
+        "bear",
+        "penguin",
+        "snake",
+        "hippo",
+        "hippopotamus",
+        "rhino",
+        "rhinoceros",
+        "gorilla",
+        "kangaroo",
+        "panda",
+        "seal",
+        "flamingo",
+        "crocodile",
+        "alligator",
+        "meerkat"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 2
+    }
+  },
+  {
+    "id": "sports",
+    "category": "Sports",
+    "kind": "words",
+    "count": 8,
+    "why": "Sports, not equipment or venues.",
+    "checks": {
+      "forbids": [
+        "sport",
+        "ball",
+        "stadium",
+        "team",
+        "coach"
+      ],
+      "expects_any": [
+        "soccer",
+        "football",
+        "basketball",
+        "baseball",
+        "tennis",
+        "swimming",
+        "running",
+        "hockey",
+        "golf",
+        "volleyball",
+        "cycling",
+        "skiing",
+        "boxing",
+        "cricket",
+        "rugby",
+        "gymnastics",
+        "skating"
+      ],
+      "min_items": 5,
+      "no_duplicates": true,
+      "not_the_title": true,
+      "max_words": 2
+    }
+  },
+  {
+    "id": "swimming-phrases",
+    "category": "Swimming",
+    "kind": "phrases",
+    "count": 6,
+    "why": "Quick-fire phrases: the classifier must be applied to what came back.",
+    "checks": {
+      "functions_match": true,
+      "ends_questions": true,
+      "min_items": 3,
+      "no_duplicates": true
+    }
+  },
+  {
+    "id": "birthday-party-phrases",
+    "category": "Birthday party",
+    "kind": "phrases",
+    "count": 6,
+    "why": "A social routine a topic page is commonly built for.",
+    "checks": {
+      "functions_match": true,
+      "ends_questions": true,
+      "min_items": 3,
+      "no_duplicates": true
+    }
+  },
+  {
+    "id": "haircut-phrases",
+    "category": "Getting a haircut",
+    "kind": "phrases",
+    "count": 6,
+    "why": "An event where refusing and stopping matter as much as liking it.",
+    "checks": {
+      "functions_match": true,
+      "ends_questions": true,
+      "min_items": 3,
+      "no_duplicates": true
+    }
+  },
+  {
+    "id": "questions-only",
+    "category": "Going to the beach",
+    "kind": "phrases",
+    "count": 5,
+    "function": "question",
+    "why": "One function was asked for; a statement must never be tagged a question.",
+    "checks": {
+      "functions_match": true,
+      "ends_questions": true,
+      "min_items": 3,
+      "no_duplicates": true
+    }
+  },
+  {
+    "id": "negative-only",
+    "category": "Loud places",
+    "kind": "phrases",
+    "count": 5,
+    "function": "negative",
+    "why": "The function a user reaches for when something has to stop.",
+    "checks": {
+      "functions_match": true,
+      "ends_questions": true,
+      "min_items": 3,
+      "no_duplicates": true
+    }
+  }
+]

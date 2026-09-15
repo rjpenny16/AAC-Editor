@@ -13,9 +13,9 @@ and unblocks the next.
 ## Where the project stands
 
 The foundations are solid and should not be re-litigated: three write paths behind one canonical
-item model, review-before-write, layout fingerprinting, automatic rollback, 136 Python tests and 29
-Playwright tests, a five-job CI matrix, axe-checked end-to-end coverage, and a fail-closed signed
-release pipeline. There are no TODO/FIXME markers in the tree.
+item model, review-before-write, layout fingerprinting, automatic rollback, 437 Python tests, 111
+Playwright tests and 53 frontend unit tests, a five-job CI matrix, axe-checked end-to-end coverage,
+and a fail-closed signed release pipeline. There are no TODO/FIXME markers in the tree.
 
 The gaps are elsewhere. Three were serious; one still is:
 
@@ -370,29 +370,72 @@ page rather than as one atomic write; per-page rollback is what the automation c
 
 ---
 
-## Phase 6 — AI you can steer *(~2–3 weeks)*
+## Phase 6 — AI you can steer *(~2–3 weeks)* — **shipped**
 
-Today it is one shot, N items, take it or leave it.
+It was one shot, N items, take it or leave it.
 
-- **Per-item controls.** Regenerate one suggestion, "more like this", or reject — with rejections fed
-  back as negative constraints. The prompt builder already accepts an `existing` list; rejected items
-  simply extend it.
-- **Style-matching.** Pass a sample of the page set's real button labels as style context so
-  suggestions match the user's register and length. The live path already collects them. This is
-  local-model-only by construction and must be explicitly excluded from the grounding request, which
-  sends the page title alone.
-- **Model path.** The built-in model is pinned to Qwen2.5-1.5B Q4_K_M at ~1.1 GB. Add a larger option
-  for machines with the RAM, selected by a measured check rather than a guess, keeping the same
-  pin-and-verify discipline (size, SHA-256, GGUF magic). **Keep the small model** — clinic laptops
-  need it, and installer size already matters for families on metered connections.
-- **Quality harness.** Grow the opt-in AI smoke test into a fixed eval set of ~20 category prompts
-  asserting the type-matching rules the prompt already states — *"Harry Potter characters"* must not
-  return *"wand"*. Track pass rate per release so prompt edits stop being guesswork.
-- **Grounding transparency.** It currently takes the first search result. Name the article used and
-  let the user reject it.
+- **Per-item controls** — *shipped.* Opening a suggested button offers **Suggest a different one** and
+  **More like this**; removing one records it as a rejection. All three go through one request shape
+  in `ai.js`, differing only in `count` and `like`.
+
+  Rejections did **not** simply extend the `existing` list as this plan assumed. A button already on
+  the page is a fact about the page; a rejected suggestion is a judgement the user made; a kept one is
+  the direction they want more of. Feeding rejections in as "already on the page" tells the model
+  something untrue, and shows up as suggestions drifting towards vocabulary that is not there — so
+  `build_prompt` gained `avoid`, `like`, and `style` as separate lines.
+
+  Only suggestions are steerable, and provenance decides that: a word somebody typed is theirs, so
+  deleting it is never recorded as a rejection, and renaming a suggestion makes it theirs too.
+
+- **Style-matching** — *shipped.* A bounded sample of the page set's real labels rides along with the
+  vocabulary index that Phase 5 already read once per connection, and the page being edited leads it.
+  It could not reuse the index keys: those are casefolded, because "chips" and "Chips" are the same
+  concept for duplicate checking, and capitalization is half of what "style" means.
+
+  Excluded from the grounding request as required, and pinned by two tests rather than by a comment:
+  one asserts the lookup receives the page title and none of `existing`, `avoid`, `like`, or `style`;
+  the browser suite asserts the same about the request that carries them.
+
+- **Model path** — *shipped as machinery; the second pin is not yet filled in.* `localai` is a
+  registry of `ModelChoice` entries, each with its own publisher, immutable commit, size, SHA-256,
+  file on disk, and memory bar. Downloads, verification, `Llama` loading, and the picker are all
+  per-choice, and a second model never disturbs the first. The gate is measured — `GlobalMemoryStatusEx`
+  on Windows, `sysconf` elsewhere — and an unmeasurable machine is offered the default and nothing
+  larger, because "assume it's fine" is the guess this bullet ruled out. The small model stays the
+  default.
+
+  The larger entry (Qwen2.5 7B Instruct, Apache-2.0) is declared but **not offered**: its exact size
+  and SHA-256 have not been confirmed against the publisher, and `pinned` being False keeps it out of
+  the UI and out of the download path entirely. Inventing those numbers would ship a download that
+  can only ever fail its own integrity check. `scripts/verify_model_pins.py` resolves and prints them
+  from Hugging Face's metadata API — one small request, no multi-gigabyte download — and also checks
+  the existing pin, so a pin nobody ever verified stops being possible.
+
+- **Quality harness** — *shipped.* `tests/fixtures/ai_eval_set.json` is 20 cases; `tests/ai_eval.py`
+  scores them; `test_ai_eval.py` runs them against the real model and records the rate.
+
+  One check was added that this plan did not call for, and it is the one that makes the number mean
+  anything. Forbidding *"wand"* passes any answer that avoids the forbidden words — including eight
+  capitalised words with no relation to the category. So every word case also names members a person
+  would recognise, and one hit is enough: the question is whether the model knows the subject, not
+  whether it picked a particular answer.
+
+  The scorer is pure and its rules are tested offline on every CI run, each with an answer that must
+  pass and one that must fail. A check that accepts everything passes every release and says nothing.
+
+  The floor is a tripwire, not a quality bar: CI runs the smallest model the project supports to keep
+  the job cheap, and the number to read is the recorded rate against the previous release.
+
+- **Grounding transparency** — *shipped.* `grounding.lookup` returns the article used, its URL, and
+  the runners-up; the response names it and the panel shows it with a link. Rejecting one, or choosing
+  another, applies to the next round rather than discarding suggestions already on screen that the
+  user may have edited. Candidates are now tried in order rather than only the first, so an article
+  with no extract no longer means no grounding at all.
 
 **Exit:** a user accepts most suggestions and regenerates the rest without losing work · suggestions
-visibly match the page set's existing style · the eval set runs in CI with a recorded pass rate.
+visibly match the page set's existing style · the eval set runs in CI with a recorded pass rate. —
+*met. The larger model is the one carried-forward item: the plumbing and its tests are in place, and
+the entry becomes available the moment its pin is verified, with no other change.*
 
 ---
 

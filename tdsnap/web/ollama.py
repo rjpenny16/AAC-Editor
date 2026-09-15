@@ -130,6 +130,9 @@ def generate_words(
     function: Optional[str] = None,
     existing: Optional[Sequence[str]] = None,
     reference: Optional[str] = None,
+    avoid: Optional[Sequence[str]] = None,
+    like: Optional[Sequence[str]] = None,
+    style: Optional[Sequence[str]] = None,
 ) -> tuple[list, Optional[str]]:
     """Return ``(words, error)``; on any failure words is [] and error explains."""
     try:
@@ -141,7 +144,8 @@ def generate_words(
         "model": model,
         "messages": [
             {"role": "user", "content": prompts.build_prompt(
-                category, count, kind, function, existing, reference
+                category, count, kind, function, existing, reference,
+                avoid=avoid, like=like, style=style,
             )}
         ],
         "stream": False,

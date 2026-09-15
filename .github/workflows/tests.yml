@@ -84,6 +84,27 @@ jobs:
           TDSNAP_AI_SMOKE: "1"
         run: python -m pytest -v tests/test_integration_example.py tests/test_ai_smoke.py
 
+      # The eval set turns "does this prompt still work?" into a number. The
+      # floor is a tripwire against a prompt edit that makes answers much
+      # worse; the value to compare release to release is the recorded rate,
+      # which is why the report is kept as an artifact.
+      - name: Run the AI eval set and record its pass rate
+        env:
+          TDSNAP_AI_SMOKE: "1"
+        run: python -m pytest -v tests/test_ai_eval.py
+
+      - name: Record the pass rate in the job summary
+        if: always()
+        run: python scripts/ai_eval_summary.py >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the eval report with the build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-eval-report
+          path: ai-eval-report.json
+          if-no-files-found: ignore
+
   windows:
     runs-on: windows-latest
     steps:

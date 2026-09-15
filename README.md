@@ -54,7 +54,9 @@ the explicit administrator fallback for Grid 3.
   pointed out but never blocked.
 - Adds matching TD Snap symbols when TD Snap can find them, searching the words
   you choose — or none at all, per button.
-- Suggests AAC-friendly placement and optional words or phrases with local AI.
+- Suggests AAC-friendly placement and optional words or phrases with local AI —
+  steerable one suggestion at a time: swap one for another, ask for more like
+  it, or throw it away and it is not offered again.
 - Verifies the completed edit and reports anything that still needs review.
 
 If something goes wrong, **Copy a support report** in the footer collects the
@@ -72,14 +74,24 @@ below.
 AI is optional and local:
 
 - The packaged app can download Qwen2.5 1.5B Instruct once (~1 GB, Apache-2.0)
-  and run it offline.
+  and run it offline. Every built-in model is pinned to an exact URL, byte size
+  and SHA-256, and a download that does not match all three is thrown away.
+  Where the app offers more than one, the larger ones are unlocked by the
+  memory this computer is *measured* to have — a machine whose memory cannot be
+  read is offered the small model and nothing bigger.
 - If [Ollama](https://ollama.com/download) is already running, the app can use
   one of its installed models instead.
+- Suggestions can be asked to match how your page set already writes a button.
+  That sample of your own labels goes to the model on this computer and no
+  further; turn it off with **Match the wording style of this page set**.
 
 Online grounding is separate and off by default. If you explicitly enable it
 for a suggestion, AAC Editor sends only that page title or category to
-Wikipedia; button labels, page sets, and generated suggestions remain local.
-Administrators can hard-disable grounding with `TDSNAP_WEB_GROUNDING=0`.
+Wikipedia; button labels, page sets, style samples, rejected suggestions, and
+generated suggestions all remain local. The article it used is named under the
+suggestions with a link, and you can send it to a different one — or to none —
+if it picked the wrong "Mercury". Administrators can hard-disable grounding
+with `TDSNAP_WEB_GROUNDING=0`.
 
 Nothing is written to disk until you save something. Remembering your last
 AAC app, your Ollama connection, an unfinished page (so a crash or a
@@ -197,6 +209,18 @@ Install `.[ai,desktop]` and PyInstaller, then build the unsigned installer with
 Unsigned output is suitable for packaging validation, not a production
 UIAccess claim. See [development-only UIAccess signing](docs/UIACCESS_TESTING.md)
 for an explicit temporary-certificate procedure.
+
+AI suggestion quality has its own harness. `tests/fixtures/ai_eval_set.json`
+holds a fixed set of category prompts and the rules the prompt already states —
+*"Harry Potter characters"* must not return *"wand"*, and must return somebody
+from the books. The scoring runs offline on every CI build
+(`tests/test_ai_eval_rules.py`); the same rules run against the real model, and
+record a pass rate, when opted in:
+
+```bash
+TDSNAP_AI_SMOKE=1 python -m pytest tests/test_ai_eval.py
+python scripts/verify_model_pins.py   # confirm each model pin with its publisher
+```
 
 The browser suite mocks TD Snap and Grid 3 accessibility responses. Real TD Snap
 and Grid 3 tests are explicit opt-ins (`TDSNAP_LIVE_E2E=1` and

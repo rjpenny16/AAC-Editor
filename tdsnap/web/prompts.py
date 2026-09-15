@@ -122,6 +122,56 @@ def phrase_function(label: str, suggested: Optional[str] = None) -> str:
     return suggested if suggested in PHRASE_FUNCTIONS and suggested != "question" else "comment"
 
 
+def _listing(values: Sequence[str]) -> str:
+    return json.dumps(list(values), ensure_ascii=False)
+
+
+def _constraint_lines(
+    existing: Optional[Sequence[str]],
+    avoid: Optional[Sequence[str]],
+    like: Optional[Sequence[str]],
+    style: Optional[Sequence[str]],
+) -> str:
+    """The "what to steer away from, and towards" block of the prompt.
+
+    Four separate lines rather than one merged list, because they do not mean
+    the same thing to a model. A button that is already on the page is a fact
+    about the page; a rejected suggestion is a judgement the user made; a kept
+    one is the direction they want more of; and style samples are about *how*
+    to write, never *what* to write. Collapsing them (e.g. feeding rejections
+    in as "already on the page") tells the model something untrue and shows up
+    as suggestions drifting towards vocabulary that is not there.
+    """
+    lines = []
+    if existing:
+        lines.append(
+            "The page already contains these buttons: "
+            f"{_listing(existing)}\n"
+            "Suggest only new items; do not repeat or rephrase existing buttons."
+        )
+    if avoid:
+        lines.append(
+            "The user rejected these suggestions: "
+            f"{_listing(avoid)}\n"
+            "Never suggest them again, and avoid close variants of them."
+        )
+    if like:
+        lines.append(
+            "The user kept these and asked for more of the same kind: "
+            f"{_listing(like)}\n"
+            "Match what those have in common, without repeating them."
+        )
+    if style:
+        lines.append(
+            "For writing style only, here is how buttons are already worded in "
+            f"this page set: {_listing(style)}\n"
+            "Match their length, capitalization, and register. They are examples "
+            "of style, not of subject matter: never reuse their wording or let "
+            "them change what the items are about."
+        )
+    return "\n".join(lines)
+
+
 def build_prompt(
     category: str,
     count: int,
@@ -129,15 +179,12 @@ def build_prompt(
     function: Optional[str] = None,
     existing: Optional[Sequence[str]] = None,
     reference: Optional[str] = None,
+    avoid: Optional[Sequence[str]] = None,
+    like: Optional[Sequence[str]] = None,
+    style: Optional[Sequence[str]] = None,
 ) -> str:
     """Return the prompt for *count* words or quick-fire phrases."""
-    existing_line = ""
-    if existing:
-        existing_line = (
-            "The page already contains these buttons: "
-            f"{json.dumps(list(existing), ensure_ascii=False)}\n"
-            "Suggest only new items; do not repeat or rephrase existing buttons."
-        )
+    existing_line = _constraint_lines(existing, avoid, like, style)
     # Authoritative facts looked up for this title (see grounding.py). Kept
     # blank when absent so offline generation reads exactly as before.
     reference_line = "\n"

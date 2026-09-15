@@ -1,18 +1,18 @@
 """Real-model smoke test for the built-in AI engine.
 
-Downloads a small GGUF (Qwen2.5 0.5B, ~400 MB) and runs actual generations
-through llama.cpp — proving the exact code path the packaged app uses. Needs
-network + llama-cpp-python, so it only runs when explicitly requested:
+Runs actual generations through llama.cpp against a small real GGUF — the exact
+code path the packaged app uses. Needs network + llama-cpp-python, so it only
+runs when explicitly requested:
 
     TDSNAP_AI_SMOKE=1 python -m pytest tests/test_ai_smoke.py
+
+The model download itself lives in ``conftest.smoke_localai``, shared with the
+eval set in ``test_ai_eval.py`` so CI fetches it once.
 
 CI runs it in the release workflow and the soft-fail integration job.
 """
 
-import importlib
 import os
-import re
-import time
 
 import pytest
 
@@ -22,50 +22,6 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("TDSNAP_AI_SMOKE") != "1",
     reason="set TDSNAP_AI_SMOKE=1 to run the real-model smoke test",
 )
-
-# Fetching ~400 MB from a third-party CDN fails for reasons that say nothing
-# about this code: rate limits, 5xx, DNS, a dropped connection. Those skip.
-# Anything else — above all a failed integrity check, a wrong size, or a file
-# that is not GGUF — is a real defect in the download path and must fail.
-TRANSPORT_FAILURE = re.compile(
-    r"HTTP Error (?:429|5\d\d)"
-    r"|timed out|timeout"
-    r"|name resolution|nodename nor servname|getaddrinfo"
-    r"|[Cc]onnection (?:reset|refused|aborted)"
-    r"|Remote end closed"
-    r"|URLError",
-)
-
-
-@pytest.fixture(scope="module")
-def smoke_localai(tmp_path_factory):
-    pytest.importorskip("llama_cpp")
-    tmp = tmp_path_factory.mktemp("model-home")
-    os.environ["XDG_DATA_HOME"] = str(tmp)
-    os.environ["LOCALAPPDATA"] = str(tmp)
-    os.environ["TDSNAP_MODEL_URL"] = (
-        "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/"
-        "qwen2.5-0.5b-instruct-q4_k_m.gguf"
-    )
-    os.environ["TDSNAP_MODEL_FILE"] = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
-
-    from tdsnap.web import localai
-
-    importlib.reload(localai)  # pick up the env overrides
-    localai.start_download()
-    deadline = time.time() + 600
-    while time.time() < deadline:
-        state = localai.download_state()
-        if state["status"] in ("ready", "error"):
-            break
-        time.sleep(2)
-    final = localai.download_state()
-    if final["status"] != "ready":
-        error = str(final.get("error") or "")
-        if TRANSPORT_FAILURE.search(error):
-            pytest.skip(f"could not fetch the model from the CDN: {error}")
-        pytest.fail(f"model download failed: {final}")
-    return localai
 
 
 def test_generate_words_with_real_model(smoke_localai):
@@ -110,3 +66,22 @@ def test_generate_phrases_with_real_model(smoke_localai):
         for item in phrases
         if item["label"].strip().endswith("?")
     )
+
+
+def test_steering_reaches_a_real_generation(smoke_localai):
+    """Rejections, examples, and style samples are accepted end to end.
+
+    Whether a 0.5B model *obeys* a negative constraint is not something to
+    assert on — that is what the eval set's pass rate is for. What must hold is
+    that the extra prompt material does not break parsing or generation.
+    """
+    words, error = smoke_localai.generate_words(
+        "Snacks",
+        count=5,
+        existing=["Crackers"],
+        avoid=["Kale", "Spinach"],
+        like=["Chips"],
+        style=["I want more", "All done"],
+    )
+    assert error is None
+    assert all(isinstance(word, str) and word.strip() for word in words)

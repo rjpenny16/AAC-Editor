@@ -532,6 +532,25 @@ summary {
 .ai-grounding-option { display: flex; gap: 0.65rem; align-items: start; font-weight: 700; }
 .ai-grounding-option input { width: 1.25rem; height: 1.25rem; flex: none; margin-top: 0.15rem; }
 .ai-settings { display: grid; gap: 0.4rem; }
+
+/* Which reference article a grounded suggestion actually used, and the way
+   out of a wrong one. */
+.ai-grounding-source {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface-soft);
+}
+
+.ai-grounding-source > p { margin: 0 0 0.5rem; }
+.ai-grounding-source > p:last-child { margin-bottom: 0; }
+.ai-grounding-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.ai-grounding-pick select { max-width: 100%; }
+
+/* The per-item AI controls in the chip editor. */
+.ai-item-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.ai-item-field .field-hint { margin-top: 0.5rem; }
 .download-progress { height: 0.75rem; overflow: hidden; margin-top: 0.75rem; border-radius: 999px; background: #dce5f0; }
 .download-progress > div { width: 0; height: 100%; background: var(--accent); }
 

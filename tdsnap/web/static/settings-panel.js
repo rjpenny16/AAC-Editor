@@ -12,6 +12,8 @@ const PREFERENCE_LABELS = {
   ollama_host: "Ollama server address",
   ollama_model: "Ollama model name",
   ai_grounding: "Wikipedia lookup preference",
+  ai_style: "Whether suggestions match this page set's wording",
+  ai_model: "Which built-in AI model to use",
 };
 
 function renderEntry(list, term, description) {

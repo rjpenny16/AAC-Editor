@@ -29,7 +29,9 @@ def main() -> int:
         return 0
     DEST.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading {URL} ...")
-    with urllib.request.urlopen(URL, timeout=60) as response:
+    # URL is the pinned raw.githubusercontent.com constant above; the
+    # download is SHA-256- and SQLite-header-verified before it is written
+    with urllib.request.urlopen(URL, timeout=60) as response:  # noqa: S310
         data = response.read()
     digest = hashlib.sha256(data).hexdigest()
     if not data.startswith(SQLITE_MAGIC) or digest != EXPECTED_SHA256:

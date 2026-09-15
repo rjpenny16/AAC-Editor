@@ -32,6 +32,31 @@ function snapshotWords() {
   return state.words.map((item) => ({ ...item }));
 }
 
+/* Let ai.js make its own changes undoable through the same stack, so a
+   regenerated suggestion is as recoverable as a chip the user deleted. */
+function pushUndoSnapshot() {
+  undoStack.push(snapshotWords());
+}
+
+/* Throwing away an AI suggestion is the clearest "not that" the user ever
+   gives, so it is remembered and sent back as a negative constraint rather
+   than being offered again next round. Only suggestions count: deleting a word
+   somebody typed says nothing about what the model should propose.
+
+   Capped, and de-duplicated case-insensitively, because this rides on every
+   later request and an unbounded list would eventually crowd out the prompt. */
+const MAX_REJECTED = 40;
+
+function rememberRejection(item) {
+  if (!item || item.source !== "ai") return;
+  const label = String(item.label || "").trim();
+  if (!label) return;
+  const folded = label.toLocaleLowerCase();
+  if (state.aiRejected.some((seen) => seen.toLocaleLowerCase() === folded)) return;
+  state.aiRejected.push(label);
+  if (state.aiRejected.length > MAX_REJECTED) state.aiRejected.shift();
+}
+
 function undoLastRemoval() {
   if (!undoStack.canUndo()) return false;
   state.words = undoStack.pop();
@@ -282,6 +307,7 @@ function renderWords() {
     remove.textContent = "×";
     remove.addEventListener("click", () => {
       undoStack.push(snapshotWords());
+      rememberRejection(state.words[index]);
       state.words.splice(index, 1);
       $("chip-note").textContent = "";
       renderWords();
@@ -386,7 +412,7 @@ document.querySelectorAll("#edit-fn-row .fn-pill").forEach((pill) =>
 
 function showEditorFor(mode, {
   label, message, fn = "", note = "", canRevert = false,
-  symbol = true, symbolQuery = "",
+  symbol = true, symbolQuery = "", fromAi = false,
 }) {
   $("edit-label").value = label;
   $("edit-label").setCustomValidity("");
@@ -397,6 +423,10 @@ function showEditorFor(mode, {
   $("chip-editor-note").textContent = note;
   $("chip-editor-note").hidden = !note;
   $("edit-fn-field").hidden = existing;
+  // The per-item AI controls belong to a planned button this app suggested.
+  // An existing button is vocabulary somebody already uses, and a typed word
+  // is the user's own; neither is something to regenerate.
+  $("edit-ai-field").hidden = existing || !fromAi;
   // TD Snap owns symbol search, and it only ever runs while a button is being
   // created — so the choice is offered where it can still be honoured, on a
   // planned button, and hidden on one that already has its symbol.
@@ -418,16 +448,23 @@ function syncSymbolQuery() {
 
 $("edit-symbol").addEventListener("change", syncSymbolQuery);
 
+function editingWordIndex() {
+  return editingSlot === null ? editingIndex : null;
+}
+
 function openChipEditor(index) {
   editingIndex = index;
   editingSlot = null;
   const item = state.words[index];
+  $("edit-ai-status").textContent =
+    "Removing this also tells the next round of suggestions not to offer it again.";
   showEditorFor("word", {
     label: item.label,
     message: item.message || "",
     fn: item.fn || "",
     symbol: item.symbol !== false,
     symbolQuery: item.symbolQuery || "",
+    fromAi: item.source === "ai",
   });
 }
 
@@ -510,6 +547,7 @@ chipDialog.addEventListener("close", () => {
   if (editingIndex === null) return;
   if (action === "remove") {
     undoStack.push(snapshotWords());
+    rememberRejection(state.words[editingIndex]);
     state.words.splice(editingIndex, 1);
   } else if (action === "save") {
     const label = $("edit-label").value.trim();
@@ -517,12 +555,17 @@ chipDialog.addEventListener("close", () => {
     if (label) {
       const wantsSymbol = $("edit-symbol").checked;
       const query = $("edit-symbol-query").value.trim();
+      const previous = state.words[editingIndex];
       state.words[editingIndex] = {
         label,
         message: message && message !== label ? message : null,
         fn: chipDialog.dataset.fn || "",
-        slot: state.words[editingIndex].slot,
+        slot: previous.slot,
         symbol: wantsSymbol,
+        // Rewriting the label makes it the user's word, not a suggestion; the
+        // per-item AI controls stop offering to regenerate something they
+        // already decided on.
+        source: label === previous.label ? previous.source || "" : "",
         // The label is already the default search, so only a different query is
         // worth carrying — that keeps the draft and the request free of noise.
         symbolQuery: wantsSymbol && query && query !== label ? query : null,
@@ -538,7 +581,8 @@ chipDialog.addEventListener("close", () => {
 });
 
 export {
-  autoFormatTopicRows, clearUndoHistory, firstAvailableSlot, functionForSlot,
-  openExistingEditor, pageCapacity, renderWords, takeWordInput, undoLastRemoval,
+  autoFormatTopicRows, clearUndoHistory, editingWordIndex, firstAvailableSlot,
+  functionForSlot, openExistingEditor, pageCapacity, pushUndoSnapshot,
+  rememberRejection, renderWords, takeWordInput, undoLastRemoval,
   updateTopicInputRow,
 };
