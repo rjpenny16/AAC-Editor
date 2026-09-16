@@ -41,17 +41,14 @@ dynamically. Bump it, commit the complete release, then create and push the
 matching tag (`git tag vX.Y.Z && git push origin vX.Y.Z`). Manual workflow runs
 also require an existing tag and check out that exact ref.
 
-Production signing is fail-closed. Before releasing, configure the
-`SIGNPATH_API_TOKEN` repository secret and these repository variables:
+Releases are not code-signed. The workflow builds the executable and
+installer, installs the package, checks its health/version endpoint,
+uninstalls it, writes a SHA-256 checksum, attests build provenance, and only
+then attaches everything to a draft GitHub Release. Review the draft, then
+publish it. Exact direct build inputs live in
+`packaging/release-constraints.txt` and should be updated deliberately.
 
-- `SIGNPATH_ORGANIZATION_ID`
-- `SIGNPATH_PROJECT_SLUG`
-- `SIGNPATH_SIGNING_POLICY_SLUG`
-- `SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG`
-- `SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG`
-
-The two artifact configurations sign the unpackaged UIAccess executable and
-the completed installer, respectively. The workflow verifies both signatures,
-installs the package, checks its health/version endpoint, uninstalls it, and
-only then attaches it to a draft GitHub Release. Exact direct build inputs live
-in `packaging/release-constraints.txt` and should be updated deliberately.
+The executable manifest must keep `uiAccess="false"`: Windows will not start a
+`uiAccess="true"` executable without a trusted Authenticode signature, and
+`packaging/verify_manifest.ps1` fails the build if that changes. Live Grid 3
+editing relies on the administrator restart instead.

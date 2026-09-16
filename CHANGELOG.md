@@ -295,6 +295,19 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Changed
 
+- **Releases are no longer code-signed, and the executable no longer requests
+  UIAccess.** The 2.2.0 release pipeline refused to publish anything SignPath
+  had not signed; SignPath Foundation declined the project, and no other free
+  Authenticode source exists. A `uiAccess="true"` executable cannot even start
+  without a trusted signature, so the manifest now requests plain `asInvoker`
+  and the packaged app launches unsigned. What that changes for a user: Windows
+  SmartScreen shows *Windows protected your PC* on first run, and live Grid 3
+  editing always asks for administrator approval through UAC rather than only
+  on portable or development builds — TD Snap editing and exported files are
+  unaffected. What does not change: every release still ships a SHA-256
+  checksum and a build provenance attestation from the public workflow, and the
+  README says how to check both before choosing *Run anyway*. `build.ps1 -Sign`
+  still signs with a certificate you supply, for the day one is available.
 - **A cell this edit frees is space this edit can use.** The write path always
   accepted a new button in a cell a removal had just emptied — removing a typo
   and typing the correction into the same space is the most ordinary use of the
@@ -355,6 +368,9 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Removed
 
+- `docs/UIACCESS_TESTING.md` and the self-signed certificate step in the
+  package smoke workflow. Both existed only to exercise a UIAccess claim the
+  executable no longer makes.
 - `walkthrough-guide.png` and `walkthrough-lead.png`, unreferenced since the
   walkthrough redesign but still shipped in the wheel, the PyInstaller bundle,
   and the installer.

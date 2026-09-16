@@ -19,15 +19,17 @@ Download **`AACEditor-*-windows-x64-setup.exe`** from the
 the installer. Python is not required. The installer places AAC Editor beneath
 Program Files and its shortcuts launch that installed executable.
 
-The production release workflow requires Authenticode signing through
-SignPath. Do not continue if Windows identifies the publisher as unknown. Each
-release also includes a SHA-256 checksum and verifiable build attestation from
-the public workflow.
+Releases are not code-signed — no free Authenticode certificate is available
+to this project — so Windows SmartScreen shows **Windows protected your PC** on
+first run and names the publisher as unknown. Before choosing *More info → Run
+anyway*, confirm the download is the one the public workflow built: compare
+`Get-FileHash` against the `.sha256` file attached to the release, or run
+`gh attestation verify <installer> --repo rjpenny16/AAC-Editor`. A file that
+fails either check must not be run.
 
-UIAccess is available only when the installed executable has a trusted
-Authenticode signature and remains in its secure Program Files location. A
-portable ZIP does not provide UIAccess; portable/development use may still need
-the explicit administrator fallback for Grid 3.
+Live Grid 3 editing needs Windows administrator approval. AAC Editor asks for it
+when you connect to Grid 3 and reopens itself elevated; TD Snap editing and
+exported files never need it.
 
 ## What it does
 
@@ -147,12 +149,10 @@ The Grid 3 connection runs a reversible Edit Mode compatibility check: it adds
 a provisional Write command and label to a safe blank, undoes it, and verifies
 that nothing was saved. If Grid 3 does not expose reliable accessible cell
 bounds or editor controls, the feature stops without coordinate guessing, OCR,
-computer vision, or direct grid-set mutation. The installed executable requests
-`asInvoker` with
-[`uiAccess`](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-securityoverview).
-Production UIAccess requires a trusted Authenticode signature and the secure
-installer location; the application itself does not request administrator
-elevation.
+computer vision, or direct grid-set mutation. The installed executable runs
+`asInvoker`. Connecting to Grid 3 asks for administrator approval through a
+normal UAC prompt and restarts the app elevated; cancelling leaves the running
+copy untouched.
 
 Keep Windows unlocked while an edit runs. The live editor is Windows-only and
 depends on the current TD Snap interface. The exported-file fallback is
@@ -204,11 +204,9 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Install `.[ai,desktop]` and PyInstaller, then build the unsigned installer with
-`./packaging/build.ps1 -Version 2.2.0`.
-Unsigned output is suitable for packaging validation, not a production
-UIAccess claim. See [development-only UIAccess signing](docs/UIACCESS_TESTING.md)
-for an explicit temporary-certificate procedure.
+Install `.[ai,desktop]` and PyInstaller, then build the installer with
+`./packaging/build.ps1 -Version 2.2.0`. Release builds are unsigned; `-Sign`
+with `AAC_EDITOR_SIGNING_THUMBPRINT` set signs with a certificate you supply.
 
 AI suggestion quality has its own harness. `tests/fixtures/ai_eval_set.json`
 holds a fixed set of category prompts and the rules the prompt already states —
@@ -234,15 +232,17 @@ optional TD Snap integration fixture when needed.
 Bug reports and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md)
 and the [security policy](SECURITY.md) first.
 
-## Code signing policy
+## Release integrity
 
-Free code signing provided by [SignPath.io](https://signpath.io/), certificate
-by [SignPath Foundation](https://signpath.org/).
+Releases are not code-signed. Free code signing for open source was applied for
+and declined, and a paid certificate is not in this project's budget.
 
 - Committer and reviewer: [Ryan Penny](https://github.com/rjpenny16)
-- Signing approver: [Ryan Penny](https://github.com/rjpenny16)
-- Releases are built from an existing version-matched tag, and the workflow
-  refuses to publish unless SignPath signs both the application and installer.
+- Releases are built from an existing version-matched tag by the public
+  workflow, which installs and health-checks the package before attaching it.
+- Every installer ships with a SHA-256 checksum and a
+  [build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations)
+  tying it to the exact commit and workflow run that produced it.
 - Privacy: AAC Editor will not transfer information to other networked systems
   unless specifically requested by the user or the person installing or
   operating it. The optional Wikipedia grounding control names the single
