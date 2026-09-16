@@ -371,7 +371,7 @@ $("live-connect-btn").addEventListener("click", async () => {
     }
     setActivity();
     setBusy(button, false);
-    showConnectionError(product, state.provider === "grid3" ? error.message : "");
+    showConnectionError(product, error.message);
   } finally {
     setActivity();
     setBusy(button, false);

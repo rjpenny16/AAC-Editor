@@ -25,7 +25,7 @@
  * ai_words), and a test pins it.
  */
 
-import { state } from "./state.js";
+import { AI_GENERATION_TIMEOUT_MS, state } from "./state.js";
 import { $, setBusy } from "./dom.js";
 import { api } from "./api.js";
 import {
@@ -304,26 +304,30 @@ function describeKind() {
    regenerated, and "more like this". Only `count` and `like` differ. */
 async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
   const topic = state.pageStyle === "topic";
-  const data = await api("/api/ai/words", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      category: pageCategory(),
-      count,
-      host: $("ai-host").value,
-      model: $("ai-model").value,
-      model_key: $("ai-model-choice").value || null,
-      kind: topic ? "phrases" : "words",
-      function: topic && state.activeFn ? state.activeFn : null,
-      grounding: $("ai-grounding").checked,
-      grounding_title: state.aiChosenArticle || null,
-      grounding_exclude: state.aiExcluded,
-      existing: knownLabels(),
-      avoid: [...new Set([...state.aiRejected, ...alsoAvoid])],
-      like,
-      style: styleContext(),
-    }),
-  });
+  const data = await api(
+    "/api/ai/words",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        category: pageCategory(),
+        count,
+        host: $("ai-host").value,
+        model: $("ai-model").value,
+        model_key: $("ai-model-choice").value || null,
+        kind: topic ? "phrases" : "words",
+        function: topic && state.activeFn ? state.activeFn : null,
+        grounding: $("ai-grounding").checked,
+        grounding_title: state.aiChosenArticle || null,
+        grounding_exclude: state.aiExcluded,
+        existing: knownLabels(),
+        avoid: [...new Set([...state.aiRejected, ...alsoAvoid])],
+        like,
+        style: styleContext(),
+      }),
+    },
+    AI_GENERATION_TIMEOUT_MS
+  );
   renderGroundingSource(data.grounding);
   return data;
 }

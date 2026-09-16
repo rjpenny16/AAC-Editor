@@ -172,13 +172,14 @@ def test_live_grid_ignores_a_button_that_spans_multiple_columns():
     assert len(grid.ys) == 7
 
 
-def test_live_grid_uses_saved_positions_for_a_sparse_page(tmp_path, monkeypatch):
+@pytest.mark.parametrize("custom_message", [False, True])
+def test_live_grid_uses_saved_positions_for_a_sparse_page(tmp_path, monkeypatch, custom_message):
     pageset = tmp_path / "active.sps"
     positions = [("Question", 0, 0), ("Comment", 1, 1), ("Positive", 2, 3)]
     with sqlite3.connect(pageset) as connection:
         connection.execute("CREATE TABLE Page (Id INTEGER, Title TEXT, GridDimension TEXT)")
         connection.execute("CREATE TABLE PageLayout (Id INTEGER, PageLayoutSetting TEXT, PageId INTEGER)")
-        connection.execute("CREATE TABLE Button (Label TEXT, ElementReferenceId INTEGER)")
+        connection.execute("CREATE TABLE Button (Label TEXT, Message TEXT, ElementReferenceId INTEGER)")
         connection.execute("CREATE TABLE ElementReference (Id INTEGER)")
         connection.execute("CREATE TABLE ElementPlacement (PageLayoutId INTEGER, ElementReferenceId INTEGER, GridPosition TEXT, Visible INTEGER)")
         connection.execute("INSERT INTO Page VALUES (1, 'Talk', NULL)")
@@ -186,7 +187,8 @@ def test_live_grid_uses_saved_positions_for_a_sparse_page(tmp_path, monkeypatch)
         connection.execute("INSERT INTO PageLayout VALUES (3, '2,2,True,0', 1)")
         for reference, (label, column, row) in enumerate(positions, 1):
             connection.execute("INSERT INTO ElementReference VALUES (?)", (reference,))
-            connection.execute("INSERT INTO Button VALUES (?, ?)", (label, reference))
+            message = f"Let's talk about {label}" if custom_message else None
+            connection.execute("INSERT INTO Button VALUES (?, ?, ?)", (label, message, reference))
             connection.execute(
                 "INSERT INTO ElementPlacement VALUES (2, ?, ?, 1)",
                 (reference, f"{column},{row}"),
@@ -200,7 +202,8 @@ def test_live_grid_uses_saved_positions_for_a_sparse_page(tmp_path, monkeypatch)
     controls = []
     for label, column, row in positions:
         controls.append(SimpleNamespace(
-            ControlTypeName="ButtonControl", Name=label,
+            ControlTypeName="ButtonControl",
+            Name=f"Let's talk about {label}" if custom_message else label,
             BoundingRectangle=SimpleNamespace(
                 left=60 + column * 100, top=165 + row * 90,
                 right=140 + column * 100, bottom=235 + row * 90,
@@ -962,6 +965,10 @@ def test_rollback_reports_failure_when_the_prior_content_never_comes_back(monkey
 
 def test_verification_fails_when_a_button_the_edit_never_named_changed(monkeypatch):
     monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_open_button_editor", lambda *_args: None)
+    monkeypatch.setattr(live, "_expand_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_activate", lambda _control: None)
+    monkeypatch.setattr(live, "_filled_label_field", lambda _window, _label: None)
     monkeypatch.setattr(live, "_named_slots", lambda _window: {
         0: _fake_control("apple"), 1: _fake_control("banana"),
     })
@@ -969,6 +976,59 @@ def test_verification_fails_when_a_button_the_edit_never_named_changed(monkeypat
     live._verify_page_state(object(), [], [], {0: "apple", 1: "banana"})
     with pytest.raises(PagesetError, match="which this edit was not meant to touch"):
         live._verify_page_state(object(), [], [], {0: "apple", 1: "pear"})
+
+
+def test_verification_reads_label_when_accessibility_name_is_message(monkeypatch):
+    control = _fake_control("I want to talk about Freida McFadden.")
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_open_button_editor", lambda *_args: None)
+    monkeypatch.setattr(live, "_expand_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_activate", lambda _control: None)
+    monkeypatch.setattr(live, "_named_slots", lambda _window: {0: control})
+    monkeypatch.setattr(live, "_filled_label_field", lambda _window, label:
+                        object() if label == "Freida McFadden" else None)
+    monkeypatch.setattr(live, "_spoken_message", lambda *_args: (True, control.Name))
+    live._verify_page_state(object(), [{
+        "slot": 0, "label": "Freida McFadden", "message": control.Name,
+    }])
+    with pytest.raises(PagesetError, match="reviewed cell"):
+        live._verify_page_state(object(), [{
+            "slot": 0, "label": "Wrong label", "message": control.Name,
+        }])
+
+
+def test_reading_selected_button_reselects_after_click_toggles_it_off(monkeypatch):
+    state = {"selected": True, "clicks": 0}
+    control = SimpleNamespace(BoundingRectangle=SimpleNamespace(
+        left=0, top=0, right=100, bottom=100,
+    ))
+    field = SimpleNamespace(ControlTypeName="EditControl", AutomationId="TextBox",
+                            IsEnabled=True)
+
+    def click(*_args, **_kwargs):
+        state["selected"] = not state["selected"]
+        state["clicks"] += 1
+
+    monkeypatch.setattr(live, "_automation", lambda: SimpleNamespace(Click=click))
+    monkeypatch.setattr(live, "_physical_point", lambda _window, x, y: (x, y))
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_expand_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_walk", lambda *_args:
+                        [(field, 10)] if state["selected"] else [])
+    live._open_button_editor(object(), control)
+    assert state == {"selected": True, "clicks": 2}
+
+
+def test_preview_resolves_spoken_name_to_saved_label(monkeypatch):
+    control = _fake_control("I want to talk about Freida McFadden.")
+    control.BoundingRectangle = SimpleNamespace(left=0, top=0, right=100, bottom=100)
+    group = SimpleNamespace(Name="Books", GetChildren=lambda: [control])
+    monkeypatch.setattr(live, "_stored_page_content", lambda _page: {
+        "freida mcfadden": {"label": "Freida McFadden", "message": control.Name},
+    })
+    assert live._page_layout(group, live.Grid((50,), (50,), 100, 100)) == [
+        {"slot": 0, "label": "Freida McFadden"},
+    ]
 
 
 def test_verification_fails_when_a_removed_button_is_still_there(monkeypatch):
@@ -1169,6 +1229,7 @@ def test_a_removed_cell_frees_its_space_for_a_new_button(monkeypatch):
 def test_a_failed_change_restores_the_content_it_captured(monkeypatch):
     grid = live.Grid((10, 20), (30,), 8, 8)
     restored = {}
+    mode = {"editing": False}
     group = SimpleNamespace(GetChildren=lambda: [])
     monkeypatch.setattr(live, "_desktop_unlocked", lambda: True)
     monkeypatch.setattr(live, "_automation", lambda: object())
@@ -1176,14 +1237,15 @@ def test_a_failed_change_restores_the_content_it_captured(monkeypatch):
     monkeypatch.setattr(live, "_focus_window", lambda _window: None)
     monkeypatch.setattr(live, "_page_name", lambda *_args: "Eating")
     monkeypatch.setattr(live, "_page_group", lambda _window: group)
-    monkeypatch.setattr(live, "_fingerprint", lambda _group: ("before",))
+    monkeypatch.setattr(live, "_fingerprint", lambda _group:
+                        ("edit geometry",) if mode["editing"] else ("browse geometry",))
     monkeypatch.setattr(live, "_fingerprint_token", lambda _group: "v1")
     monkeypatch.setattr(live, "_grid", lambda _group: grid)
     monkeypatch.setattr(live, "_page_layout", lambda *_args: [{"slot": 0, "label": "aple"}])
     monkeypatch.setattr(live, "_stored_page_content", lambda _page: {
         "aple": {"label": "aple", "message": "I want an aple", "kind": "speak"},
     })
-    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: mode.update(editing=True))
     monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
     monkeypatch.setattr(live, "_exit_edit_mode", lambda _window: None)
 
@@ -1201,7 +1263,7 @@ def test_a_failed_change_restores_the_content_it_captured(monkeypatch):
     with pytest.raises(PagesetError, match="original page was restored"):
         live.apply_page_edits("Eating", [], [{"slot": 0, "label": "apple"}], [], [], "v1")
 
-    assert restored["baseline"] == ("before",)
+    assert restored["baseline"] == ("edit geometry",)
     assert restored["content"] == {0: {"label": "aple", "message": "I want an aple"}}
 
 

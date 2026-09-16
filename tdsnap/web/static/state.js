@@ -27,6 +27,7 @@ const TOPIC_FUNCTIONS = ["question", "comment", "positive", "negative", "persona
 /* Requests that touch TD Snap or Grid 3 are given no deadline; everything
    else gives up rather than leaving the user with a dead button. */
 const API_TIMEOUT_MS = 10_000;
+const AI_GENERATION_TIMEOUT_MS = 150_000;
 
 const requestedProvider = new URLSearchParams(window.location.search).get("provider");
 const state = {
@@ -100,4 +101,4 @@ const state = {
   leaving: false,
 };
 
-export { API_TIMEOUT_MS, FUNCTIONS, TOPIC_FUNCTIONS, state };
+export { AI_GENERATION_TIMEOUT_MS, API_TIMEOUT_MS, FUNCTIONS, TOPIC_FUNCTIONS, state };

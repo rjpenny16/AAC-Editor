@@ -420,16 +420,20 @@ def _stored_sparse_grid(group, buttons, width, height):
             candidates = []
             for layout_id, setting in layouts:
                 cols, rows = (int(value) for value in setting.split(",")[:2])
-                placements = dict(connection.execute(
+                placement_rows = connection.execute(
                     """
-                    SELECT lower(b.Label), ep.GridPosition
+                    SELECT b.Label, b.Message, ep.GridPosition
                     FROM Button b
                     JOIN ElementReference er ON er.Id = b.ElementReferenceId
                     JOIN ElementPlacement ep ON ep.ElementReferenceId = er.Id
                     WHERE ep.PageLayoutId = ? AND ep.Visible = 1
                     """,
                     (layout_id,),
-                ))
+                ).fetchall()
+                placements = {}
+                for label, message, position in placement_rows:
+                    name = (message or label or "").strip().casefold()
+                    placements[name] = position if name not in placements else None
                 observed = []
                 for button in buttons:
                     position = placements.get((button.Name or "").casefold())
@@ -616,9 +620,11 @@ def _fingerprint_token(group):
 def _page_layout(group, grid):
     """Return visible buttons mapped to zero-based grid slots."""
     buttons = []
+    labels = _accessible_labels(group)
     for child in group.GetChildren():
         rect = child.BoundingRectangle
-        label = (child.Name or "").strip()
+        name = (child.Name or "").strip()
+        label = labels.get(name.casefold(), name)
         if (
             child.ControlTypeName != "ButtonControl"
             or not label
@@ -639,13 +645,29 @@ def _page_layout(group, grid):
     return sorted(buttons, key=lambda item: item["slot"])
 
 
+def _accessible_labels(group):
+    """Resolve TD Snap's spoken accessibility names to saved display labels."""
+    title = (getattr(group, "Name", "") or "").strip()
+    content = _stored_page_content(title) if title else None
+    labels = {}
+    ambiguous = set()
+    for entry in (content or {}).values():
+        name = (entry["message"] or entry["label"]).strip().casefold()
+        if name in labels:
+            ambiguous.add(name)
+        labels[name] = entry["label"]
+    return {name: label for name, label in labels.items() if name not in ambiguous}
+
+
 def _named_page_buttons(group):
     """Return unique visible grid-button names in reading order."""
     buttons = []
     seen = set()
+    labels = _accessible_labels(group)
     for child in group.GetChildren():
         rect = child.BoundingRectangle
         name = (child.Name or "").strip()
+        name = labels.get(name.casefold(), name)
         if (
             child.ControlTypeName != "ButtonControl"
             or not name
@@ -705,13 +727,10 @@ def _command_kind(commands, command_flags, page_links):
 def _stored_page_content(page):
     """Prior label, message, border, and command kind for the buttons on *page*.
 
-    Keyed by casefolded label, because that is the only key the live control
-    tree and the stored page set reliably agree on: UI Automation exposes a
-    button's name, while matching by grid coordinate would mean re-deriving
-    the layout through the same guesswork the preview already does. A label
-    that appears twice on the page is dropped rather than guessed at, which
-    locks those buttons out of destructive editing instead of risking editing
-    the wrong one.
+    Keyed by casefolded display label. TD Snap's accessibility name uses the
+    spoken message when present, so callers resolve it separately through
+    ``_accessible_labels``. A repeated label is dropped rather than guessed
+    at, keeping ambiguous buttons out of destructive editing.
 
     Returns ``None`` when the page set or the page cannot be identified, which
     makes the caller refuse a destructive edit rather than run one it could
@@ -1135,12 +1154,41 @@ def _named_slots(window):
 
 def _spoken_message(window, control):
     """Read one button's spoken message out of TD Snap's own editor."""
-    _activate(control)
-    _expand_editor(window)
+    _open_button_editor(window, control)
     message_box = _find(window, automation_id="MessageBox", control_type="EditControl")
     value = None if message_box is None else _value(message_box)
     _collapse_editor(window)
     return message_box is not None, value
+
+
+def _open_button_editor(window, control):
+    # Clicking an already-selected button deselects it. Check the resulting
+    # editor and select again when necessary before reading either field.
+    for _ in range(2):
+        _collapse_editor(window)
+        rect = control.BoundingRectangle
+        x, y = _physical_point(window, (rect.left + rect.right) / 2,
+                               (rect.top + rect.bottom) / 2)
+        _automation().Click(x, y, waitTime=0.2)
+        _expand_editor(window)
+        if any(c.ControlTypeName == "EditControl" and c.AutomationId == "TextBox"
+               and c.IsEnabled for c, _ in _walk(window, 12)):
+            return
+    raise PagesetError("TD Snap did not expose the selected button's label field.")
+
+
+def _has_label(window, control, label):
+    if control is None:
+        return False
+    if (control.Name or "").strip() == label:
+        return True
+    # A custom message replaces Name, but the button editor still exposes
+    # the actual label. Read it live rather than trusting unsaved disk data.
+    _open_button_editor(window, control)
+    try:
+        return _filled_label_field(window, label) is not None
+    finally:
+        _collapse_editor(window)
 
 
 def _verify_page_state(window, expected=(), removed=(), untouched=None):
@@ -1157,7 +1205,7 @@ def _verify_page_state(window, expected=(), removed=(), untouched=None):
     by_slot = _named_slots(window)
     for item in expected:
         control = by_slot.get(item["slot"])
-        if control is None or (control.Name or "").strip() != item["label"]:
+        if not _has_label(window, control, item["label"]):
             raise PagesetError(
                 f"TD Snap did not verify {item['label']!r} in its reviewed cell."
             )
@@ -1179,7 +1227,7 @@ def _verify_page_state(window, expected=(), removed=(), untouched=None):
             )
     for slot, label in (untouched or {}).items():
         control = by_slot.get(slot)
-        if control is None or (control.Name or "").strip() != label:
+        if not _has_label(window, control, label):
             raise PagesetError(
                 f"TD Snap changed {label!r}, which this edit was not meant to touch. "
                 "Inspect the page before making another edit."
@@ -1201,7 +1249,7 @@ def _content_restored(window, content):
         by_slot = _named_slots(window)
         for slot, prior in content.items():
             control = by_slot.get(slot)
-            if control is None or (control.Name or "").strip() != prior["label"]:
+            if not _has_label(window, control, prior["label"]):
                 return False
             found, value = _spoken_message(window, control)
             if not found or (value or None) != prior["message"]:
@@ -1526,7 +1574,7 @@ def _change_button(auto, window, cell, current, label=None, message=None):
     if label and label != current:
         _set_value(field, label)
         _wait_for(
-            lambda: _find(_page_group(window), name=label, control_type="ButtonControl"),
+            lambda: _filled_label_field(window, label),
             f"TD Snap did not save the new label {label!r}.",
         )
     if message is None:
@@ -1685,10 +1733,10 @@ def _moved_into(window, slot, label, vacated):
     """True once *label* is the button in *slot* and *vacated* no longer holds it."""
     by_slot = _named_slots(window)
     control = by_slot.get(slot)
-    if control is None or (control.Name or "").strip() != label:
+    if not _has_label(window, control, label):
         return False
     left = by_slot.get(vacated)
-    return left is None or (left.Name or "").strip() != label
+    return left is None or not _has_label(window, left, label)
 
 
 def _move_button(auto, window, grid, source_slot, target_slot, label):
@@ -2157,6 +2205,8 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
     symbol_results = []
     styled = 0
     try:
+        _collapse_editor(window)
+        baseline = _fingerprint(_page_group(window))
         for slot in removals:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
@@ -2624,6 +2674,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     try:
         _enter_edit_mode(window)
         _collapse_editor(window)
+        parent_baseline = _fingerprint(_page_group(window))
         parent_cell = _empty_cell(window, _grid(_page_group(window)))
         _create_page_link(auto, window, title, parent_cell)
 
