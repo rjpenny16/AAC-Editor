@@ -48,7 +48,6 @@ exe = EXE(
     console=False,
     icon=os.path.join(here, "icon.ico"),
     manifest=os.path.join(here, "aac-editor.manifest"),
-    uac_uiaccess=True,
 )
 
 coll = COLLECT(

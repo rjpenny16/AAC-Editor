@@ -46,8 +46,10 @@ public static class EmbeddedManifest {
 
 $bytes = [EmbeddedManifest]::Read($resolved)
 $manifest = [Text.Encoding]::UTF8.GetString($bytes).Trim([char]0, [char]0xFEFF)
-if ($manifest -notmatch 'requestedExecutionLevel\s+level="asInvoker"\s+uiAccess="true"') {
-    throw "The embedded manifest does not request asInvoker with uiAccess=true: $resolved"
+# uiAccess must stay "false": Windows refuses to start a uiAccess="true"
+# executable that lacks a trusted Authenticode signature, and releases are unsigned.
+if ($manifest -notmatch 'requestedExecutionLevel\s+level="asInvoker"\s+uiAccess="false"') {
+    throw "The embedded manifest does not request asInvoker with uiAccess=false: $resolved"
 }
 
-Write-Output "Verified embedded asInvoker/uiAccess manifest: $resolved"
+Write-Output "Verified embedded asInvoker manifest without UIAccess: $resolved"

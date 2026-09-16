@@ -13,9 +13,10 @@ AI generation stays local by default. Online Wikipedia grounding is a separate,
 explicit opt-in that sends only the page title or category shown beside the
 control; `TDSNAP_WEB_GROUNDING=0` disables it even when requested.
 
-Portable or unsigned development Grid 3 editing may use an explicit
-administrator fallback. The installed production app remains `asInvoker` and
-uses UIAccess only when its Authenticode signature is trusted. Elevated
+Releases are not code-signed; verify the SHA-256 checksum and build
+attestation attached to each release before installing. The installed app
+runs `asInvoker` without UIAccess. Live Grid 3 editing uses an explicit
+administrator restart that the user approves through UAC. Elevated
 endpoints remain loopback-only and require both the
 per-process API token and a custom mutation header. They accept no caller-supplied
 file path, verify the target process is the installed Grid 3 executable, and

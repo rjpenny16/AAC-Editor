@@ -2,7 +2,7 @@
 
 ## Why this document exists
 
-AAC Editor 2.2.0 is a shipped, signed, Windows-first tool that edits AAC page sets **in place** —
+AAC Editor 2.2.0 is a Windows-first tool that edits AAC page sets **in place** —
 through TD Snap's and Grid 3's own accessibility surfaces — so a page set keeps its sharing and sync
 identity instead of being round-tripped through an export.
 
@@ -15,7 +15,7 @@ and unblocks the next.
 The foundations are solid and should not be re-litigated: three write paths behind one canonical
 item model, review-before-write, layout fingerprinting, automatic rollback, 437 Python tests, 111
 Playwright tests and 53 frontend unit tests, a five-job CI matrix, axe-checked end-to-end coverage,
-and a fail-closed signed release pipeline. There are no TODO/FIXME markers in the tree.
+and a release pipeline that installs, health-checks, and attests every build. There are no TODO/FIXME markers in the tree.
 
 The gaps are elsewhere. Three were serious; one still is:
 

@@ -1,21 +1,20 @@
 name: Release
 
-# Releases are always built from an existing vX.Y.Z tag and signed by SignPath.
-# Missing signing configuration is a hard failure; unsigned artifacts are never
-# attached to a GitHub release.
+# Releases are always built from an existing vX.Y.Z tag. The installer is not
+# code-signed: no free Authenticode certificate is available to this project.
+# Integrity comes from the SHA-256 checksum and the build provenance attestation
+# attached to every release instead.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Existing release tag to build (for example v2.2.0)"
+        description: "Existing release tag to build (for example v2.3.0)"
         required: true
-        default: "v2.2.0"
+        default: "v2.3.0"
 
 permissions:
-  actions: read
-  artifact-metadata: write
   attestations: write
   contents: write
   id-token: write
@@ -40,16 +39,9 @@ jobs:
             pyproject.toml
             packaging/release-constraints.txt
 
-      - name: Validate tag, source version, and signing configuration
+      - name: Validate tag and source version
         id: version
         shell: pwsh
-        env:
-          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
-          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
-          SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG }}
-          SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
         run: |
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
             throw "Release tag must have the form vX.Y.Z: $env:RELEASE_TAG"
@@ -66,19 +58,6 @@ jobs:
           if ("v$version" -ne $env:RELEASE_TAG) {
             throw "Source version $version does not match tag $env:RELEASE_TAG."
           }
-          $required = @(
-            "SIGNPATH_API_TOKEN",
-            "SIGNPATH_ORGANIZATION_ID",
-            "SIGNPATH_PROJECT_SLUG",
-            "SIGNPATH_SIGNING_POLICY_SLUG",
-            "SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG",
-            "SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG"
-          )
-          foreach ($name in $required) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              throw "Required release signing setting is missing: $name"
-            }
-          }
           "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Install pinned release inputs
@@ -93,82 +72,14 @@ jobs:
           TDSNAP_AI_SMOKE: "1"
         run: python -m pytest
 
-      - name: Build unsigned application bundle
-        shell: pwsh
-        run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }} -Stage App
-
-      - name: Upload application executable for signing
-        id: upload-app
-        uses: actions/upload-artifact@v7
-        with:
-          archive: false
-          if-no-files-found: error
-          name: unsigned-app
-          path: dist/AACEditor/AAC Editor.exe
-
-      - name: Sign application executable with SignPath
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
-          artifact-configuration-slug: ${{ vars.SIGNPATH_APP_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.upload-app.outputs.artifact-id }}
-          skip-decompress: true
-          wait-for-completion: true
-          output-artifact-directory: ${{ github.workspace }}\dist\signed-app
-
-      - name: Verify and stage signed application executable
-        shell: pwsh
-        run: |
-          $signed = @(Get-ChildItem dist/signed-app -Recurse -Filter "AAC Editor.exe")
-          if ($signed.Count -ne 1) { throw "Expected one signed app, found $($signed.Count)." }
-          Copy-Item -LiteralPath $signed[0].FullName -Destination "dist/AACEditor/AAC Editor.exe" -Force
-          $signature = Get-AuthenticodeSignature -LiteralPath "dist/AACEditor/AAC Editor.exe"
-          if ($signature.Status -ne "Valid") { throw "App signature is $($signature.Status)." }
-          ./packaging/verify_manifest.ps1 -Executable "dist/AACEditor/AAC Editor.exe"
-
-      - name: Build installer around signed application
-        shell: pwsh
-        run: ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }} -Stage Installer
-
-      - name: Upload installer for signing
-        id: upload-installer
-        uses: actions/upload-artifact@v7
-        with:
-          archive: false
-          if-no-files-found: error
-          name: unsigned-installer
-          path: dist/installer/AACEditor-${{ steps.version.outputs.version }}-windows-x64-setup.exe
-
-      - name: Sign installer with SignPath
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
-          artifact-configuration-slug: ${{ vars.SIGNPATH_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.upload-installer.outputs.artifact-id }}
-          skip-decompress: true
-          wait-for-completion: true
-          output-artifact-directory: ${{ github.workspace }}\dist\signed-installer
-
-      - name: Verify signed installer
+      - name: Build application bundle and installer
         id: package
         shell: pwsh
         run: |
-          $name = "AACEditor-${{ steps.version.outputs.version }}-windows-x64-setup.exe"
-          $signed = @(Get-ChildItem dist/signed-installer -Recurse -Filter $name)
-          if ($signed.Count -ne 1) { throw "Expected one signed installer, found $($signed.Count)." }
-          $installer = "dist/installer/$name"
-          Copy-Item -LiteralPath $signed[0].FullName -Destination $installer -Force
-          $signature = Get-AuthenticodeSignature -LiteralPath $installer
-          if ($signature.Status -ne "Valid") { throw "Installer signature is $($signature.Status)." }
-          "installer=$installer" >> $env:GITHUB_OUTPUT
+          ./packaging/build.ps1 -Version ${{ steps.version.outputs.version }}
+          "installer=dist/installer/AACEditor-${{ steps.version.outputs.version }}-windows-x64-setup.exe" >> $env:GITHUB_OUTPUT
 
-      - name: Install and smoke-test signed package
+      - name: Install and smoke-test package
         shell: pwsh
         run: ./packaging/smoke_test.ps1 -Installer ${{ steps.package.outputs.installer }} -ExpectedVersion ${{ steps.version.outputs.version }} -AllowInstall
 
@@ -184,12 +95,24 @@ jobs:
         with:
           subject-path: ${{ steps.package.outputs.installer }}
 
-      - name: Attach signed installer to draft release
+      - name: Attach installer to draft release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           draft: true
           generate_release_notes: true
+          body: |
+            This installer is not code-signed, so Windows SmartScreen shows
+            **Windows protected your PC** on first run. Before choosing
+            *More info → Run anyway*, confirm the download is the one this
+            workflow built:
+
+            ```powershell
+            Get-FileHash .\AACEditor-${{ steps.version.outputs.version }}-windows-x64-setup.exe -Algorithm SHA256
+            gh attestation verify .\AACEditor-${{ steps.version.outputs.version }}-windows-x64-setup.exe --repo rjpenny16/AAC-Editor
+            ```
+
+            The hash must match `AACEditor-${{ steps.version.outputs.version }}-windows-x64-setup.exe.sha256` below.
           files: |
             ${{ steps.package.outputs.installer }}
             ${{ steps.package.outputs.installer }}.sha256

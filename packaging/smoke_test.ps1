@@ -12,10 +12,6 @@ if (-not $AllowInstall -and $env:CI -ne "true") {
 }
 
 $installerPath = (Resolve-Path -LiteralPath $Installer).Path
-$installerSignature = Get-AuthenticodeSignature -LiteralPath $installerPath
-if ($installerSignature.Status -ne "Valid") {
-    throw "Installer signature is not trusted: $($installerSignature.Status)"
-}
 
 $appDir = Join-Path ([Environment]::GetFolderPath("ProgramFiles")) "AAC Editor"
 $exe = Join-Path $appDir "AAC Editor.exe"
@@ -32,10 +28,6 @@ if ($install.ExitCode -ne 0) { throw "Installer exited with code $($install.Exit
 $appProcess = $null
 try {
     if (-not (Test-Path -LiteralPath $exe)) { throw "Installed executable not found: $exe" }
-    $appSignature = Get-AuthenticodeSignature -LiteralPath $exe
-    if ($appSignature.Status -ne "Valid") {
-        throw "Installed executable signature is not trusted: $($appSignature.Status)"
-    }
     & "$PSScriptRoot\verify_manifest.ps1" -Executable $exe
 
     $port = 8876
@@ -79,4 +71,4 @@ try {
     }
 }
 
-Write-Output "Verified signed install, startup, health endpoint, and uninstall: $installerPath"
+Write-Output "Verified install, startup, health endpoint, and uninstall: $installerPath"
