@@ -14,7 +14,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
     "@playwright/test": "1.62.1",
-    "eslint": "9.39.5",
+    "eslint": "10.9.1",
     "globals": "17.9.0",
     "prettier": "3.9.6",
     "stylelint": "17.14.1",
