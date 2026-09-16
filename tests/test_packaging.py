@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -137,9 +138,10 @@ def test_project_metadata_is_the_dependency_source_of_truth():
     assert "pip-audit" in project
     assert "ruff" in project
 
+    # Every direct release input is pinned exactly; Dependabot moves the numbers.
     constraints = read("packaging/release-constraints.txt")
-    assert "pip==26.1.2" in constraints
-    assert "pytest==9.1.1" in constraints
+    for name in ("pip", "pytest", "pyinstaller", "llama-cpp-python"):
+        assert re.search(rf"^{re.escape(name)}==\d+\.\d+\.\d+$", constraints, re.M), name
 
     quality_workflow = read(".github/workflows/tests.yml")
     assert "python -m pip_audit ." in quality_workflow
