@@ -205,7 +205,7 @@ npm run test:e2e
 ```
 
 Install `.[ai,desktop]` and PyInstaller, then build the installer with
-`./packaging/build.ps1 -Version 2.2.0`. Release builds are unsigned; `-Sign`
+`./packaging/build.ps1 -Version 2.3.0`. Release builds are unsigned; `-Sign`
 with `AAC_EDITOR_SIGNING_THUMBPRINT` set signs with a certificate you supply.
 
 AI suggestion quality has its own harness. `tests/fixtures/ai_eval_set.json`

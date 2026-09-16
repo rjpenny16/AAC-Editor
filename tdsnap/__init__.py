@@ -13,7 +13,7 @@ from .errors import PagesetError
 from .pageset import Pageset
 from .validate import validate_new_page, validate_pageset
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 __all__ = [
     "Pageset",
