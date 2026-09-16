@@ -11,6 +11,10 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-16
+
+The first release since 2.1.0. Everything under 2.2.0 below ships here too.
+
 ### Added
 
 - **Suggestions you can steer, one at a time.** The AI panel was one shot, N items, take it or
@@ -393,7 +397,8 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [2.2.0]
 
-Prepared and tagged in the source tree; not yet published as a GitHub release.
+Never published. The version was bumped in source, but no tag or release was
+cut before 2.3.0 superseded it, so these changes first reached users in 2.3.0.
 
 ### Added
 
@@ -422,5 +427,6 @@ Prepared and tagged in the source tree; not yet published as a GitHub release.
 First published release. See the
 [release notes](https://github.com/rjpenny16/AAC-Editor/releases/tag/v2.1.0).
 
-[Unreleased]: https://github.com/rjpenny16/AAC-Editor/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/rjpenny16/AAC-Editor/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/rjpenny16/AAC-Editor/compare/v2.1.0...v2.3.0
 [2.1.0]: https://github.com/rjpenny16/AAC-Editor/releases/tag/v2.1.0

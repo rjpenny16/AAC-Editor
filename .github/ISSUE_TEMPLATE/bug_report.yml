@@ -12,7 +12,7 @@ body:
     attributes:
       label: Version
       description: Release version or commit SHA
-      placeholder: v2.2.0
+      placeholder: v2.3.0
     validations:
       required: true
   - type: dropdown

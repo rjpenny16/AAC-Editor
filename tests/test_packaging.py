@@ -18,10 +18,10 @@ def read(path: str) -> str:
 
 def test_version_has_one_source_and_is_ready_for_release():
     project = read("pyproject.toml")
-    assert tdsnap.__version__ == "2.2.0"
+    assert tdsnap.__version__ == "2.3.0"
     assert 'dynamic = ["version"]' in project
     assert 'version = { attr = "tdsnap.__version__" }' in project
-    assert '\nversion = "2.2.0"' not in project
+    assert '\nversion = "2.3.0"' not in project
 
 
 def test_unsigned_build_never_requests_uiaccess():
