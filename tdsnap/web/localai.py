@@ -478,7 +478,11 @@ def _load_llm(key: Optional[str] = None):
 
             _llm = Llama(
                 model_path=path,
-                n_ctx=2048,
+                # Room for the whole request plus the whole answer. 2048 was
+                # not: a grounded prompt (reference facts, the page's own
+                # labels, style samples, rejections) plus forty phrases coming
+                # back overran it, and what overran was silently cut off.
+                n_ctx=4096,
                 n_threads=max(2, (os.cpu_count() or 4) - 1),
                 verbose=False,
             )
@@ -496,6 +500,7 @@ def generate_words(
     avoid: Optional[Sequence[str]] = None,
     like: Optional[Sequence[str]] = None,
     style: Optional[Sequence[str]] = None,
+    already: Optional[Sequence[str]] = None,
     model_key: Optional[str] = None,
 ) -> tuple[list, Optional[str]]:
     """Return ``(words, error)`` from the built-in model."""
@@ -508,7 +513,7 @@ def generate_words(
     count = max(1, min(int(count), 60))
     prompt = prompts.build_prompt(
         category, count, kind, function, existing, reference,
-        avoid=avoid, like=like, style=style,
+        avoid=avoid, like=like, style=style, already=already,
     )
     try:
         llm = _load_llm(key)
@@ -519,13 +524,19 @@ def generate_words(
                     "type": "json_object",
                     "schema": prompts.response_schema(kind),
                 },
-                max_tokens=800,
+                max_tokens=prompts.token_budget(count, kind),
                 temperature=0.7,
             )
         content = result["choices"][0]["message"]["content"]
     except Exception as exc:
         return [], f"The built-in model failed: {exc}"
-    words = prompts.parse_items(content or "", count, kind)
+    # What is already on the page, and what the user threw away, are dropped
+    # here rather than in the browser: filtering after the fact is how a
+    # request for ten suggestions quietly becomes four.
+    words = prompts.parse_items(
+        content or "", count, kind, category,
+        exclude=[*(existing or []), *(avoid or []), *(already or [])],
+    )
     if words is None:
         return [], "The built-in model returned something that wasn't valid JSON."
     return words, None

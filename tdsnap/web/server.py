@@ -35,13 +35,16 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 from .. import __version__, builder, grid3, live, pageset, schema, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
-from . import diagnostics, grounding, localai, ollama, prompts, settings
+from . import diagnostics, engines, grounding, localai, ollama, prompts, settings
 
 APP_ID = "aac-editor"
 DEFAULT_PORT = 8765
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # page sets with media can be large
 SESSION_MAX_AGE = 24 * 60 * 60  # leftover session dirs older than this are removed
 MAX_ACTIVE_SESSIONS = 4
+# How slow a first suggestion round may be and still earn a second one. The
+# browser gives a generation 150 seconds; two rounds have to fit inside that.
+RETRY_BUDGET_SECONDS = 45
 MAX_SESSION_STORAGE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ITEMS = 200
 MAX_TITLE_CHARS = 60
@@ -224,7 +227,7 @@ _DRAFT_FUNCTIONS = {"", "question", "comment", "positive", "negative", "personal
 # a newer frontend's preferences file without failing the whole save.
 _PREFERENCE_SCHEMA = {
     "provider": {"choices": {"tdsnap", "grid3", "file"}, "max_len": 20},
-    "ai_engine": {"choices": {"ollama", "local"}, "max_len": 20},
+    "ai_engine": {"choices": {"auto", "ollama", "local"}, "max_len": 20},
     "ollama_host": {"max_len": 200},
     "ollama_model": {"max_len": 120},
     "ai_grounding": {"bool": True},
@@ -1218,13 +1221,26 @@ def ai_status():
     ``local`` also describes every built-in model this build will download, so
     the panel can offer a bigger one on a machine measured to have the memory
     for it — and say plainly why it is not offering one otherwise.
+
+    ``ai`` is the decision itself: one state, one sentence, and the single
+    next thing the user can do. The browser renders that rather than working
+    out for a second time which of two engines is usable — see engines.py.
     """
     try:
         host = ollama.normalize_host(request.args.get("host", ollama.DEFAULT_HOST))
     except ValueError as exc:
         raise PagesetError(str(exc)) from exc
     preferred = _bounded_text(request.args.get("model_key"), "model_key", 20) or None
-    return jsonify({"ollama": ollama.status(host), "local": localai.status(preferred)})
+    engine = _validated_engine(request.args.get("engine"))
+    named = _bounded_text(request.args.get("model"), "model", 120)
+    ollama_state = ollama.status(host)
+    local_state = localai.status(preferred)
+    return jsonify({
+        "ok": True,
+        "ollama": ollama_state,
+        "local": local_state,
+        "ai": engines.readiness(ollama_state, local_state, engine, named),
+    })
 
 
 @app.post("/api/ai/download")
@@ -1246,12 +1262,29 @@ def ai_download_state():
     return jsonify({"ok": True, "download": localai.download_state()})
 
 
+def _validated_engine(value) -> Optional[str]:
+    """Which engine the user asked for, or None for "whichever is ready"."""
+    if value in (None, "", engines.AUTO):
+        return None
+    if value not in engines.ENGINES:
+        raise PagesetError("'engine' must be 'auto', 'ollama', or 'local'.")
+    return value
+
+
+def _labels_of(words) -> list:
+    """The spoken text of each suggestion, whichever shape it came back in."""
+    return [
+        str(word.get("label", "") if isinstance(word, dict) else word)
+        for word in words
+    ]
+
+
 @app.post("/api/ai/words")
 def ai_words():
     """Generate suggestions with whichever engine is ready.
 
-    Preference order: a reachable Ollama server (user's choice of model),
-    then the built-in downloaded model.
+    Preference order: whichever engine the user chose, then a reachable Ollama
+    server, then the built-in downloaded model (see engines.choose).
     """
     payload = _json_payload()
     existing = _validated_existing(payload.get("existing", []))
@@ -1274,6 +1307,9 @@ def ai_words():
     avoid = _validated_labels(payload.get("avoid"), "avoid", 60)
     like = _validated_labels(payload.get("like"), "like", 20)
     style = _validated_labels(payload.get("style"), "style", 40)
+    # Candidates already waiting in the tray. Not rejected and not on the page
+    # — only used up, which is a third thing to tell a model (see prompts.py).
+    already = _validated_labels(payload.get("already"), "already", 60)
     grounding_title = _bounded_text(
         payload.get("grounding_title"), "grounding_title", MAX_PAGE_NAME_CHARS
     )
@@ -1289,6 +1325,7 @@ def ai_words():
         "avoid": avoid,
         "like": like,
         "style": style,
+        "already": already,
     }
     try:
         host = ollama.normalize_host(payload.get("host", ollama.DEFAULT_HOST))
@@ -1298,25 +1335,24 @@ def ai_words():
         payload.get("model", ollama.DEFAULT_MODEL), "model", 120, required=True
     )
     model_key = _bounded_text(payload.get("model_key"), "model_key", 20) or None
+    preferred = _validated_engine(payload.get("engine"))
     ollama_state = ollama.status(host)
-    # An Ollama server with no models can't generate anything; fall through
-    # to the built-in engine instead of failing with "model not found".
-    if ollama_state["reachable"] and ollama_state["models"]:
-        engine, generate = "ollama", lambda: ollama.generate_words(
-            host=host, model=model, **args
-        )
-    elif localai.engine_available() and localai.is_downloaded(
-        localai.active_key(model_key)
-    ):
-        engine, generate = "local", lambda: localai.generate_words(
-            model_key=model_key, **args
-        )
-    else:
+    local_state = localai.status(model_key)
+    # An Ollama server with no models can't generate anything; engines.choose
+    # falls through to the built-in engine instead of failing with "model not
+    # found", and says so when it had to.
+    engine, note = engines.choose(ollama_state, local_state, preferred)
+    if engine is None:
         return jsonify(
             {"ok": False, "words": [],
-             "error": "No AI engine is ready yet — download the built-in "
-                      "model below, or start Ollama."}
+             "error": engines.readiness(ollama_state, local_state)["summary"]}
         ), 400
+
+    def generate(extra=None):
+        call = {**args, **(extra or {})}
+        if engine == engines.OLLAMA:
+            return ollama.generate_words(host=host, model=model, **call)
+        return localai.generate_words(model_key=model_key, **call)
     # Only look up reference facts once we know a model will actually run. Real
     # facts about the title stop a small model naming the wrong thing (e.g.
     # cartoon characters for "Roblox characters"). Best-effort: unused if
@@ -1335,13 +1371,52 @@ def ai_words():
         exclude=grounding_exclude,
     )
     args["reference"] = source["text"]
+    # Ask for more than the user wants: cleaning drops repeats, the page title
+    # echoed back, and anything already on the page, so a request for exactly
+    # ten reliably delivers fewer than ten.
+    args["count"] = prompts.overask(count)
+    started = time.monotonic()
     words, error = generate()
+    elapsed = time.monotonic() - started
     reported = {key: value for key, value in source.items() if key != "text"}
     if error:
         return jsonify({"ok": False, "error": error, "words": [],
                         "engine": engine, "grounding": reported}), 502
+
+    def usable(candidates):
+        """The last gate before a suggestion becomes a planned button.
+
+        The engines clean their own replies, and this cleans again: it is the
+        one place both of them pass through, so the promise that nothing
+        already on the page — and nothing the user rejected — comes back as a
+        suggestion holds whichever engine ran, and holds for the merged
+        answer of two rounds as well as for one.
+        """
+        return prompts.clean_items(
+            candidates, count, kind=kind, category=category,
+            exclude=[*existing, *avoid, *already],
+        )
+
+    words = usable(words)
+    # One retry, and only for the answer that is otherwise a dead end: fewer
+    # than half of what was asked for. A second call costs the user real
+    # seconds on a laptop model, which is worth spending to turn "Added 1"
+    # into a usable set and not worth spending to turn 9 into 10 — and never
+    # worth spending when the first call was slow enough that a second would
+    # push the whole request past the browser's deadline. A thin answer is
+    # still an answer; a request that times out is nothing at all.
+    retried = False
+    if len(words) < max(1, count // 2) and elapsed <= RETRY_BUDGET_SECONDS:
+        retried = True
+        more, retry_error = generate({"already": [*already, *_labels_of(words)]})
+        if not retry_error:
+            words = usable([*words, *more])
     return jsonify({
         "ok": True, "words": words, "engine": engine, "grounding": reported,
+        # What the user asked for versus what survived, so the panel can say
+        # "6 of the 10" rather than silently handing back fewer.
+        "requested": count, "returned": len(words), "retried": retried,
+        "note": note,
     })
 
 

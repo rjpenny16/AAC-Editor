@@ -133,6 +133,7 @@ def generate_words(
     avoid: Optional[Sequence[str]] = None,
     like: Optional[Sequence[str]] = None,
     style: Optional[Sequence[str]] = None,
+    already: Optional[Sequence[str]] = None,
 ) -> tuple[list, Optional[str]]:
     """Return ``(words, error)``; on any failure words is [] and error explains."""
     try:
@@ -145,12 +146,15 @@ def generate_words(
         "messages": [
             {"role": "user", "content": prompts.build_prompt(
                 category, count, kind, function, existing, reference,
-                avoid=avoid, like=like, style=style,
+                avoid=avoid, like=like, style=style, already=already,
             )}
         ],
         "stream": False,
         "format": prompts.response_schema(kind),
-        "options": {"num_predict": 800, "temperature": 0.7},
+        "options": {
+            "num_predict": prompts.token_budget(count, kind),
+            "temperature": 0.7,
+        },
     }
     try:
         request = Request(  # noqa: S310 - host passed through normalize_host: loopback http(s) only
@@ -172,7 +176,10 @@ def generate_words(
         content = response_payload.get("message", {}).get("content", "")
     except (json.JSONDecodeError, UnicodeError, AttributeError):
         return [], "Ollama returned something that wasn't valid JSON."
-    words = prompts.parse_items(content, count, kind)
+    words = prompts.parse_items(
+        content, count, kind, category,
+        exclude=[*(existing or []), *(avoid or []), *(already or [])],
+    )
     if words is None:
         return [], "Ollama returned something that wasn't valid JSON."
     return words, None
