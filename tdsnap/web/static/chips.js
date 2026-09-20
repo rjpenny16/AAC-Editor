@@ -367,9 +367,13 @@ function renderExistingEditControls() {
     page: titleOf(state.parentId),
   });
   const unavailable = button.hidden ? whyNotEditable(anyEditable) : "";
-  summary.hidden = !line && !unavailable;
+  const text = line ? `Pending: ${line.toLocaleLowerCase()}.` : unavailable;
+  summary.hidden = !text;
   summary.classList.toggle("pending-edits", Boolean(line));
-  summary.textContent = line ? `Pending: ${line.toLocaleLowerCase()}.` : unavailable;
+  // This is an aria-live region, and rewriting it with the text it already
+  // holds makes some screen readers read it out again. Re-renders are
+  // frequent and mostly change nothing here.
+  if (summary.textContent !== text) summary.textContent = text;
 }
 
 /* Why changing what is already on the page is not on offer.
