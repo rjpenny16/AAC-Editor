@@ -2463,3 +2463,41 @@ def test_a_page_set_without_a_message_column_is_still_matched(tmp_path, monkeypa
     assert not live._pageset_matches_visible_page(
         str(user / "active.sps"), "Eating", ["not here"]
     )
+
+
+def test_a_restored_failure_reads_as_two_sentences(monkeypatch):
+    """The message a user sees most when an edit fails.
+
+    It is built by appending "The original page was restored." to whatever
+    failed, and the failures that name a button end on the button's own
+    label — so it used to read "…reviewed cells: juice The original page was
+    restored.", which looks like something was cut off.
+    """
+    _stub_live_page(
+        monkeypatch,
+        layouts=[[], []],
+        content={},
+        grid=live.Grid((10, 20), (30,), 8, 8),
+    )
+    monkeypatch.setattr(
+        live, "_add_button",
+        lambda *_args, **_kwargs: {"symbol": False, "border": True},
+    )
+    monkeypatch.setattr(live, "_restore_page_state", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits(
+            "Eating", [{"label": "juice", "slot": 0, "symbol": False}], [], [], [], "v1",
+        )
+    assert str(caught.value) == (
+        "TD Snap did not verify the edited button(s) in their reviewed cells: "
+        "juice. The original page was restored."
+    )
+
+
+def test_a_message_that_already_ends_a_sentence_is_left_alone():
+    assert live._sentence("Restored.") == "Restored."
+    assert live._sentence("Which buttons?") == "Which buttons?"
+    assert live._sentence("These ones:") == "These ones:"
+    assert live._sentence("  no full stop  ") == "no full stop."
+    assert live._sentence("") == ""

@@ -46,6 +46,17 @@ file starts tracking changes in detail from 2.2.0 onward.
   simply hidden — so a page AAC Editor cannot edit looked exactly like a build where the feature does
   not exist. It now says which of the two it is, and that adding new buttons still works.
 
+- **A failed edit reads as two sentences again.** The message a user sees most when an edit fails is
+  built by appending "The original page was restored." to whatever failed, and the failures that name
+  a button end on the button's own label — so it read "…in their reviewed cells: juice The original
+  page was restored.", which looks like something was cut off.
+
+- **The Ollama setup steps are on screen when they are the only way to get suggestions.** On a build
+  with no AI engine of its own, the status line said "follow the setup steps below" while those steps
+  sat folded behind a summary reading *Use my own Ollama model* — which is not where somebody with no
+  model at all would look. They now open with that message, once, and are not sprung open again on
+  anyone who closes them.
+
 - **The app no longer requests a favicon it does not serve**, which put a 404 in the browser console
   on every launch and left the tab blank. It uses the logo it already ships.
 

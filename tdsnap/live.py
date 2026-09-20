@@ -2098,6 +2098,21 @@ def _normalize_moves(moves):
     return sorted(normalized, key=lambda move: move["slot"])
 
 
+def _sentence(text):
+    """End *text* so the sentence that follows it does not run into it.
+
+    Several of these errors are built by appending "The original page was
+    restored." to whatever failed, and the failures that name a button end on
+    the button's own label. Without this the most common failure message on
+    this path reads "...in their reviewed cells: juice The original page was
+    restored.", which looks like the app truncated something.
+    """
+    text = str(text).strip()
+    if not text or text[-1] in ".!?:":
+        return text
+    return text + "."
+
+
 def _prior_content(page, changes, removals, moves, by_slot, known=None,
                    visible_names=()):
     """Capture what every cell this edit will damage holds today.
@@ -2407,10 +2422,12 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         try:
             _restore_page_state(window, baseline, restore_content, steps * 6 + 8)
         except PagesetError as rollback_error:
-            failed = PagesetError(f"{exc} {rollback_error}")
+            failed = PagesetError(f"{_sentence(exc)} {rollback_error}")
             failed.page_touched = True
             raise failed from exc
-        restored = PagesetError(f"{exc} The original page was restored.")
+        restored = PagesetError(
+            f"{_sentence(exc)} The original page was restored."
+        )
         restored.page_touched = True
         raise restored from exc
     finally:
@@ -2896,8 +2913,10 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
                 len(normalized) * 6 + 12,
             )
         except PagesetError as rollback_error:
-            raise PagesetError(f"{exc} {rollback_error}") from exc
-        raise PagesetError(f"{exc} The provisional page and parent link were restored.") from exc
+            raise PagesetError(f"{_sentence(exc)} {rollback_error}") from exc
+        raise PagesetError(
+            f"{_sentence(exc)} The provisional page and parent link were restored."
+        ) from exc
     finally:
         _exit_edit_mode(window)
 

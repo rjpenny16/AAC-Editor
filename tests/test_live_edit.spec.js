@@ -2998,6 +2998,69 @@ test.describe('steerable AI suggestions', () => {
     await page.locator('#ai-go').click();
   }
 
+  test('the setup steps the status points at are actually on screen', async ({ page }) => {
+    // No engine of its own and no Ollama running: Ollama is the only route,
+    // and the steps sat folded behind a summary reading "Use my own Ollama
+    // model" — which is not where somebody with no model at all would look.
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: {
+        ...READY_STATUS,
+        ollama: { reachable: false, models: [] },
+      },
+    });
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#ai-suggest > summary').click();
+
+    await expect(page.locator('#ai-engine-state')).toContainText('follow the setup steps below');
+    await expect(page.locator('#ai-advanced')).toHaveAttribute('open', '');
+    await expect(page.locator('.ai-setup-steps')).toBeVisible();
+    await expect(page.locator('.ai-setup-steps')).toContainText('ollama pull llama3.2');
+  });
+
+  test('the steps are not sprung open again on somebody who closed them', async ({ page }) => {
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: {
+        ...READY_STATUS,
+        ollama: { reachable: false, models: [] },
+      },
+    });
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#ai-suggest > summary').click();
+    await expect(page.locator('#ai-advanced')).toHaveAttribute('open', '');
+
+    await page.locator('#ai-advanced-summary').click();
+    await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
+
+    // Closing and reopening the suggestions panel re-runs the status check.
+    // The steps stay shut: springing back open every refresh is worse than
+    // never having opened at all.
+    await page.locator('#ai-suggest > summary').click();
+    await page.locator('#ai-suggest > summary').click();
+    await expect(page.locator('#ai-engine-state')).toContainText('follow the setup steps below');
+    await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
+  });
+
+  test('a build with its own engine does not push people at Ollama', async ({ page }) => {
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: {
+        ...READY_STATUS,
+        ollama: { reachable: false, models: [] },
+        local: { ...READY_STATUS.local, engine_available: true },
+      },
+    });
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#ai-suggest > summary').click();
+
+    await expect(page.locator('#ai-engine-state')).toContainText('Follow the built-in setup below');
+    await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
+  });
+
   test('a rejected suggestion is not offered again', async ({ page }) => {
     await mockTD(page, {
       status: defaultStatus({ pages: ['Eating'] }),
