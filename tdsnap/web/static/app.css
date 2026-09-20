@@ -257,7 +257,12 @@ h2 {
   letter-spacing: -0.035em;
 }
 
-h2:focus { outline: 0; }
+/* Each step heading is given focus when that step opens, so a screen reader
+   announces where the wizard just went. Nothing can Tab to one, so a focus
+   indicator on it marks nothing a keyboard user can act on — which is why the
+   outline was already suppressed here. The halo was not, so every step change
+   painted a stray blue box around its own title. */
+h2:focus { outline: 0; box-shadow: none; }
 
 h3 { margin: 0; font-size: 1rem; }
 

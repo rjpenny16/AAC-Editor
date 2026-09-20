@@ -62,6 +62,11 @@ file starts tracking changes in detail from 2.2.0 onward.
   model at all would look. They now open with that message, once, and are not sprung open again on
   anyone who closes them.
 
+- **Step headings are no longer ringed.** Each one is given focus as its step opens, so a screen
+  reader announces where the wizard went. Nothing can Tab to one, so the outline was already
+  suppressed — but the halo was not, which painted a stray blue box around the title of every screen,
+  starting with the first thing a new user sees.
+
 - **The app no longer requests a favicon it does not serve**, which put a 404 in the browser console
   on every launch and left the tab blank. It uses the logo it already ships.
 

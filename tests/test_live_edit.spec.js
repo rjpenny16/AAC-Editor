@@ -607,6 +607,36 @@ test('words are required on the words-and-phrases question', async ({ page }) =>
   await expect(page.locator('#wizard-items')).toBeVisible();
 });
 
+test('a step heading is not ringed when the wizard focuses it', async ({ page }) => {
+  // Every step heading is focused as its step opens, so a screen reader
+  // announces the move. Nothing can Tab to one, so the indicator marks
+  // nothing actionable — and half-suppressing it left a stray blue halo
+  // around the title of every screen, starting with the first.
+  await mockTD(page);
+  await openEditor(page);
+
+  const painted = await page.locator('#load-heading').evaluate((heading) => {
+    const style = getComputedStyle(heading);
+    return {
+      focused: document.activeElement === heading,
+      outlineWidth: style.outlineWidth,
+      boxShadow: style.boxShadow,
+    };
+  });
+  expect(painted.focused).toBe(true);
+  expect(painted.boxShadow).toBe('none');
+  expect(painted.outlineWidth).toBe('0px');
+
+  // And the same on the next step, which is focused the same way.
+  await connect(page);
+  const next = await page.locator('#items-heading').evaluate((heading) => ({
+    focused: document.activeElement === heading,
+    boxShadow: getComputedStyle(heading).boxShadow,
+  }));
+  expect(next.focused).toBe(true);
+  expect(next.boxShadow).toBe('none');
+});
+
 test('locked Windows reports a plain-language connection error', async ({ page }) => {
   let locked = true;
   await page.route('**/api/tdsnap/status', (route) =>
