@@ -2501,3 +2501,33 @@ def test_a_message_that_already_ends_a_sentence_is_left_alone():
     assert live._sentence("These ones:") == "These ones:"
     assert live._sentence("  no full stop  ") == "no full stop."
     assert live._sentence("") == ""
+
+
+def test_a_failed_removal_names_the_button_the_review_named(monkeypatch):
+    """Not the phrase it speaks, which the user never typed as a label."""
+    control = _fake_control("I am all done now")
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_named_slots", lambda _window: {0: control})
+    monkeypatch.setattr(live, "_page_group", lambda _window: object())
+    monkeypatch.setattr(
+        live, "_accessible_labels",
+        lambda _group: {"i am all done now": "all done"},
+    )
+
+    with pytest.raises(PagesetError, match="did not verify the removal of 'all done'"):
+        live._verify_page_state(object(), [], [0], {})
+
+
+def test_a_failed_removal_still_reports_when_the_label_cannot_be_resolved(monkeypatch):
+    """Losing the page set mid-failure must not lose the failure."""
+    control = _fake_control("I am all done now")
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
+    monkeypatch.setattr(live, "_named_slots", lambda _window: {0: control})
+
+    def gone(_window):
+        raise AttributeError("the control tree repainted")
+
+    monkeypatch.setattr(live, "_page_group", gone)
+
+    with pytest.raises(PagesetError, match="did not verify the removal of"):
+        live._verify_page_state(object(), [], [0], {})

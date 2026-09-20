@@ -1317,9 +1317,22 @@ def _verify_page_state(window, expected=(), removed=(), untouched=None):
     for slot in removed:
         control = by_slot.get(slot)
         if control is not None:
+            # Name the button the way the review named it. TD Snap publishes a
+            # button's spoken message as its accessibility name, so this used
+            # to quote a phrase the user never typed as a label. Resolving
+            # costs a read of the page set, so it happens only here, on the
+            # way to raising — and never at the cost of the error itself: a
+            # control tree repainting mid-failure must not replace "the
+            # removal did not happen" with whatever went missing.
+            name = (control.Name or "").strip()
+            label = name
+            with suppress(Exception):
+                label = _accessible_labels(_page_group(window)).get(
+                    name.casefold(), name
+                )
             raise PagesetError(
                 f"TD Snap did not verify the removal of "
-                f"{(control.Name or '').strip()!r}; it is still on the page."
+                f"{label!r}; it is still on the page."
             )
     for slot, label in (untouched or {}).items():
         control = by_slot.get(slot)

@@ -46,6 +46,11 @@ file starts tracking changes in detail from 2.2.0 onward.
   simply hidden — so a page AAC Editor cannot edit looked exactly like a build where the feature does
   not exist. It now says which of the two it is, and that adding new buttons still works.
 
+- **A failed removal names the button the review named.** It quoted the live accessibility name,
+  which for a button that speaks a phrase is that phrase — so the error named something the user
+  never typed as a label. Resolving it cannot cost the error itself: a page repainting mid-failure
+  still reports that the removal did not happen.
+
 - **A failed edit reads as two sentences again.** The message a user sees most when an edit fails is
   built by appending "The original page was restored." to whatever failed, and the failures that name
   a button end on the button's own label — so it read "…in their reviewed cells: juice The original
