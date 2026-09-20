@@ -11,6 +11,25 @@ block_cipher = None
 here = SPECPATH  # PyInstaller sets this to the spec file's directory
 root = os.path.abspath(os.path.join(here, ".."))
 
+# Which privilege the packaged executable requests. An allow-list rather than
+# a path, because this file decides what the process may do: an environment
+# variable that could name any manifest would be a way to hand the app
+# uiAccess, or administrator rights, from outside the build.
+#
+# "uiaccess" is only ever selected by packaging/build.ps1 under -Sign. Windows
+# will not start a uiAccess="true" executable without a trusted Authenticode
+# signature, so an unsigned build that embedded it would not run at all.
+MANIFESTS = {
+    "asinvoker": "aac-editor.manifest",
+    "uiaccess": "aac-editor-uiaccess.manifest",
+}
+manifest_mode = os.environ.get("AAC_EDITOR_MANIFEST", "asinvoker").strip().lower()
+if manifest_mode not in MANIFESTS:
+    raise RuntimeError(
+        f"AAC_EDITOR_MANIFEST must be one of {sorted(MANIFESTS)}: {manifest_mode!r}"
+    )
+manifest_path = os.path.join(here, MANIFESTS[manifest_mode])
+
 datas = [(os.path.join(root, "tdsnap", "web", "static"), "tdsnap/web/static")]
 binaries = []
 hiddenimports = []
@@ -47,7 +66,7 @@ exe = EXE(
     name="AAC Editor",
     console=False,
     icon=os.path.join(here, "icon.ico"),
-    manifest=os.path.join(here, "aac-editor.manifest"),
+    manifest=manifest_path,
 )
 
 coll = COLLECT(

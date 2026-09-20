@@ -24,23 +24,83 @@ def test_version_has_one_source_and_is_ready_for_release():
     assert '\nversion = "2.3.0"' not in project
 
 
-def test_unsigned_build_never_requests_uiaccess():
-    # Windows will not start a uiAccess="true" executable without a trusted
-    # Authenticode signature, and releases are unsigned.
-    manifest = ElementTree.parse(ROOT / "packaging" / "aac-editor.manifest")
+def _requested_execution_level(name: str) -> dict:
+    manifest = ElementTree.parse(ROOT / "packaging" / name)
     level = manifest.find(
         ".//{urn:schemas-microsoft-com:asm.v3}requestedExecutionLevel"
     )
-    assert level is not None
-    assert level.attrib == {"level": "asInvoker", "uiAccess": "false"}
+    assert level is not None, f"{name} states no requestedExecutionLevel"
+    return level.attrib
+
+
+def test_unsigned_build_never_requests_uiaccess():
+    """The default build is the unsigned one, and it must not ask for uiAccess.
+
+    Windows will not start a uiAccess="true" executable without a trusted
+    Authenticode signature, so an unsigned build that embedded it would ship a
+    binary nobody can launch.
+    """
+    assert _requested_execution_level("aac-editor.manifest") == {
+        "level": "asInvoker", "uiAccess": "false",
+    }
 
     spec = read("packaging/tdsnap.spec")
+    # The default with nothing set is the unsigned manifest; only build.ps1
+    # under -Sign asks for the other one.
+    assert 'os.environ.get("AAC_EDITOR_MANIFEST", "asinvoker")' in spec
     assert "uac_uiaccess" not in spec
-    assert 'uiAccess="false"' in read("packaging/verify_manifest.ps1")
+
+    build = read("packaging/build.ps1")
+    assert '$manifestMode = if ($Sign) { "uiaccess" } else { "asinvoker" }' in build
+    # Nothing else may choose it: an unsigned release build gets asinvoker
+    # whatever the environment says, because build.ps1 sets the variable.
+    assert '$env:AAC_EDITOR_MANIFEST = $manifestMode' in build
+
+
+def test_the_manifest_is_chosen_from_an_allow_list_not_a_path():
+    """The manifest decides what the process may do, so the build must not
+    accept an arbitrary one from the environment."""
+    spec = read("packaging/tdsnap.spec")
+    assert '"asinvoker": "aac-editor.manifest"' in spec
+    assert '"uiaccess": "aac-editor-uiaccess.manifest"' in spec
+    assert "AAC_EDITOR_MANIFEST must be one of" in spec
+    assert "manifest=manifest_path," in spec
+
+
+def test_the_signed_manifest_differs_only_in_uiaccess():
+    """The day a certificate arrives, turning uiAccess on is a build flag
+    rather than a hand edit through guardrails that throw."""
+    signed = _requested_execution_level("aac-editor-uiaccess.manifest")
+    assert signed == {"level": "asInvoker", "uiAccess": "true"}
+
+    # Administrator is never requested up front in either build: elevation is
+    # asked for at the moment Grid 3 needs it, not for the whole session.
+    unsigned = _requested_execution_level("aac-editor.manifest")
+    assert signed["level"] == unsigned["level"] == "asInvoker"
+
+
+def test_a_uiaccess_binary_is_refused_unless_it_is_validly_signed():
+    """The invariant, and it is checked whatever the caller said to expect."""
+    verifier = read("packaging/verify_manifest.ps1")
+    assert "Get-AuthenticodeSignature" in verifier
+    assert '$signature.Status -ne "Valid"' in verifier
+    assert "Windows would refuse to start it" in verifier
+
+    # Signing happens before verification for exactly that reason.
+    build = read("packaging/build.ps1")
+    sign_first = build.index("if ($Sign) { Sign-File $exe }")
+    verify_after = build.index("verify_manifest.ps1\" -Executable $exe -Expect")
+    assert sign_first < verify_after
+
+
+def test_the_build_refuses_to_ship_without_both_engines():
+    spec = read("packaging/tdsnap.spec")
     assert 'for package in ("llama_cpp", "uiautomation")' in spec
     assert "Required packaged dependency is missing" in spec
     assert "except Exception" not in spec
 
+
+def test_the_installer_lands_under_program_files():
     installer = read("packaging/installer.iss")
     assert "DefaultDirName={autopf}\\AAC Editor" in installer
     assert "DisableDirPage=yes" in installer
