@@ -74,6 +74,9 @@ configReady.then(async () => {
     $("ai-style").checked = preferences.ai_style;
   }
   if (preferences.ai_model) $("ai-model-choice").dataset.preferred = preferences.ai_model;
+  if (["auto", "local", "ollama"].includes(preferences.ai_engine)) {
+    $("ai-engine").value = preferences.ai_engine;
+  }
 
   selectProvider(state.provider);
 });

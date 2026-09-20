@@ -56,9 +56,11 @@ exported files never need it.
   pointed out but never blocked.
 - Adds matching TD Snap symbols when TD Snap can find them, searching the words
   you choose — or none at all, per button.
-- Suggests AAC-friendly placement and optional words or phrases with local AI —
-  steerable one suggestion at a time: swap one for another, ask for more like
-  it, or throw it away and it is not offered again.
+- Suggests AAC-friendly placement and optional words or phrases with local AI.
+  Suggestions arrive as candidates you keep or discard, so nothing a model
+  produced reaches the page unasked, and every one you keep is still steerable:
+  swap it for another, ask for more like it, or throw it away and it is not
+  offered again.
 - Verifies the completed edit and reports anything that still needs review.
 
 If something goes wrong, **Copy a support report** in the footer collects the
@@ -73,7 +75,10 @@ sync identity. AAC Editor does not upload page-set files or button vocabulary;
 the optional single-topic grounding request is the only exception described
 below.
 
-AI is optional and local:
+AI is optional and local. It is one button to start: the **Stuck for ideas?**
+panel on the vocabulary screen says whether suggestions are **Ready** or need a
+one-time **Setup**, and setting them up downloads the model once while you carry
+on adding words.
 
 - The packaged app can download Qwen2.5 1.5B Instruct once (~1 GB, Apache-2.0)
   and run it offline. Every built-in model is pinned to an exact URL, byte size
@@ -82,7 +87,10 @@ AI is optional and local:
   memory this computer is *measured* to have — a machine whose memory cannot be
   read is offered the small model and nothing bigger.
 - If [Ollama](https://ollama.com/download) is already running, the app can use
-  one of its installed models instead.
+  one of its installed models instead — picked from a list of what you actually
+  have, not typed from memory. **Suggestion settings** chooses which engine
+  runs; a choice that cannot run is stood in for, and the panel says which model
+  wrote the suggestions.
 - Suggestions can be asked to match how your page set already writes a button.
   That sample of your own labels goes to the model on this computer and no
   further; turn it off with **Match the wording style of this page set**.
@@ -208,7 +216,15 @@ Install `.[ai,desktop]` and PyInstaller, then build the installer with
 `./packaging/build.ps1 -Version 2.3.0`. Release builds are unsigned; `-Sign`
 with `AAC_EDITOR_SIGNING_THUMBPRINT` set signs with a certificate you supply.
 
-AI suggestion quality has its own harness. `tests/fixtures/ai_eval_set.json`
+What a model returns is cleaned before it is ever offered: numbering, bullets,
+quotation marks, markdown and trailing explanations are stripped, and the page
+title restated, an item that is really a sentence, a repeat, anything already on
+the page, and anything you rejected are dropped (`tdsnap/web/prompts.py`, pinned
+by `tests/test_ai_cleaning.py`). Because that drops items, the request asks for
+more than you wanted and a round that comes back nearly empty is asked once
+more.
+
+AI suggestion quality also has its own harness. `tests/fixtures/ai_eval_set.json`
 holds a fixed set of category prompts and the rules the prompt already states —
 *"Harry Potter characters"* must not return *"wand"*, and must return somebody
 from the books. The scoring runs offline on every CI build
