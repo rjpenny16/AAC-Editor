@@ -174,6 +174,39 @@ def _find(root, **criteria):
     return None
 
 
+def _grid_button(container, label, message=None, resolved=None):
+    """Find a grid button by the *label* a review named it with.
+
+    TD Snap publishes a button's spoken message as its accessibility name
+    whenever one is set, so ``_find(name=label)`` misses exactly the buttons
+    this app is most often asked to edit — and misses them *silently*, as a
+    ``None`` that reads identically to "this button is gone".
+
+    *message* is the spoken message the caller already knows the button holds
+    (a destructive edit has it from the page set's own prior content, so this
+    needs no file read at all). *resolved* is a live-name → saved-label map
+    for callers that do not; see ``_accessible_labels``. Callers that supply
+    neither still match on the label, which is correct for every button that
+    speaks its own label.
+    """
+    wanted = (label or "").strip().casefold()
+    if not wanted:
+        return None
+    names = {wanted}
+    if message and message.strip():
+        names.add(message.strip().casefold())
+    for control, _ in _walk(container):
+        if control.ControlTypeName != "ButtonControl":
+            continue
+        name = (control.Name or "").strip()
+        if not name:
+            continue
+        key = name.casefold()
+        if key in names or (resolved or {}).get(key, "").strip().casefold() == wanted:
+            return control
+    return None
+
+
 def _find_text(root, text):
     wanted = text.casefold()
     matches = []
@@ -273,6 +306,23 @@ def _page_name(window, group=None):
     ).Name
 
 
+def _has_column(conn, table, column) -> bool:
+    """True when *table* carries *column* in this page set's schema revision.
+
+    Page sets written by older TD Snap builds are missing columns newer ones
+    have, and a query naming one that does not exist fails the whole read —
+    which, on this path, would silently rule out a page set rather than
+    report anything. See ``_column`` for the row-level counterpart.
+    """
+    try:
+        return any(
+            row[1] == column
+            for row in conn.execute(f"PRAGMA table_info({table})")
+        )
+    except sqlite3.Error:
+        return False
+
+
 def _pageset_matches_visible_page(path, page, labels):
     try:
         with closing(sqlite3.connect(
@@ -286,16 +336,29 @@ def _pageset_matches_visible_page(path, page, labels):
                 return False
             if not labels:
                 return True
-            visible = {
-                row[0].strip().casefold()
-                for row in conn.execute(
-                    "SELECT Button.Label FROM Button "
-                    "JOIN ElementReference ON ElementReference.Id = Button.ElementReferenceId "
-                    "WHERE ElementReference.PageId = ? AND Button.Label IS NOT NULL",
-                    (rows[0][0],),
+            # Either column can be the name a caller measured off the live
+            # control tree: TD Snap publishes a button's spoken message as its
+            # accessibility name when it has one, and its label otherwise. A
+            # page set is only ruled out when a name matches neither.
+            # Two fixed queries rather than one built from a column list:
+            # ``Message`` is absent from page sets older TD Snap builds wrote,
+            # and naming a column that does not exist fails the whole read.
+            both = (
+                "SELECT Button.Label, Button.Message FROM Button "
+                "JOIN ElementReference ON ElementReference.Id = Button.ElementReferenceId "
+                "WHERE ElementReference.PageId = ?"
+            )
+            label_only = (
+                "SELECT Button.Label FROM Button "
+                "JOIN ElementReference ON ElementReference.Id = Button.ElementReferenceId "
+                "WHERE ElementReference.PageId = ?"
+            )
+            query = both if _has_column(conn, "Button", "Message") else label_only
+            visible = set()
+            for row in conn.execute(query, (rows[0][0],)):
+                visible.update(
+                    value.strip().casefold() for value in row if value and value.strip()
                 )
-                if row[0].strip()
-            }
         return {label.strip().casefold() for label in labels if label.strip()} <= visible
     except (OSError, sqlite3.Error):
         return False
@@ -403,8 +466,8 @@ def _page_route(start, target, visible_labels=()):
 
 def _stored_sparse_grid(group, buttons, width, height):
     """Use saved placements when visible buttons do not expose the whole grid."""
-    pageset_path = _active_pageset_path()
     title = (getattr(group, "Name", "") or "").strip()
+    pageset_path = _active_pageset_path(title, _visible_names(group))
     if not pageset_path or not title:
         return None
     try:
@@ -488,8 +551,10 @@ def _stored_sparse_grid(group, buttons, width, height):
 
 def _stored_empty_grid(group):
     """Infer clickable cell centers for a new page with no UIA buttons yet."""
-    pageset_path = _active_pageset_path()
     title = (getattr(group, "Name", "") or "").strip()
+    # A page with no buttons yet names nothing that could tell two page sets
+    # apart; the title is all there is, and one page set is the common case.
+    pageset_path = _active_pageset_path(title)
     if not pageset_path or not title:
         return None
     try:
@@ -648,7 +713,7 @@ def _page_layout(group, grid):
 def _accessible_labels(group):
     """Resolve TD Snap's spoken accessibility names to saved display labels."""
     title = (getattr(group, "Name", "") or "").strip()
-    content = _stored_page_content(title) if title else None
+    content = _stored_page_content(title, _visible_names(group)) if title else None
     labels = {}
     ambiguous = set()
     for entry in (content or {}).values():
@@ -657,6 +722,25 @@ def _accessible_labels(group):
             ambiguous.add(name)
         labels[name] = entry["label"]
     return {name: label for name, label in labels.items() if name not in ambiguous}
+
+
+def _visible_names(group):
+    """Accessibility names of the grid buttons *group* is showing right now.
+
+    Deliberately unresolved: these are what TD Snap actually published, which
+    is what identifies the page set they came from. Resolving them first would
+    need the very page set this is used to find.
+    """
+    names = []
+    try:
+        children = group.GetChildren()
+    except Exception:  # a group that repainted mid-read names nothing
+        return ()
+    for child in children:
+        name = (getattr(child, "Name", "") or "").strip()
+        if getattr(child, "ControlTypeName", None) == "ButtonControl" and name:
+            names.append(name)
+    return tuple(names)
 
 
 def _named_page_buttons(group):
@@ -724,7 +808,7 @@ def _command_kind(commands, command_flags, page_links):
     return "speak" if command_flags == templates.COMMAND_FLAGS_SPEAK else "action"
 
 
-def _stored_page_content(page):
+def _stored_page_content(page, visible_names=()):
     """Prior label, message, border, and command kind for the buttons on *page*.
 
     Keyed by casefolded display label. TD Snap's accessibility name uses the
@@ -732,12 +816,20 @@ def _stored_page_content(page):
     ``_accessible_labels``. A repeated label is dropped rather than guessed
     at, keeping ambiguous buttons out of destructive editing.
 
+    *visible_names* are the accessibility names the caller has just measured
+    off the live page. They are what tells two page sets apart on a machine
+    that has more than one — a TD Snap user per client is ordinary for an SLP,
+    and page titles alone do not distinguish them, because every page set
+    built from the same TD Snap template carries the same ones. Without them
+    this returns ``None`` on such a machine, which locks every button out of
+    editing and leaves every spoken name unresolved.
+
     Returns ``None`` when the page set or the page cannot be identified, which
     makes the caller refuse a destructive edit rather than run one it could
     not undo.
     """
     title = str(page or "").strip()
-    path = _active_pageset_path(title)
+    path = _active_pageset_path(title, visible_names)
     if not path or not title:
         return None
     try:
@@ -819,14 +911,16 @@ def _function_for_border(border_color):
     return None
 
 
-def _describe_buttons(page, buttons):
+def _describe_buttons(page, buttons, visible_names=()):
     """Annotate visible buttons with what each holds and whether it is editable.
 
     A page whose stored content cannot be read still lists every button; they
     are simply all locked, so adding buttons keeps working exactly as before
     on a page set AAC Editor cannot fully identify.
     """
-    content = _stored_page_content(page)
+    content = _stored_page_content(
+        page, visible_names or [button["label"] for button in buttons]
+    )
     described = []
     for button in buttons:
         stored = (content or {}).get(button["label"].strip().casefold())
@@ -1023,7 +1117,9 @@ def _navigate_to_parent(window, parent):
     toolbar = _find(window, name="Tool Bar", control_type="GroupControl")
     for button_name, destination, from_toolbar in route:
         container = toolbar if from_toolbar else _page_group(window)
-        button = _find(container, name=button_name, control_type="ButtonControl")
+        button = _grid_button(
+            container, button_name, resolved=_accessible_labels(container)
+        )
         if button is None:
             raise PagesetError(
                 f"TD Snap's route to {parent!r} uses {button_name!r}, but that "
@@ -1622,16 +1718,25 @@ def _delete_action(window):
     return None
 
 
-def _confirm_removal(window, label):
+def _confirm_removal(window, label, message=None):
     """Answer TD Snap's confirmation prompt, if it showed one.
 
     Only consulted while the button is still on the page. Activating a stray
     dialog control when no dialog opened would be a click into whatever the
     editing panel happens to be showing, which is exactly the class of blind
     action this module exists to avoid.
+
+    "Still on the page" is read through ``_grid_button``: a button that speaks
+    a custom message carries that message as its accessibility name, so a
+    label-only lookup called every such button already gone and returned
+    without answering the prompt — leaving the dialog open for the next step
+    to click into.
     """
-    gone = _find(_page_group(window), name=label, control_type="ButtonControl") is None
-    if gone:
+    group = _page_group(window)
+    # Resolved labels are consulted here — one read, not in a poll loop —
+    # because leaving this prompt unanswered is the costliest way to be
+    # wrong: the dialog stays open and the next step clicks into it.
+    if _grid_button(group, label, message, _accessible_labels(group)) is None:
         return
     confirm = _find(window, automation_id="PrimaryButton", control_type="ButtonControl")
     for name in _CONFIRM_NAMES:
@@ -1642,7 +1747,7 @@ def _confirm_removal(window, label):
         _activate(confirm)
 
 
-def _remove_button(auto, window, cell, label):
+def _remove_button(auto, window, cell, label, message=None):
     """Delete one existing button through TD Snap's own editing controls."""
     _select_button(auto, window, cell, label)
     _expand_editor(window)
@@ -1653,11 +1758,9 @@ def _remove_button(auto, window, cell, label):
             "accessibility controls, so the button was left alone."
         )
     _activate(action)
-    _confirm_removal(window, label)
+    _confirm_removal(window, label, message)
     _wait_for(
-        lambda: _find(
-            _page_group(window), name=label, control_type="ButtonControl"
-        ) is None,
+        lambda: _grid_button(_page_group(window), label, message) is None,
         f"TD Snap did not remove the {label!r} button.",
     )
 
@@ -1891,7 +1994,9 @@ def inspect_page(page=None):
     grid = _grid(group)
     buttons = _page_layout(group, grid)
     page_name = _page_name(window, group)
-    described, content_readable = _describe_buttons(page_name, buttons)
+    described, content_readable = _describe_buttons(
+        page_name, buttons, _visible_names(group)
+    )
     return {
         "page": page_name,
         "grid": {"cols": len(grid.xs), "rows": len(grid.ys)},
@@ -1993,7 +2098,8 @@ def _normalize_moves(moves):
     return sorted(normalized, key=lambda move: move["slot"])
 
 
-def _prior_content(page, changes, removals, moves, by_slot, known=None):
+def _prior_content(page, changes, removals, moves, by_slot, known=None,
+                   visible_names=()):
     """Capture what every cell this edit will damage holds today.
 
     Refusing the whole edit when this cannot be read is the single most
@@ -2015,7 +2121,11 @@ def _prior_content(page, changes, removals, moves, by_slot, known=None):
     })
     if not touched:
         return {}
-    content = _stored_page_content(page)
+    # The *raw* accessibility names when the caller has them: a label a page
+    # shares with its neighbour identifies nothing, while the message spoken
+    # alongside it usually does. Resolved labels are the fallback, which is
+    # all a caller that never saw the live tree can offer.
+    content = _stored_page_content(page, visible_names or list(by_slot.values()))
     known = known or {}
     if content is None and not all(slot in known for slot in touched):
         raise PagesetError(
@@ -2097,7 +2207,10 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
     grid = _grid(group)
     existing = _page_layout(group, grid)
     by_slot = {button["slot"]: button["label"] for button in existing}
-    prior = _prior_content(requested, changes, removals, moves, by_slot, _known_content)
+    prior = _prior_content(
+        requested, changes, removals, moves, by_slot, _known_content,
+        _visible_names(group),
+    )
     capacity = len(grid.xs) * len(grid.ys)
 
     # A move may land on a cell a removal freed, a cell nothing was in, or a
@@ -2169,11 +2282,33 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         for change in changes
     ] + [
         # A button that is moving *and* being changed is already named above,
-        # at the same cell and with its new label.
-        {"slot": move["to"], "label": prior[move["slot"]]["label"], "message": None}
+        # at the same cell and with its new label. ``message`` stays None —
+        # a move sets no message, and ``_verify_page_state`` reads None as
+        # "none was requested" — so the message the button keeps carrying is
+        # recorded as a *name* instead, below.
+        {
+            "slot": move["to"],
+            "label": prior[move["slot"]]["label"],
+            "message": None,
+            "carried_message": prior[move["slot"]]["message"],
+        }
         for move in moves
         if move["slot"] not in changed_slots
     ]
+    # Every accessibility name a reviewed cell may legitimately carry once the
+    # edit has landed. TD Snap names a button after its spoken message when it
+    # has one, and the page set on disk has not necessarily caught up with an
+    # edit made seconds ago — so the post-edit-mode re-read below cannot
+    # resolve a just-written message back to its label the way the preview
+    # does, and would report every such button missing and roll the edit back.
+    final_names = {
+        item["slot"]: {
+            name.strip().casefold()
+            for name in (item["label"], item["message"], item.get("carried_message"))
+            if name and name.strip()
+        }
+        for item in expected
+    }
     touched = (
         set(requested_slots) | set(removals) | set(moved) | set(moved.values())
         | changed_slots
@@ -2210,7 +2345,10 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         for slot in removals:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
-            _remove_button(auto, window, _cell_at(edit_grid, slot), prior[slot]["label"])
+            _remove_button(
+                auto, window, _cell_at(edit_grid, slot),
+                prior[slot]["label"], prior[slot]["message"],
+            )
         for source, target, label in move_steps:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
@@ -2247,7 +2385,8 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         }
         missing = [
             item["label"] for item in expected
-            if final_slots.get(item["slot"]) != item["label"]
+            if (final_slots.get(item["slot"]) or "").strip().casefold()
+            not in final_names[item["slot"]]
         ]
         if missing:
             raise PagesetError(
