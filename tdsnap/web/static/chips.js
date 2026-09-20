@@ -358,16 +358,42 @@ function renderExistingEditControls() {
   const undo = $("undo-last-btn");
   if (undo) undo.hidden = !undoAvailable(state);
   if (!button || !summary) return;
-  button.hidden = !state.canEditExisting ||
-    !state.existingButtons.some((item) => item.editable);
+  const anyEditable = state.existingButtons.some((item) => item.editable);
+  button.hidden = !state.canEditExisting || !anyEditable;
   const line = editSummary({
     changed: state.pageEdits.changes.length,
     removed: state.pageEdits.removals.length,
     moved: state.pageEdits.moves.length,
     page: titleOf(state.parentId),
   });
-  summary.hidden = !line;
-  summary.textContent = line ? `Pending: ${line.toLocaleLowerCase()}.` : "";
+  const unavailable = button.hidden ? whyNotEditable(anyEditable) : "";
+  summary.hidden = !line && !unavailable;
+  summary.classList.toggle("pending-edits", Boolean(line));
+  summary.textContent = line ? `Pending: ${line.toLocaleLowerCase()}.` : unavailable;
+}
+
+/* Why changing what is already on the page is not on offer.
+
+   This used to be silence: the control was hidden and nothing took its place,
+   so a page whose buttons all open other pages, and a page set AAC Editor
+   could not identify, looked exactly like a build where the feature does not
+   exist. Adding words still works in both cases, and saying which one someone
+   is in is the difference between a dead end and a fact. */
+function whyNotEditable(anyEditable) {
+  if (!state.connected || state.provider !== "tdsnap" || state.mode !== "live") return "";
+  if (state.operation !== "existing") return "";
+  if (!state.existingButtons.length) return "";
+  if (!state.canEditExisting) {
+    return "AAC Editor couldn’t read this page set’s saved button content, " +
+      "so changing, moving, and removing buttons are off for this page. " +
+      "Adding new ones still works.";
+  }
+  if (!anyEditable) {
+    return "Every button on this page opens a page or runs an action, so there " +
+      "is nothing here for AAC Editor to change or remove. Adding new ones " +
+      "still works.";
+  }
+  return "";
 }
 
 /* Called when a session/connection resets and the old undo history no

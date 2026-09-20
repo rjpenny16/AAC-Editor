@@ -35,6 +35,20 @@ file starts tracking changes in detail from 2.2.0 onward.
     the current grid", because route steps come from the page set by label while the grid shows the
     message.
 
+- **A locked button now says so on its face.** In the change/move/remove grid, a button AAC Editor
+  must not touch differed from one it may touch by border style alone — solid against dashed — with
+  the reason available only on hover and focus. Which buttons can be acted on is the first thing
+  anyone needs from that grid, and a pointing device is not how everyone arrives at it, so a locked
+  cell now carries a muted **locked** badge alongside the reason it already gave.
+
+- **"Change, move, or remove existing buttons" explains itself instead of disappearing.** When a page
+  set could not be read, or every button on the page opens a page or runs an action, the way in was
+  simply hidden — so a page AAC Editor cannot edit looked exactly like a build where the feature does
+  not exist. It now says which of the two it is, and that adding new buttons still works.
+
+- **The app no longer requests a favicon it does not serve**, which put a 404 in the browser console
+  on every launch and left the tab blank. It uses the logo it already ships.
+
 - **A second TD Snap user on the same computer no longer locks editing on both.** One user per client
   is ordinary for an SLP with a caseload, and for a family with two AAC users. Page titles do not tell
   two page sets apart — every page set built from the same TD Snap template carries the same ones — so

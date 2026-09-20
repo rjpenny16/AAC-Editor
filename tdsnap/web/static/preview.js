@@ -254,6 +254,10 @@ function renderExistingCell(cell, existing, slot) {
       "or drag or use the arrow keys to move it."
     );
   } else {
+    // Say so on the face of the cell, not only on hover and focus. Which
+    // buttons can be touched is the first thing somebody needs from this
+    // grid, and a pointing device is not how everyone arrives at it.
+    cell.classList.add("locked");
     cell.title = existing.locked_reason || "Existing TD Snap button — position preserved";
     cell.setAttribute(
       "aria-label",

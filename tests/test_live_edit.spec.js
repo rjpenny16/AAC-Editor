@@ -1477,7 +1477,30 @@ test.describe('changing and removing existing buttons', () => {
     await expect(page.locator('#chip-editor')).toBeHidden();
   });
 
-  test('the way in is hidden when the page set content cannot be read', async ({ page }) => {
+  test('a locked button is marked as locked on its face', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+
+    // Which buttons can be touched has to be readable without hovering
+    // anything: locked used to differ from eligible by border style alone.
+    const locked = page.locator('#preview .cell.existing').filter({ hasText: 'Games' });
+    await expect(locked).toHaveClass(/\blocked\b/);
+    // The badge is a pseudo-element, which toHaveCSS cannot reach.
+    const badge = await locked.evaluate(
+      (cell) => getComputedStyle(cell, '::after').content,
+    );
+    expect(badge).toBe('"locked"');
+
+    const editable = page.locator('#preview .cell.existing').filter({ hasText: 'pear' });
+    await expect(editable).not.toHaveClass(/\blocked\b/);
+    const noBadge = await editable.evaluate(
+      (cell) => getComputedStyle(cell, '::after').content,
+    );
+    expect(noBadge).toBe('none');
+  });
+
+  test('the way in says why it is not on offer, rather than vanishing', async ({ page }) => {
     await editablePage(page, {
       content_readable: false,
       buttons: EDITABLE_PAGE.buttons.map((button) => ({
@@ -1489,6 +1512,41 @@ test.describe('changing and removing existing buttons', () => {
     await connect(page);
 
     await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#edit-existing-summary')).toBeVisible();
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'couldn’t read this page set’s saved button content',
+    );
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'Adding new ones still works',
+    );
+  });
+
+  test('a page of nothing but page links says so too', async ({ page }) => {
+    await editablePage(page, {
+      buttons: [{
+        slot: 0, label: 'Games', message: null, function: null, symbol: true,
+        editable: false,
+        locked_reason: 'This button opens another page, so AAC Editor leaves it alone.',
+      }],
+    });
+    await connect(page);
+
+    await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'Every button on this page opens a page or runs an action',
+    );
+  });
+
+  test('a pending edit still wins the summary line over any explanation', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await openExisting(page, 'pear');
+    await page.locator('#edit-remove').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
+    await page.locator('#placement-back-btn').click();
+
+    await expect(page.locator('#edit-existing-summary')).toContainText('Pending:');
+    await expect(page.locator('#edit-existing-btn')).toBeVisible();
   });
 
   test('a change and a removal are named in review and sent as one edit', async ({ page }) => {
