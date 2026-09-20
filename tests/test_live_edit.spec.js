@@ -267,6 +267,102 @@ test('native window hides the browser-only quit control', async ({ page }) => {
   await expect(page.locator('#quit-btn')).toBeHidden();
 });
 
+/* What a Grid 3 user is told before they commit, and when it stops.
+ *
+ * Grid 3 sits on the first screen beside TD Snap, which does far more, and the
+ * narrow one used to say so only by failing. The gate that stops it most often
+ * is administrator approval, which is a property of this build being unsigned
+ * rather than anything the person did — and a clinician who is not a local
+ * administrator could do nothing at all with "Administrator restart was
+ * cancelled."
+ */
+function grid3Guidance(overrides = {}) {
+  return {
+    state: 'needs-elevation',
+    summary: 'Grid 3 editing needs administrator approval.',
+    detail:
+      'This copy of AAC Editor is not code-signed, so Windows will not let it '
+      + 'reach Grid 3 any other way. You will be asked each time you connect, not '
+      + 'just once. If you are not an administrator on this computer, someone who '
+      + 'is has to approve it. TD Snap editing and exported files need none of this.',
+    action: 'elevate',
+    ready: false,
+    limits: {
+      can: ['Add new words and phrases to empty single cells on the grid open in Grid 3.'],
+      cannot: [
+        'Change, move, or remove a cell that already holds something.',
+        'Create a new grid, or link one from a cell.',
+      ],
+    },
+    ...overrides,
+  };
+}
+
+test('Grid 3 says what it can and cannot do before anyone commits to it', async ({ page }) => {
+  await page.route('**/api/grid3/status', (route) => fulfillJson(route, {
+    ok: true, available: true, installed: true, running: false,
+    elevated: false, needs_elevation: true, unlocked: true,
+    guidance: grid3Guidance(),
+  }));
+  await page.goto(BASE_URL);
+
+  // Nothing about Grid 3's limits belongs on the TD Snap screen.
+  await expect(page.locator('#grid3-limits')).toBeHidden();
+
+  // Choosing the card is enough: the limits are there before the commit, not
+  // after the refusal.
+  await page.locator('#provider-grid3').click();
+
+  const limits = page.locator('#grid3-limits');
+  await expect(limits).toBeVisible();
+  await expect(limits).toContainText('empty single cells');
+  await expect(limits).toContainText('already holds something');
+  await expect(limits).toContainText('Create a new grid');
+
+  // Choosing a different app takes its limits off the screen with it.
+  await page.locator('#provider-tdsnap').click();
+  await expect(limits).toBeHidden();
+});
+
+test('a Grid 3 user who cannot elevate is told why, not just refused', async ({ page }) => {
+  await page.route('**/api/grid3/status', (route) => fulfillJson(route, {
+    ok: true, available: true, installed: true, running: false,
+    elevated: false, needs_elevation: true, unlocked: true,
+    guidance: grid3Guidance(),
+  }));
+  await page.goto(BASE_URL);
+  await page.locator('#provider-grid3').click();
+  await page.locator('#live-connect-btn').click();
+
+  // Browser mode cannot elevate at all, which is the same dead end a
+  // non-administrator reaches in the desktop app.
+  await expect(page.locator('#connection-error')).toBeVisible();
+  const detail = page.locator('#connection-detail');
+  await expect(detail).toBeVisible();
+  await expect(detail).toContainText('not code-signed');
+  await expect(detail).toContainText('each time you connect');
+  await expect(detail).toContainText('TD Snap editing and exported files need none of this');
+  await expect(page.locator('#provider-grid3-state'))
+    .toHaveText('Administrator approval required');
+});
+
+test('the explanation does not follow the user to another AAC app', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/grid3/status', (route) => fulfillJson(route, {
+    ok: true, available: true, installed: true, running: false,
+    elevated: false, needs_elevation: true, unlocked: true,
+    guidance: grid3Guidance(),
+  }));
+  await page.goto(BASE_URL);
+  await page.locator('#provider-grid3').click();
+  await page.locator('#live-connect-btn').click();
+  await expect(page.locator('#connection-detail')).toBeVisible();
+
+  await page.locator('#provider-tdsnap').click();
+  await page.locator('#live-connect-btn').click();
+  await expect(page.locator('#connection-detail')).toBeHidden();
+});
+
 test('Grid 3 uses the active-grid three-step flow and live styled rectangles', async ({ page }) => {
   let submitted = null;
   let mutationHeaders = null;

@@ -13,6 +13,47 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Changed
 
+- **Grid 3 says what it can and cannot do before you commit to it, and every
+  gate names itself.** Grid 3 sits on the first screen beside TD Snap, which
+  does considerably more, and the narrower one only said so by failing part way
+  through. Choosing it now lists what it does (new words into empty single
+  cells, keeping each cell's existing size, color, and style) and what it does
+  not (changing, moving, or removing a cell that already holds something;
+  creating or linking a grid; protected `.gridsetx` grid sets including
+  WordPower; merged cells). One decision decides that and the state text, in
+  `grid3.explain`, checked in the order the connect flow actually checks things
+  so a machine with no Grid 3 installed is never told about elevation instead.
+
+- **The administrator prompt explains itself.** Live Grid 3 editing asks for
+  approval on every connection, and a clinician who is not a local
+  administrator previously got "Administrator restart was cancelled." and
+  nothing else. It now says what the requirement is a property of (this build
+  being unsigned, not them or their computer), that it recurs on every connect
+  rather than once, that somebody with administrator rights has to approve it,
+  and that TD Snap editing and exported files need none of it.
+
+### Added
+
+- **A certificate is now a build flag rather than a hand edit.** `uiAccess` was
+  pinned off in four places, so the day a signature became available meant
+  editing the manifest, the verifier, a test, and CONTRIBUTING, each of which
+  throws by design. `packaging/build.ps1` picks the manifest from the signing
+  mode instead: an ordinary build embeds `aac-editor.manifest` as before, and
+  `-Sign` embeds the new `aac-editor-uiaccess.manifest`. Live Grid 3 editing
+  then reaches Grid 3 without elevating, which is what removes the
+  administrator prompt.
+
+  The guard is stronger than the one it replaces, not weaker.
+  `verify_manifest.ps1` refuses any binary that requests `uiAccess` without a
+  valid Authenticode signature, whatever it was told to expect, so an unsigned
+  build cannot ship a manifest Windows would refuse to start; signing therefore
+  runs before verification. The spec chooses from an allow-list rather than a
+  path, because the manifest decides what the process may do and an
+  environment variable naming any file would be a way to hand the app
+  privileges from outside the build.
+
+### Changed
+
 - **Suggestions are set up in one step, and nothing they produce reaches a page unasked.** The
   feature existed and almost nobody could start it. It sat inside **More options** → *Help me think
   of words*, checked whether it was ready only once somebody opened it, and then showed a download

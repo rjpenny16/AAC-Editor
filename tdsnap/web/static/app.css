@@ -533,6 +533,23 @@ summary {
 .seg-btn { min-height: 2.75rem; padding: 0.6rem; border: 1px solid var(--line-strong); border-radius: 0.5rem; color: var(--ink); background: var(--surface); }
 .seg-btn.selected { color: var(--on-accent); border-color: var(--accent); background: var(--accent); }
 
+/* What a provider can and cannot do, on the screen where it is chosen.
+   Grid 3 sits beside TD Snap, which does far more, so the narrower one says
+   so before somebody commits rather than after they hit a wall. */
+.provider-limits {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--surface-soft);
+}
+
+.provider-limits h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.provider-limits ul { margin: 0; padding-left: 1.25rem; font-size: 0.875rem; }
+.provider-limits .field-hint { margin: 0.6rem 0 0.25rem; }
+.limits-cannot { color: var(--ink-soft); }
+.connection-detail { margin: 0.5rem 0 0; font-size: 0.875rem; }
+
 /* The suggestions panel.
  *
  * It used to be a disclosure inside another disclosure, which is where the
