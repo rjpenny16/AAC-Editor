@@ -52,9 +52,15 @@ def test_health_identifies_the_app(client):
 
 def test_index_explains_both_local_ai_setup_options(client):
     page = client.get("/").get_data(as_text=True)
-    assert "Recommended: use the built-in model" in page
+    # One primary route, in the page rather than two disclosures down, and the
+    # Ollama alternative still reachable for somebody who already runs it.
+    assert "Set up suggestions" in page
+    assert "I already use Ollama" in page
     assert "ollama pull llama3.2" in page
     assert "Check connection" in page
+    # Candidates, not buttons: the tray is what stops a suggestion landing on
+    # somebody's page before they have looked at it.
+    assert "Nothing reaches your page until you do" in page
     assert "Drop your" not in page
     assert "TD Snap exported file" in page
     assert "Create a page in a separate edited copy" in page

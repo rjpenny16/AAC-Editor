@@ -8,7 +8,7 @@
 import { state } from "./state.js";
 import { $, setBusy, setActivity } from "./dom.js";
 import { api } from "./api.js";
-import { clearGroundingSource } from "./ai.js";
+import { clearGroundingSource, clearSuggestions } from "./ai.js";
 import { clearUndoHistory, renderWords } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor } from "./connect.js";
 import { clearDraft } from "./draft.js";
@@ -275,6 +275,7 @@ $("another-btn").addEventListener("click", async () => {
   state.aiExcluded = [];
   state.aiChosenArticle = "";
   clearGroundingSource();
+  clearSuggestions();
   $("title-input").value = "";
   $("parent-capacity").textContent = "";
   $("chip-note").textContent = "";
@@ -389,6 +390,7 @@ function resetConnection() {
   state.aiExcluded = [];
   state.aiChosenArticle = "";
   clearGroundingSource();
+  clearSuggestions();
   // Every queued page names a page in the page set being left, and holds the
   // fingerprint it was reviewed against. Carrying that into a different page
   // set would be meaningless at best.

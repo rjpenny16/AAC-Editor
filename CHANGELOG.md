@@ -11,7 +11,73 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Changed
+
+- **Suggestions are set up in one step, and nothing they produce reaches a page unasked.** The
+  feature existed and almost nobody could start it. It sat inside **More options** → *Help me think
+  of words*, checked whether it was ready only once somebody opened it, and then showed a download
+  card and a set of Ollama terminal instructions side by side with no indication which of the two
+  was for them. Clicking **Suggest words** then dropped every answer straight onto the page as
+  planned buttons, to be deleted one at a time if they were wrong.
+
+  It is now a panel in the page with its state on its face — **Ready**, **Setup needed**,
+  **Setting up…** — and the state is checked when the app opens rather than when somebody finds the
+  panel. Each state shows exactly one next step:
+
+  - **Setup needed** is one button, **Set up suggestions**, with the size of the one-time download
+    and the fact that it works offline afterwards said in plain language. The Ollama route is a
+    single link beside it, *I already use Ollama*, for the people it is actually for.
+  - **Setting up…** shows the download with a percentage and says you can keep adding words while it
+    runs. It picks the progress back up after a reload instead of looking abandoned, and a failed
+    download says what went wrong and leaves the button that retries it.
+  - **Ready** names the model the suggestions will actually come from.
+  - A build with no suggestion engine of its own says so, and offers the Ollama steps — the only
+    route it has — from a control rather than from a disclosure labelled as an advanced option.
+
+  Suggestions themselves now arrive in a tray, as candidates. Each one is kept with a click or
+  discarded with an ×; **Keep all** is the one-click equivalent of what the panel used to do on its
+  own, and keeping a round is undoable in one step. A discarded suggestion still rides on the next
+  request as "not this". Nothing is added to the page until somebody says so, which is where a bad
+  suggestion now stops.
+
+- **Which engine runs, and what the panel says about it, are now the same decision.** The endpoint
+  picked an engine and the browser described the situation separately, so the panel could read
+  "Ollama is connected, but no model is installed" while the request it would send ran the built-in
+  model instead. Both now ask `tdsnap/web/engines.py`, which returns one state, one sentence, and
+  one next step.
+
+- **The Ollama model is picked from the ones that are installed** instead of typed from memory into
+  a box that defaulted to `llama3.2` whether or not that model was there.
+
+### Added
+
+- **Where suggestions come from is a setting.** *Whichever is ready*, the built-in model, or your own
+  Ollama server. A choice that cannot run is stood in for rather than refused — somebody who chose
+  Ollama and forgot to start it gets working suggestions plus a sentence saying which model wrote
+  them — and the choice is remembered between launches.
+
 ### Fixed
+
+- **Suggestions that were never usable no longer arrive as buttons.** A small model told to return
+  bare labels still answers with `1. Harry Potter`, `**Hermione**`, `Ron Weasley - his best friend`,
+  the page title echoed straight back, and the same name twice. Every one of those used to become a
+  planned button for somebody to notice and delete. Numbering, bullets, quotation marks, markdown and
+  trailing explanations are now stripped; the page title restated, an item that is really a sentence,
+  a repeat of another suggestion, anything already on the page, and anything the user rejected are
+  dropped. Both engines and the endpoint enforce it, so the guarantee holds whichever one ran and for
+  a merged answer as well as a single round.
+
+- **Asking for ten suggestions produces about ten.** Because cleaning drops items, the request to the
+  model now asks for half again as many, and an answer that comes back with fewer than half of what
+  was asked for — the case that used to read as *Added 1* — is asked once more, told what it already
+  produced. A round that still comes back short says so, rather than handing back four and leaving
+  the number unexplained.
+
+- **A long request no longer fails as "the model returned nothing".** The token budget was flat, so
+  forty phrases were cut off mid-JSON and the truncated reply failed to parse. It now scales with
+  what was asked for, and the built-in model's context window was doubled, which a grounded prompt
+  plus a long answer had been overrunning. A reply wrapped in prose or a markdown fence — which small
+  models produce often enough to matter — is now read rather than rejected.
 
 - **A button that speaks a phrase no longer fails the edit that created it.** TD Snap publishes a
   button's spoken message as its accessibility name whenever one is set. Four places still looked a
@@ -55,12 +121,6 @@ file starts tracking changes in detail from 2.2.0 onward.
   built by appending "The original page was restored." to whatever failed, and the failures that name
   a button end on the button's own label — so it read "…in their reviewed cells: juice The original
   page was restored.", which looks like something was cut off.
-
-- **The Ollama setup steps are on screen when they are the only way to get suggestions.** On a build
-  with no AI engine of its own, the status line said "follow the setup steps below" while those steps
-  sat folded behind a summary reading *Use my own Ollama model* — which is not where somebody with no
-  model at all would look. They now open with that message, once, and are not sprung open again on
-  anyone who closes them.
 
 - **Step headings are no longer ringed.** Each one is given focus as its step opens, so a screen
   reader announces where the wizard went. Nothing can Tab to one, so the outline was already
