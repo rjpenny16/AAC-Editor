@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d1626" media="(prefers-color-scheme: dark)">
 <title>AAC Editor</title>
+<link rel="icon" href="/static/assets/aac-editor-logo.png">
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -302,8 +303,8 @@
                   <input id="ai-count" type="number" min="1" max="40" value="10">
                   <button type="button" id="ai-go" class="btn btn-secondary">Suggest words</button>
                 </div>
-                <details class="ai-advanced">
-                  <summary>Use my own Ollama model</summary>
+                <details id="ai-advanced" class="ai-advanced">
+                  <summary id="ai-advanced-summary">Use my own Ollama model</summary>
                   <ol class="ai-setup-steps">
                     <li>Install and open Ollama.</li>
                     <li>In PowerShell or Terminal, run <code>ollama pull llama3.2</code>.</li>

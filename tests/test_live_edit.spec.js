@@ -607,6 +607,36 @@ test('words are required on the words-and-phrases question', async ({ page }) =>
   await expect(page.locator('#wizard-items')).toBeVisible();
 });
 
+test('a step heading is not ringed when the wizard focuses it', async ({ page }) => {
+  // Every step heading is focused as its step opens, so a screen reader
+  // announces the move. Nothing can Tab to one, so the indicator marks
+  // nothing actionable — and half-suppressing it left a stray blue halo
+  // around the title of every screen, starting with the first.
+  await mockTD(page);
+  await openEditor(page);
+
+  const painted = await page.locator('#load-heading').evaluate((heading) => {
+    const style = getComputedStyle(heading);
+    return {
+      focused: document.activeElement === heading,
+      outlineWidth: style.outlineWidth,
+      boxShadow: style.boxShadow,
+    };
+  });
+  expect(painted.focused).toBe(true);
+  expect(painted.boxShadow).toBe('none');
+  expect(painted.outlineWidth).toBe('0px');
+
+  // And the same on the next step, which is focused the same way.
+  await connect(page);
+  const next = await page.locator('#items-heading').evaluate((heading) => ({
+    focused: document.activeElement === heading,
+    boxShadow: getComputedStyle(heading).boxShadow,
+  }));
+  expect(next.focused).toBe(true);
+  expect(next.boxShadow).toBe('none');
+});
+
 test('locked Windows reports a plain-language connection error', async ({ page }) => {
   let locked = true;
   await page.route('**/api/tdsnap/status', (route) =>
@@ -1477,7 +1507,30 @@ test.describe('changing and removing existing buttons', () => {
     await expect(page.locator('#chip-editor')).toBeHidden();
   });
 
-  test('the way in is hidden when the page set content cannot be read', async ({ page }) => {
+  test('a locked button is marked as locked on its face', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+
+    // Which buttons can be touched has to be readable without hovering
+    // anything: locked used to differ from eligible by border style alone.
+    const locked = page.locator('#preview .cell.existing').filter({ hasText: 'Games' });
+    await expect(locked).toHaveClass(/\blocked\b/);
+    // The badge is a pseudo-element, which toHaveCSS cannot reach.
+    const badge = await locked.evaluate(
+      (cell) => getComputedStyle(cell, '::after').content,
+    );
+    expect(badge).toBe('"locked"');
+
+    const editable = page.locator('#preview .cell.existing').filter({ hasText: 'pear' });
+    await expect(editable).not.toHaveClass(/\blocked\b/);
+    const noBadge = await editable.evaluate(
+      (cell) => getComputedStyle(cell, '::after').content,
+    );
+    expect(noBadge).toBe('none');
+  });
+
+  test('the way in says why it is not on offer, rather than vanishing', async ({ page }) => {
     await editablePage(page, {
       content_readable: false,
       buttons: EDITABLE_PAGE.buttons.map((button) => ({
@@ -1489,6 +1542,41 @@ test.describe('changing and removing existing buttons', () => {
     await connect(page);
 
     await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#edit-existing-summary')).toBeVisible();
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'couldn’t read this page set’s saved button content',
+    );
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'Adding new ones still works',
+    );
+  });
+
+  test('a page of nothing but page links says so too', async ({ page }) => {
+    await editablePage(page, {
+      buttons: [{
+        slot: 0, label: 'Games', message: null, function: null, symbol: true,
+        editable: false,
+        locked_reason: 'This button opens another page, so AAC Editor leaves it alone.',
+      }],
+    });
+    await connect(page);
+
+    await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'Every button on this page opens a page or runs an action',
+    );
+  });
+
+  test('a pending edit still wins the summary line over any explanation', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await openExisting(page, 'pear');
+    await page.locator('#edit-remove').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
+    await page.locator('#placement-back-btn').click();
+
+    await expect(page.locator('#edit-existing-summary')).toContainText('Pending:');
+    await expect(page.locator('#edit-existing-btn')).toBeVisible();
   });
 
   test('a change and a removal are named in review and sent as one edit', async ({ page }) => {
@@ -2939,6 +3027,69 @@ test.describe('steerable AI suggestions', () => {
     await openPanel(page);
     await page.locator('#ai-go').click();
   }
+
+  test('the setup steps the status points at are actually on screen', async ({ page }) => {
+    // No engine of its own and no Ollama running: Ollama is the only route,
+    // and the steps sat folded behind a summary reading "Use my own Ollama
+    // model" — which is not where somebody with no model at all would look.
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: {
+        ...READY_STATUS,
+        ollama: { reachable: false, models: [] },
+      },
+    });
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#ai-suggest > summary').click();
+
+    await expect(page.locator('#ai-engine-state')).toContainText('follow the setup steps below');
+    await expect(page.locator('#ai-advanced')).toHaveAttribute('open', '');
+    await expect(page.locator('.ai-setup-steps')).toBeVisible();
+    await expect(page.locator('.ai-setup-steps')).toContainText('ollama pull llama3.2');
+  });
+
+  test('the steps are not sprung open again on somebody who closed them', async ({ page }) => {
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: {
+        ...READY_STATUS,
+        ollama: { reachable: false, models: [] },
+      },
+    });
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#ai-suggest > summary').click();
+    await expect(page.locator('#ai-advanced')).toHaveAttribute('open', '');
+
+    await page.locator('#ai-advanced-summary').click();
+    await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
+
+    // Closing and reopening the suggestions panel re-runs the status check.
+    // The steps stay shut: springing back open every refresh is worse than
+    // never having opened at all.
+    await page.locator('#ai-suggest > summary').click();
+    await page.locator('#ai-suggest > summary').click();
+    await expect(page.locator('#ai-engine-state')).toContainText('follow the setup steps below');
+    await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
+  });
+
+  test('a build with its own engine does not push people at Ollama', async ({ page }) => {
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: {
+        ...READY_STATUS,
+        ollama: { reachable: false, models: [] },
+        local: { ...READY_STATUS.local, engine_available: true },
+      },
+    });
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#ai-suggest > summary').click();
+
+    await expect(page.locator('#ai-engine-state')).toContainText('Follow the built-in setup below');
+    await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
+  });
 
   test('a rejected suggestion is not offered again', async ({ page }) => {
     await mockTD(page, {

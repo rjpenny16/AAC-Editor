@@ -93,6 +93,10 @@ async function checkAi() {
       label.textContent = data.ollama.reachable
         ? "Ollama is connected, but no model is installed. Run ollama pull llama3.2, then click Check connection."
         : "No AI model is ready. This install needs Ollama; follow the setup steps below.";
+      // This build has no engine of its own, so Ollama is not an alternative
+      // here — it is the only route, and the steps the message points at were
+      // folded away behind a summary that reads like an advanced option.
+      if (!data.ollama.reachable) revealOllamaSteps();
     }
     $("ai-go").disabled = !aiReady;
   } catch {
@@ -100,6 +104,21 @@ async function checkAi() {
     $("ai-go").disabled = true;
     label.textContent = "Could not check the local AI status. Check that the app is still connected, then try again.";
   }
+}
+
+/* Open the Ollama steps the status line is pointing at.
+
+   Once only, and never against somebody who has already closed them: a panel
+   that springs back open every time the status refreshes is worse than one
+   that never opened at all. */
+let ollamaStepsRevealed = false;
+
+function revealOllamaSteps() {
+  const details = $("ai-advanced");
+  if (!details || ollamaStepsRevealed) return;
+  ollamaStepsRevealed = true;
+  details.addEventListener("toggle", () => { ollamaStepsRevealed = true; }, { once: true });
+  details.open = true;
 }
 
 /* Which built-in model to download and run.

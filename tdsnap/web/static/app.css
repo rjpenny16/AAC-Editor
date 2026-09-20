@@ -257,7 +257,12 @@ h2 {
   letter-spacing: -0.035em;
 }
 
-h2:focus { outline: 0; }
+/* Each step heading is given focus when that step opens, so a screen reader
+   announces where the wizard just went. Nothing can Tab to one, so a focus
+   indicator on it marks nothing a keyboard user can act on — which is why the
+   outline was already suppressed here. The halo was not, so every step change
+   painted a stray blue box around its own title. */
+h2:focus { outline: 0; box-shadow: none; }
 
 h3 { margin: 0; font-size: 1rem; }
 
@@ -650,7 +655,13 @@ summary {
 /* An existing button this edit may touch. "Eligible" is an invitation while
    "changed" and "removing" are commitments, so the two committed states carry
    a word in the corner as well as a color — the difference has to survive a
-   reader who cannot tell the border colors apart. */
+   reader who cannot tell the border colors apart.
+
+   A locked button carries one too, for the same reason: it used to differ
+   from an eligible one by border style alone, which is the hardest of all
+   these states to see and the one somebody needs first. Its badge is muted
+   rather than colored — it marks what to skip, not something to act on, and
+   a menu page where every button is a page link should read as quiet. */
 .preview .cell.existing.editable { border-style: dashed; border-color: var(--line-strong); cursor: pointer; }
 .preview .cell.existing.editable:hover { border-color: var(--accent); background: var(--accent-soft); }
 .preview .cell.marked-changed,
@@ -660,6 +671,7 @@ summary {
 .preview .cell.marked-moved { border: 3px solid var(--accent); border-style: dashed; }
 .preview .cell.marked-removed { border: 3px solid var(--danger); background: var(--danger-soft); }
 .preview .cell.marked-removed .cell-label { text-decoration: line-through; }
+.preview .cell.existing.locked::after,
 .preview .cell.marked-changed::after,
 .preview .cell.marked-moved::after,
 .preview .cell.marked-removed::after {
@@ -672,6 +684,7 @@ summary {
   letter-spacing: 0.02em;
 }
 
+.preview .cell.existing.locked::after { content: "locked"; color: var(--ink-soft); font-weight: 700; }
 .preview .cell.marked-changed::after { content: "changed"; color: var(--accent); }
 .preview .cell.marked-moved::after { content: "moving"; color: var(--accent); }
 
