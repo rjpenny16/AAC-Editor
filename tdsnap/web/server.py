@@ -973,9 +973,16 @@ def live_add_page():
 
 @app.get("/api/grid3/status")
 def grid3_status():
+    """Grid 3's capability facts, plus what to say about them.
+
+    ``guidance`` is the decision: one state, one sentence, the single next
+    thing the user can do, and the standing limits of live Grid 3 editing.
+    The browser renders that rather than assembling its own sentence out of
+    five booleans — see grid3.explain.
+    """
     with _LIVE_LOCK:
         result = grid3.status(include_layout=request.args.get("layout") == "1")
-    return jsonify({"ok": True, **result})
+    return jsonify({"ok": True, **result, "guidance": grid3.explain(result)})
 
 
 @app.get("/api/grid3/page-layout")

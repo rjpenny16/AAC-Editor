@@ -27,9 +27,13 @@ anyway*, confirm the download is the one the public workflow built: compare
 `gh attestation verify <installer> --repo rjpenny16/AAC-Editor`. A file that
 fails either check must not be run.
 
-Live Grid 3 editing needs Windows administrator approval. AAC Editor asks for it
-when you connect to Grid 3 and reopens itself elevated; TD Snap editing and
-exported files never need it.
+Live Grid 3 editing needs Windows administrator approval, each time you
+connect. That is a consequence of the release being unsigned: an executable can
+only reach Grid 3 without elevating if it carries a trusted Authenticode
+signature, so AAC Editor asks for approval and reopens itself elevated instead.
+If you are not an administrator on the computer, someone who is has to approve
+it. TD Snap editing and exported files never need any of this, and the app says
+so on the Grid 3 screen rather than leaving you to work it out.
 
 ## What it does
 
@@ -147,6 +151,10 @@ there is no guessing about which ones to look at in TD Snap.
 
 For Grid 3, choose **Grid 3** on the first screen, open the exact existing grid
 you want to update, add vocabulary, review its order, and confirm the change.
+Choosing Grid 3 lists what it can and cannot do before you commit, and every
+gate it stops at names itself: Grid 3 not installed, a grid not open, an
+unfinished change to save first, a locked desktop, or administrator approval.
+
 Grid 3 support is capability-based across grid-set
 families: AAC Editor reads the active grid's real geometry and only enables
 unprotected `.gridset` format-1 grids with accessible, single-cell blanks. It
@@ -251,7 +259,12 @@ and the [security policy](SECURITY.md) first.
 ## Release integrity
 
 Releases are not code-signed. Free code signing for open source was applied for
-and declined, and a paid certificate is not in this project's budget.
+and declined, and a paid certificate is not in this project's budget. Two things
+follow from that, and only these two: SmartScreen warns on first run, and live
+Grid 3 editing has to ask for administrator approval instead of reaching Grid 3
+directly. Everything else in AAC Editor is unaffected. If a certificate ever
+becomes available, `./packaging/build.ps1 -Sign` is the whole change: the signed
+build embeds the `uiAccess` manifest, and the administrator prompt goes away.
 
 - Committer and reviewer: [Ryan Penny](https://github.com/rjpenny16)
 - Releases are built from an existing version-matched tag by the public

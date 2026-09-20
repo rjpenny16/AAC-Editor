@@ -93,9 +93,17 @@
         <span class="btn-label">Use the page open in TD Snap</span>
       </button>
     </div>
+    <section id="grid3-limits" class="provider-limits" aria-labelledby="grid3-limits-heading" hidden>
+      <h3 id="grid3-limits-heading">What Grid 3 editing does</h3>
+      <ul id="grid3-can" class="limits-can"></ul>
+      <p class="field-hint" id="grid3-cannot-lead">Not yet, on any grid:</p>
+      <ul id="grid3-cannot" class="limits-cannot"></ul>
+    </section>
+
     <p id="live-status" class="status-line" role="status" aria-live="polite"></p>
     <div id="connection-error" class="alert connection-error" role="alert" tabindex="-1" hidden>
       <strong>AAC Editor couldn’t reach TD Snap. Nothing was changed.</strong>
+      <p id="connection-detail" class="connection-detail" hidden></p>
       <div class="connection-error-actions">
         <button type="button" id="connection-retry" class="btn btn-primary">Try again</button>
         <button type="button" id="connection-help-btn" class="btn btn-secondary">Connection help</button>
