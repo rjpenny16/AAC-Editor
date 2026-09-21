@@ -48,6 +48,12 @@ file starts tracking changes in detail from 2.2.0 onward.
 - Renaming a cell whose spoken text differs from its label keeps that text; "Same as cell
   label" is never switched on programmatically, because doing so copies the spoken text
   onto the label.
+- Measured against Super Core 50 as well as Fireworks: Grid 3 draws a workspace such as the
+  chat bar as something other than a cell control, so only cells AAC Editor could act on —
+  blanks and plain speaking cells — must be exposed; a locked cell may be absent. Write cells
+  are created through the Create Cell dialog rather than a keyboard shortcut, undo goes
+  through the ribbon's own Undo button, Finish Editing is the fallback when F11 is ignored,
+  and a minimised Grid 3 is restored before anything is typed.
 
 ## [2.3.0] - 2026-09-16
 

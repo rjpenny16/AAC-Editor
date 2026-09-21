@@ -281,6 +281,9 @@ def test_cell_kinds_lock_everything_but_plain_write_cells(grid_root):
     assert described["editable"] and described["message"] == "hello"
     locked = grid3._describe_cell(grid.cell_at(3, 1), 7)
     assert not locked["editable"] and "opens another grid" in locked["locked_reason"]
+    # Only cells AAC Editor could act on must be exposed as controls; Grid 3
+    # draws workspaces and word lists as other things (Super Core's chat bar).
+    assert grid3._positions(grid) == {(0, 0), (1, 0), (0, 2), (3, 2)}
 
 
 def test_duplicate_and_invalid_target_validation_happens_before_automation(grid_root, monkeypatch):

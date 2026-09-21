@@ -14,6 +14,7 @@ import hashlib
 import os
 import re
 import sys
+import time
 import zipfile
 from ctypes import wintypes
 from dataclasses import dataclass
@@ -571,13 +572,20 @@ _EDITOR_WALK_DEPTH = 8  # Edit Mode's cells sit 3 levels down, ribbon buttons 4
 
 
 def _positions(grid: Grid3Grid) -> set[tuple[int, int]]:
-    return {(cell.x, cell.y) for cell in grid.cells}
+    """The cells AAC Editor could act on: safe blanks and plain speaking cells.
+
+    A locked cell — a workspace such as the chat bar, a word list, a jump —
+    may be drawn by Grid 3 as something other than a cell control; nothing
+    here ever selects one, so its absence from the tree is not a failure.
+    """
+    return {
+        (cell.x, cell.y) for cell in grid.cells
+        if cell.safe_blank or _cell_kind(cell) == "speak"
+    }
 
 
-def _live_cells(
-    window, positions, editing: bool = False,
-) -> dict[tuple[int, int], _LiveCell]:
-    """Map every (x, y) in *positions* to its accessible control, or fail closed."""
+def _find_cells(window, editing: bool = False) -> dict[tuple[int, int], _LiveCell]:
+    """Every cell control the window exposes, by its Grid 3 coordinates."""
     pattern = _EDITOR_CELL_ID if editing else _VIEWER_CELL_ID
     depth = _EDITOR_WALK_DEPTH if editing else _VIEWER_WALK_DEPTH
     found: dict[tuple[int, int], _LiveCell] = {}
@@ -588,12 +596,20 @@ def _live_cells(
         rect = _rect(control)
         if rect is not None:
             found[(int(match[1]), int(match[2]))] = _LiveCell(control, rect)
+    return found
+
+
+def _live_cells(
+    window, positions, editing: bool = False,
+) -> dict[tuple[int, int], _LiveCell]:
+    """Map every (x, y) in *positions* to its accessible control, or fail closed."""
+    found = _find_cells(window, editing)
     wanted = set(positions)
     missing = wanted - set(found)
-    if missing or not wanted:
+    if missing:
         raise PagesetError(
-            "Grid 3 did not expose an accessible control for every cell of this grid "
-            f"({len(missing)} of {len(wanted)} missing"
+            "Grid 3 did not expose an accessible control for every cell AAC Editor "
+            f"could edit on this grid ({len(missing)} of {len(wanted)} missing"
             f"{' in Edit Mode' if editing else ''}). "
             "AAC Editor will not use unverified screen coordinates."
         )
@@ -704,7 +720,8 @@ def inspect_page() -> dict:
     if not is_elevated():
         raise PagesetError("Restart AAC Editor with administrator access for Grid 3.")
     _auto, window, active, grid = _active_context()
-    live = _live_cells(window, _positions(grid))
+    _live_cells(window, _positions(grid))  # every editable cell must be exposed
+    live = _find_cells(window)
     live_rects = [item.rect for item in live.values()]
     grid_left = min(rect.left for rect in live_rects)
     grid_top = min(rect.top for rect in live_rects)
@@ -716,7 +733,8 @@ def inspect_page() -> dict:
     free_slots = []
     buttons = []
     for cell in grid.cells:
-        rect = live[(cell.x, cell.y)].rect
+        control = live.get((cell.x, cell.y))
+        rect = control.rect if control else None
         slot = cell.y * grid.cols + cell.x
         if cell.safe_blank:
             free_slots.append(slot)
@@ -731,12 +749,12 @@ def inspect_page() -> dict:
                 "key": cell.style.key, "background": cell.style.background,
                 "border": cell.style.border, "foreground": cell.style.foreground,
             },
-            "rect": {
+            "rect": ({
                 "left": (rect.left - grid_left) / grid_width,
                 "top": (rect.top - grid_top) / grid_height,
                 "width": (rect.right - rect.left) / grid_width,
                 "height": (rect.bottom - rect.top) / grid_height,
-            },
+            } if rect else None),
         })
     return {
         "supported": True,
@@ -780,6 +798,13 @@ def _require_grid3_foreground(auto) -> None:
     window = _window(auto)
     if _foreground_process_id() == getattr(window, "ProcessId", -1):
         return
+    handle = getattr(window, "NativeWindowHandle", 0)
+    if handle:
+        # A minimised window never takes focus; restore it first.
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        if user32.IsIconic(handle):
+            user32.ShowWindow(handle, 9)  # SW_RESTORE
+            time.sleep(0.3)
     with contextlib.suppress(PagesetError):
         _focus_window(window)
     if _foreground_process_id() != getattr(window, "ProcessId", -1):
@@ -843,14 +868,23 @@ def _require_normal_mode(window) -> None:
         raise PagesetError("Finish the existing Grid 3 Edit Mode session, then reconnect.")
 
 
+try:
+    from _ctypes import COMError as _COMError
+except ImportError:  # pragma: no cover - not Windows
+    class _COMError(Exception):
+        pass
+
+
+# Grid 3's callbacks read a grid-set package mid-edit, which can raise the
+# file errors transiently while Grid 3 is still writing; and a control read
+# while Grid 3 swaps its viewer and editor windows raises a COM error. TD
+# Snap's callbacks only ever touch a stable control tree, so this list is
+# Grid 3-specific rather than something tdsnap/uia.py hard-codes.
+_TRANSIENT = (OSError, zipfile.BadZipFile, KeyError, _COMError)
+
+
 def _wait_for(callback, message, timeout=uia.WAIT_DEFAULT_TIMEOUT):
-    # Grid 3's callbacks read a grid-set package mid-edit, which can raise
-    # these transiently while Grid 3 is still writing the file; TD Snap's
-    # callbacks only ever touch the live control tree, so this ignore list
-    # is Grid 3-specific rather than something tdsnap/uia.py hard-codes.
-    return uia.wait_for(
-        callback, message, timeout, ignore=(OSError, zipfile.BadZipFile, KeyError)
-    )
+    return uia.wait_for(callback, message, timeout, ignore=_TRANSIENT)
 
 
 def _title_of(auto) -> str:
@@ -889,21 +923,27 @@ def _enter_edit_mode(auto, window, active):
     return editor
 
 
+def _viewer_back(auto):
+    window = _window(auto)
+    if _find_named(window, "Finish Editing") or not (window.Name or "").startswith("Grid 3 - "):
+        return None
+    return window
+
+
 def _leave_edit_mode(auto) -> None:
     # Best effort: by the time this runs the edit is either verified or
-    # rolled back, and a foreground refusal here must not hide that outcome.
+    # rolled back, and a refusal here must not hide that outcome. F11 is
+    # ignored while focus sits in the sidebar (after Follow Jump, say), so
+    # the ribbon's own Finish Editing button is the fallback.
     with contextlib.suppress(PagesetError):
         _send(auto, "{F11}")
-    # The viewer takes a moment to come back; the edit itself is already
-    # verified by now, so not seeing it return is not a failure of the edit.
+        _wait_for(lambda: _viewer_back(auto), "", timeout=3)
+        return
     with contextlib.suppress(PagesetError):
-        _wait_for(
-            lambda: (
-                not _find_named(window := _window(auto), "Finish Editing")
-                and (window.Name or "").startswith("Grid 3 - ")
-            ) or None,
-            "", timeout=5,
-        )
+        finish = _find_named(_window(auto), "Finish Editing", "ButtonControl")
+        if finish is not None:
+            _activate(finish)
+        _wait_for(lambda: _viewer_back(auto), "", timeout=5)
 
 
 def _ribbon_button(editor, name: str):
@@ -976,13 +1016,23 @@ _UNSAVED_LEFT = (
 )
 
 
+def _undo_once(auto) -> None:
+    """One step back through Grid 3's own Undo button; Ctrl+Z only if it is missing."""
+    undo = _find_named(_window(auto), "Undo", "ButtonControl")
+    if undo is not None:
+        _activate(undo)
+        time.sleep(0.12)
+    else:
+        _send(auto, "{Ctrl}z", wait=0.12)
+
+
 def _restore_unsaved(auto, maximum: int) -> None:
     """Undo only until Grid 3 reports the originally clean document again."""
     try:
         for _ in range(maximum + 3):
             if not _dirty(auto):
                 return
-            _send(auto, "{Ctrl}z", wait=0.12)
+            _undo_once(auto)
     except PagesetError as exc:
         raise PagesetError(str(exc) + _UNSAVED_LEFT) from exc
     raise PagesetError("Grid 3 could not restore the clean pre-edit state." + _UNSAVED_LEFT)
@@ -996,7 +1046,7 @@ def _save(auto) -> None:
 def _rollback_saved(auto, restored, maximum: int) -> None:
     """Undo and save one history step at a time, stopping exactly when *restored()*."""
     for _ in range(maximum):
-        _send(auto, "{Ctrl}z", wait=0.1)
+        _undo_once(auto)
         _send(auto, "{Ctrl}s", wait=0.35)
         _wait_for(
             lambda: not _dirty(auto), "Grid 3 did not finish saving the rollback.", timeout=4,
@@ -1011,20 +1061,28 @@ def _rollback_saved(auto, restored, maximum: int) -> None:
 
 def _label_cell(auto, editor, label: str) -> None:
     """Rename the selected cell through Change Label's inline editor."""
+    # The inline editor only takes keyboard focus while Grid 3 is in front,
+    # so this is settled before the editor is opened, not after.
+    _require_grid3_foreground(auto)
     toggle = _ribbon_button(editor, "Change Label")
     pattern = getattr(toggle, "GetTogglePattern", lambda: None)()
-    # Ctrl+W opens the label editor by itself; pressing Change Label again
-    # would close it, so only open it when it is off.
+
+    def editor_focused() -> bool:
+        return getattr(auto.GetFocusedControl(), "ControlTypeName", "") == "EditControl"
+
+    # A fresh Write cell already has its label editor open — but when the
+    # Create Cell dialog has just closed, nothing in the window holds the
+    # keyboard, so the editor is closed and reopened to give it focus.
     if pattern is None:
         _activate(toggle)
+    elif pattern.ToggleState == 1 and not editor_focused():
+        pattern.Toggle()
+        time.sleep(0.2)
+        pattern.Toggle()
     elif pattern.ToggleState != 1:
         pattern.Toggle()
-    # The label editor only exists once it has focus; typing any earlier lands
-    # in whichever control had it before.
-    _wait_for(
-        lambda: getattr(auto.GetFocusedControl(), "ControlTypeName", "") == "EditControl",
-        "Grid 3's label editor did not take focus.",
-    )
+    # Typing any earlier lands in whichever control had focus before.
+    _wait_for(editor_focused, "Grid 3's label editor did not take focus.")
     _send(auto, "{Ctrl}a", wait=0.05)
     _send_text(auto, label)
     _send(auto, "{Enter}")
@@ -1127,9 +1185,35 @@ def _try_symbol(auto, editor, label: str) -> bool:
     return tile is not None
 
 
+def _create_cell(auto, editor, kind: str):
+    """Give the selected blank a command through Grid 3's Create Cell dialog.
+
+    Returns the dialog for callers that go on to a second page (Jump to);
+    for a one-page choice such as Write the dialog has closed by then.
+    """
+    _activate(_wait_for(
+        lambda: _button_by_text(editor, "Create Cell", depth=6),
+        "Grid 3's Create Cell control was not accessible.",
+    ))
+    dialog = _wait_for(
+        lambda: _dialog(auto, "Create Cell"), "Grid 3's Create Cell dialog did not open."
+    )
+    _activate(_wait_for(
+        lambda: _find_id(dialog, kind), f"Grid 3's {kind} cell type was not accessible."
+    ))
+    _activate(_wait_for(
+        lambda: _find_id(dialog, "OKButton", 6), "Grid 3's OK control was not accessible."
+    ))
+    return dialog
+
+
 def _write_cell(auto, editor, item: dict) -> tuple[int, int]:
     """Turn the selected blank into a Write cell; returns (undo steps, symbols)."""
-    _send(auto, "{Ctrl}w")
+    _create_cell(auto, editor, "Write")
+    _wait_for(
+        lambda: _dialog(auto, "Create Cell") is None and _find_named(editor, "Write"),
+        "Grid 3 did not expose the new Write command.",
+    )
     steps = 1
     _label_cell(auto, editor, item["label"])
     steps += 1
@@ -1197,10 +1281,10 @@ def probe_accessibility() -> dict:
     try:
         live = _live_cells(editor, _positions(grid), editing=True)
         _select_cell(editor, (blank.x, blank.y))
-        _send(auto, "{Ctrl}w")
+        _create_cell(auto, editor, "Write")
         undo_steps += 1
         _wait_for(
-            lambda: _find_named(editor, "Write"),
+            lambda: _dialog(auto, "Create Cell") is None and _find_named(editor, "Write"),
             "Grid 3 did not expose the provisional Write command.",
         )
         _label_cell(auto, editor, probe_label)
@@ -1648,19 +1732,7 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
     try:
         _live_cells(editor, positions, editing=True)  # every reviewed cell must be exposed
         _select_cell(editor, (link.x, link.y))
-        _activate(_wait_for(
-            lambda: _button_by_text(editor, "Create Cell", depth=6),
-            "Grid 3's Create Cell control was not accessible.",
-        ))
-        dialog = _wait_for(
-            lambda: _dialog(auto, "Create Cell"), "Grid 3's Create Cell dialog did not open."
-        )
-        _activate(_wait_for(
-            lambda: _find_id(dialog, "Jump to"), "Grid 3's Jump to cell type was not accessible."
-        ))
-        _activate(_wait_for(
-            lambda: _find_id(dialog, "OKButton", 6), "Grid 3's OK control was not accessible."
-        ))
+        dialog = _create_cell(auto, editor, "Jump to")
         # The Jump to page draws a thumbnail of every grid in the set before
         # its buttons respond, which on a large set takes well over the
         # usual wait.
@@ -1697,7 +1769,7 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
             "Grid 3 did not open the new grid for editing.",
         )
         editor = _window(auto)
-        _live_cells(editor, new_positions, editing=True)  # the new grid, fully exposed
+        _live_cells(editor, new_positions - {(0, 0)}, editing=True)  # every blank exposed
         for item in normalized:
             _select_cell(editor, _at(grid, item["slot"]))
             steps, found = _write_cell(auto, editor, item)
