@@ -13,6 +13,17 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ### Added
 
+- **Open Board Format interchange (Phase 9).** **More options → Import a board (.obf/.obz)**
+  reads a board or board set and brings one board's buttons — labels, spoken text, function
+  colours, and layout where the grid matches — into the page being built, through the same
+  review as typed words. Buttons that open other boards are named so those boards can be
+  imported as pages and linked; hidden, keyboard-action and repeated buttons are counted, not
+  dropped. **Export the page set as .obz** downloads every page of the open TD Snap page set,
+  or of an exported file being edited, with the home page as root and every link kept.
+  Symbols travel in neither direction, and the README and the exported boards both say so.
+  `tdsnap/obf.py` is pure Python; twelve seeded round trips and the real page-set fixture pin
+  that labels, messages, layout, functions and links survive import → export → import.
+
 - **Grid 3 parity (Phase 10).** The grid open in Grid 3 can now be edited the way a TD Snap
   page can: change, move, and remove existing speaking cells, undo the last change, and
   create a new grid linked from the open one — the Grid 3 analogue of a topic page. Every

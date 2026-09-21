@@ -531,7 +531,7 @@ honestly labelled English-only · duplicate detection and phrase classification 
 
 ---
 
-## Phase 9 — Interchange: OBF / OBZ *(~3–4 weeks)*
+## Phase 9 — Interchange: OBF / OBZ *(~3–4 weeks)* — **shipped**
 
 The highest-leverage reach work, and the only major feature in this roadmap that is pure Python,
 cross-platform, and fully testable without a Windows VM.
@@ -550,6 +550,22 @@ cross-platform, and fully testable without a Windows VM.
 
 **Exit:** a CoughDrop `.obz` imports into a TD Snap page set through the normal review flow · a page
 set exports to `.obz` and re-imports without losing labels, messages, layout, or links.
+
+**Shipped (2026-09-21).** `tdsnap/obf.py` reads `.obf`/`.obz` (manifest root and paths, links by id
+or path, path-traversal ignored, size and count bounds) into the page shape the items step already
+takes, and writes a page set — every vocabulary page, home first, links as `load_board` — as an
+`.obz`. `POST /api/obf/import`, `GET /api/pageset/<session>/obz`, `GET /api/tdsnap/obz`. The
+importer dialog offers one board at a time and names the buttons that open other boards; export is
+a plain download. `obf.py` sits at 94% coverage; the round trip is pinned by twelve seeded random
+page sets and by the real fixture (226 pages, 3,068 buttons, 426 links).
+
+Scoped down, and said so: a multi-board `.obz` does **not** become a set of linked pages in one
+step. Each board goes through the wizard as its own page, and the link back is the ordinary
+"create a new page, found from …" step; the dialog names which buttons need that. Doing it in one
+write would mean a second, multi-page write path outside the review flow, which is exactly what
+the rules forbid. Navigation buttons on import are therefore listed, not created; on export they
+are written faithfully. Reading keeps one button per label on a page, so a page that genuinely
+repeats a label reads back with one — the same rule that keeps ambiguous buttons out of editing.
 
 ---
 

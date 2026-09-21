@@ -4198,3 +4198,88 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
     expect(await blockingViolations(page)).toEqual([]);
   });
 });
+
+/* Open Board Format: a board's buttons arrive like typed words and go through
+ * the same review; the page set leaves as an .obz download. Symbols travel in
+ * neither direction, and the dialog says so before anything is added. */
+test.describe('Open Board Format interchange', () => {
+  const imported = {
+    ok: true,
+    filename: 'snacks.obz',
+    root: 0,
+    warnings: ['1 button on “Snacks” could not be imported (hidden, unlabelled, repeated, or a keyboard action).'],
+    pages: [
+      {
+        title: 'Snacks', grid: { cols: 3, rows: 2 }, skipped: 1,
+        items: [
+          { label: 'apple', message: null, slot: 0, function: null },
+          { label: 'crisps', message: 'crisps please', slot: 1, function: null },
+          { label: 'hello', message: null, slot: 2, function: null },
+        ],
+        links: [{ slot: 3, label: 'Drinks', board: 1 }],
+      },
+      {
+        title: 'Drinks', grid: { cols: 3, rows: 2 }, skipped: 0,
+        items: [{ label: 'water', message: null, slot: 0, function: null }],
+        links: [],
+      },
+    ],
+  };
+
+  test('a board set asks which board, names what is skipped, and adds the rest', async ({ page }) => {
+    await mockTD(page, {
+      layout: defaultLayout('Eating', {
+        buttons: [{ slot: 5, label: 'hello' }], free_slots: [0, 1, 2, 3, 4],
+      }),
+    });
+    await page.route('**/api/obf/import', (route) => fulfillJson(route, imported));
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#import-board-file').setInputFiles({
+      name: 'snacks.obz', mimeType: 'application/zip', buffer: Buffer.from('PK fake'),
+    });
+    const dialog = page.locator('#board-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(page.locator('#board-dialog-title')).toHaveText('Which board from snacks.obz?');
+    await expect(page.locator('#board-picker')).toHaveValue('0');
+    const summary = page.locator('#board-summary');
+    // "hello" is already on the mocked page, so it is named and skipped.
+    await expect(summary).toContainText('2 buttons will be added from “Snacks”');
+    await expect(summary).toContainText('Already here, so skipped: hello');
+    await expect(summary).toContainText('1 button opens other boards (Drinks)');
+    await expect(summary).toContainText('could not be imported');
+
+    await page.locator('#board-picker').selectOption('1');
+    await expect(summary).toContainText('1 button will be added from “Drinks”');
+    await page.locator('#board-picker').selectOption('0');
+    await page.locator('#board-add-btn').click();
+    await expect(dialog).toBeHidden();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#chipbox')).toContainText('apple');
+    await expect(page.locator('#chipbox')).toContainText('crisps');
+  });
+
+  test('an unreadable board says so instead of adding nothing silently', async ({ page }) => {
+    await mockTD(page);
+    await page.route('**/api/obf/import', (route) => route.fulfill({
+      status: 400, contentType: 'application/json',
+      body: JSON.stringify({ ok: false, error: "'x.obf' is not an Open Board Format JSON file." }),
+    }));
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    await page.locator('#import-board-file').setInputFiles({
+      name: 'x.obf', mimeType: 'application/json', buffer: Buffer.from('nope'),
+    });
+    await expect(page.locator('#board-error')).toContainText('not an Open Board Format');
+    await expect(page.locator('#board-add-btn')).toBeDisabled();
+  });
+
+  test('the export link points at the open page set, and only where one exists', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('.more-options > summary').click();
+    const link = page.locator('#export-obz-link');
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', /\/api\/tdsnap\/obz\?page=/);
+  });
+});

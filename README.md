@@ -59,6 +59,10 @@ so on the Grid 3 screen rather than leaving you to work it out.
   person — one topic page built once, used across a caseload.
 - Queues several pages, reviews them as one list, and applies them in one go,
   reporting what happened to every page including any it did not attempt.
+- Imports an Open Board Format board (`.obf`) or board set (`.obz`) — the
+  interchange format CoughDrop and other AAC tools write — one board at a time,
+  through the same review as typed words; and exports the whole open page set
+  as an `.obz`, links included, so the work is not locked to one vendor.
 - Rejects duplicates, checks capacity, and never touches a button the review
   step did not name. A word that already exists elsewhere in the page set is
   pointed out but never blocked.
@@ -198,6 +202,30 @@ Keep Windows unlocked while an edit runs. The live editor is Windows-only and
 depends on the current TD Snap interface. The exported-file fallback is
 validated against a genuine TD Snap 4.13 export; see
 [Importing edited page sets safely](docs/IMPORT_SAFETY.md) before using it.
+
+### Open Board Format
+
+**More options → Import a board (.obf/.obz)** reads an Open Board Format
+board, or a board set, and offers one board at a time. Its buttons join the
+page you are building with their labels, spoken text, and function colours;
+a board the same size as the page keeps its layout where the cells are free,
+and anything else takes the first open spaces, exactly as typed words do.
+Buttons that open another board are named rather than added: import each of
+those boards as its own page, then link it from the page that referred to it.
+Hidden buttons, keyboard actions, and repeated labels are counted and named,
+not silently dropped.
+
+**More options → Export the page set as .obz** downloads every page of the
+page set open in TD Snap, or of the exported file you are editing, as one
+board set with the home page as its root and every page-to-page link kept.
+Grid 3 grid sets are not exported: Grid 3 has no page set file this app reads
+whole.
+
+**Symbols travel in neither direction.** OBF refers to pictures by file or
+URL; TD Snap's symbols are licensed content that cannot leave the page set,
+and AAC Editor writes no images. Labels, spoken text, layout, function
+colours and links round-trip; pictures do not, and the exported boards say
+so in their description.
 
 ## Python and command-line use
 

@@ -1165,3 +1165,54 @@ def test_a_label_is_listed_once_per_page_however_often_it_appears(seeded_pageset
     labels = pageset.labels_by_page(ps.conn)
 
     assert labels["more"] == ["Home Page"]
+
+
+def test_obf_import_reads_boards_and_obz_export_covers_a_file_session(client, seeded_source):
+    import io
+    import json
+    import zipfile
+
+    from tdsnap import obf
+
+    board = {
+        "format": "open-board-0.1", "id": "snacks", "name": "Snacks",
+        "buttons": [{"id": "1", "label": "apple"}, {"id": "2", "label": "juice", "vocalization": "juice please"}],
+        "grid": {"rows": 1, "columns": 2, "order": [["1", "2"]]},
+    }
+    raw = json.dumps(board).encode("utf-8")
+    assert client.post("/api/obf/import", data={"file": (io.BytesIO(raw), "snacks.obf")}).status_code == 403
+    response = client.post(
+        "/api/obf/import", data={"file": (io.BytesIO(raw), "snacks.obf")}, headers=token_headers(),
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["filename"] == "snacks.obf" and body["root"] == 0
+    assert body["pages"][0]["items"][1] == {
+        "label": "juice", "message": "juice please", "slot": 1, "function": None,
+    }
+    bad = client.post(
+        "/api/obf/import", data={"file": (io.BytesIO(b"nope"), "x.obf")}, headers=token_headers(),
+    )
+    assert bad.status_code == 400 and "Open Board Format" in bad.get_json()["error"]
+
+    session_id = upload(client, seeded_source).get_json()["session_id"]
+    exported = client.get(f"/api/pageset/{session_id}/obz")
+    assert exported.status_code == 200
+    assert exported.headers["Content-Disposition"].endswith('filename=test.obz')
+    with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["format"] == "open-board-0.1"
+    again = obf.read(exported.data)
+    assert [page["title"] for page in again["pages"]] == ["Home Page", "Food"]
+    assert again["pages"][0]["links"] == [{"slot": 1, "label": "Food", "board": 1}]
+
+
+def test_live_obz_export_reads_the_open_page_set_or_says_why_not(client, seeded_source, monkeypatch):
+    monkeypatch.setattr(server.live, "_active_pageset_path", lambda page=None, labels=(): None)
+    refused = client.get("/api/tdsnap/obz")
+    assert refused.status_code == 400
+    assert "could not tell which TD Snap page set" in refused.get_json()["error"]
+    monkeypatch.setattr(server.live, "_active_pageset_path", lambda page=None, labels=(): seeded_source)
+    exported = client.get("/api/tdsnap/obz?page=Home%20Page")
+    assert exported.status_code == 200
+    assert exported.headers["Content-Disposition"].endswith('filename="Test Set.obz"')

@@ -51,3 +51,14 @@ def is_allowed_border_color(value: int) -> bool:
     """True when *value* (a signed ARGB int) is one of the five clinical
     function-border colors — the only button borders the product writes."""
     return value in ALLOWED_BORDER_ARGB
+
+
+def function_for_hex(value):
+    """Name the function a '#RRGGBB' border stands for, or None for any other colour."""
+    wanted = (value or "").strip().casefold()
+    if not wanted:
+        return None
+    for name, color in FUNCTION_BORDER_COLORS.items():
+        if color.casefold() == wanted:
+            return name
+    return None
