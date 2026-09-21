@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d1626" media="(prefers-color-scheme: dark)">
 <title>AAC Editor</title>
+<link rel="icon" href="/static/assets/aac-editor-logo.png">
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -92,9 +93,17 @@
         <span class="btn-label">Use the page open in TD Snap</span>
       </button>
     </div>
+    <section id="grid3-limits" class="provider-limits" aria-labelledby="grid3-limits-heading" hidden>
+      <h3 id="grid3-limits-heading">What Grid 3 editing does</h3>
+      <ul id="grid3-can" class="limits-can"></ul>
+      <p class="field-hint" id="grid3-cannot-lead">Not yet, on any grid:</p>
+      <ul id="grid3-cannot" class="limits-cannot"></ul>
+    </section>
+
     <p id="live-status" class="status-line" role="status" aria-live="polite"></p>
     <div id="connection-error" class="alert connection-error" role="alert" tabindex="-1" hidden>
       <strong>AAC Editor couldn’t reach TD Snap. Nothing was changed.</strong>
+      <p id="connection-detail" class="connection-detail" hidden></p>
       <div class="connection-error-actions">
         <button type="button" id="connection-retry" class="btn btn-primary">Try again</button>
         <button type="button" id="connection-help-btn" class="btn btn-secondary">Connection help</button>
@@ -246,6 +255,116 @@
           <p id="items-error" class="step-error" data-error-for="items" role="alert" tabindex="-1" hidden></p>
         </div>
 
+
+        <section id="ai-panel" class="ai-panel" data-ai-state="checking" aria-labelledby="ai-panel-heading">
+          <div class="ai-head">
+            <h3 id="ai-panel-heading">Stuck for ideas?</h3>
+            <span id="ai-state-pill" class="ai-pill">Checking…</span>
+          </div>
+          <p id="ai-summary" class="ai-summary" role="status" aria-live="polite">Checking whether suggestions are ready on this computer…</p>
+          <p id="ai-detail" class="field-hint"></p>
+
+          <div id="ai-stage-setup" class="ai-stage" hidden>
+            <div class="field" id="ai-model-choice-row" hidden>
+              <label for="ai-model-choice">Which model</label>
+              <select id="ai-model-choice"></select>
+              <p id="ai-model-choice-note" class="field-hint"></p>
+            </div>
+            <p class="field-hint ai-model-line"><span id="ai-model-name"></span> · <span id="ai-model-size"></span> · <span id="ai-model-license"></span></p>
+            <div class="ai-actions">
+              <button type="button" id="ai-download-btn" class="btn btn-primary"><span class="btn-label">Set up suggestions</span></button>
+              <button type="button" id="ai-ollama-btn" class="text-button">I already use Ollama</button>
+            </div>
+            <p id="ai-download-status" class="status-line" role="status" aria-live="polite"></p>
+          </div>
+
+          <div id="ai-stage-downloading" class="ai-stage" hidden>
+            <div class="download-progress" id="ai-progress" role="progressbar" aria-label="Suggestion setup progress" aria-valuemin="0" aria-valuemax="100"><div id="ai-progress-fill"></div></div>
+            <p id="ai-progress-text" class="field-hint" role="status" aria-live="polite">Starting…</p>
+          </div>
+
+          <div id="ai-stage-ready" class="ai-stage" hidden>
+            <div class="ai-ask">
+              <label for="ai-count">How many</label>
+              <input id="ai-count" type="number" min="1" max="40" value="10" inputmode="numeric">
+              <button type="button" id="ai-go" class="btn btn-primary"><span class="btn-label" id="ai-go-label">Suggest words</span></button>
+            </div>
+          </div>
+
+          <div id="ai-stage-blocked" class="ai-stage" hidden>
+            <div class="ai-actions">
+              <button type="button" id="ai-recheck-btn" class="btn btn-secondary"><span class="btn-label">Check again</span></button>
+              <button type="button" id="ai-ollama-btn-alt" class="text-button">Ollama setup steps</button>
+            </div>
+          </div>
+
+          <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
+
+          <section id="ai-tray" class="ai-tray" aria-labelledby="ai-tray-heading" hidden>
+            <div class="ai-tray-head">
+              <h4 id="ai-tray-heading">Suggestions</h4>
+              <p id="ai-tray-note" class="field-hint">Keep the ones you want. Nothing reaches your page until you do.</p>
+            </div>
+            <div id="ai-tray-list" class="ai-tray-list"></div>
+            <div class="ai-tray-actions">
+              <button type="button" id="ai-tray-keep-all" class="btn btn-secondary btn-compact">Keep all</button>
+              <button type="button" id="ai-tray-more" class="btn btn-ghost btn-compact"><span class="btn-label">Suggest more</span></button>
+              <button type="button" id="ai-tray-clear" class="btn btn-ghost btn-compact">Discard all</button>
+            </div>
+          </section>
+
+          <div id="ai-grounding-source" class="ai-grounding-source" hidden>
+            <p>Reference article used: <a id="ai-grounding-link" href="https://en.wikipedia.org" target="_blank" rel="noopener noreferrer"></a></p>
+            <div class="ai-grounding-pick">
+              <label for="ai-grounding-pick">Wrong article?</label>
+              <select id="ai-grounding-pick"></select>
+            </div>
+            <p id="ai-grounding-note" class="field-hint" role="status" aria-live="polite"></p>
+          </div>
+
+          <details id="ai-options" class="ai-options">
+            <summary>Suggestion settings</summary>
+            <div class="ai-options-body">
+              <label class="ai-grounding-option" for="ai-style">
+                <input id="ai-style" type="checkbox" checked>
+                Match the wording style of this page set
+              </label>
+              <p class="field-hint">Sends a sample of your existing button labels to the model on this computer, so suggestions read the way your page set already reads. Never sent anywhere else.</p>
+              <label class="ai-grounding-option" for="ai-grounding">
+                <input id="ai-grounding" type="checkbox">
+                Look up public reference facts on Wikipedia
+              </label>
+              <p class="field-hint">Off by default. When enabled, AAC Editor sends only this page title to Wikipedia for this request — never your button labels.</p>
+              <div class="field">
+                <label for="ai-engine">Where suggestions come from</label>
+                <select id="ai-engine">
+                  <option value="auto">Whichever is ready</option>
+                  <option value="local">The built-in model on this computer</option>
+                  <option value="ollama">My own Ollama server</option>
+                </select>
+              </div>
+              <details id="ai-advanced" class="ai-advanced">
+                <summary id="ai-advanced-summary">Ollama settings</summary>
+                <p class="field-hint">Only needed if you already run <a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">Ollama</a> and would rather use one of its models. The built-in model needs none of this.</p>
+                <ol class="ai-setup-steps">
+                  <li>Install and open Ollama.</li>
+                  <li>In PowerShell or Terminal, run <code>ollama pull llama3.2</code>.</li>
+                  <li>Leave Ollama running, then select <strong>Check connection</strong>.</li>
+                </ol>
+                <div class="ai-settings">
+                  <label for="ai-host">Ollama address</label>
+                  <input id="ai-host" type="text" value="http://localhost:11434">
+                  <label for="ai-model">Model name</label>
+                  <input id="ai-model" type="text" list="ai-model-options" value="llama3.2" autocomplete="off">
+                  <datalist id="ai-model-options"></datalist>
+                  <p id="ai-model-hint" class="field-hint">Models you have installed appear in this list.</p>
+                </div>
+                <button type="button" id="ai-check-btn" class="btn btn-ghost"><span class="btn-label">Check connection</span></button>
+              </details>
+            </div>
+          </details>
+        </section>
+
         <section id="queue-banner" class="queue-banner" aria-labelledby="queue-heading" hidden>
           <h3 id="queue-heading">Pages waiting to be applied</h3>
           <ul id="queue-list" class="queue-list"></ul>
@@ -260,66 +379,6 @@
             <button type="button" id="layout-options-btn" class="btn btn-secondary">Change page layout</button>
             <button type="button" id="import-list-btn" class="btn btn-secondary">Import a word list</button>
             <button type="button" id="templates-btn" class="btn btn-secondary">Templates</button>
-
-            <details class="ai-suggest" id="ai-suggest">
-              <summary><span id="ai-summary-text">Help me think of words</span> <span class="optional-tag">Optional · local by default</span></summary>
-              <div class="ai-body">
-                <p>Suggestions run on this computer. Nothing is required to finish your edit.</p>
-                <label class="ai-grounding-option" for="ai-style">
-                  <input id="ai-style" type="checkbox" checked>
-                  Match the wording style of this page set
-                </label>
-                <p class="field-hint">Sends a sample of your existing button labels to the model on this computer, so suggestions read the way your page set already reads. Never sent anywhere else.</p>
-                <label class="ai-grounding-option" for="ai-grounding">
-                  <input id="ai-grounding" type="checkbox">
-                  Look up public reference facts on Wikipedia
-                </label>
-                <p class="field-hint">When enabled, AAC Editor sends only this page title to Wikipedia for this request.</p>
-                <div id="ai-grounding-source" class="ai-grounding-source" hidden>
-                  <p>Reference article used: <a id="ai-grounding-link" href="https://en.wikipedia.org" target="_blank" rel="noopener noreferrer"></a></p>
-                  <div class="ai-grounding-pick">
-                    <label for="ai-grounding-pick">Wrong article?</label>
-                    <select id="ai-grounding-pick"></select>
-                  </div>
-                  <p id="ai-grounding-note" class="field-hint" role="status" aria-live="polite"></p>
-                </div>
-                <p><strong>Status:</strong> <span id="ai-engine-state" role="status" aria-live="polite">Check when you are ready.</span></p>
-                <div id="ai-download-card" class="ai-download" hidden>
-                  <h4>Recommended: use the built-in model</h4>
-                  <p>Download the free built-in model once to use private suggestions.</p>
-                  <div class="field" id="ai-model-choice-row" hidden>
-                    <label for="ai-model-choice">Which built-in model</label>
-                    <select id="ai-model-choice"></select>
-                    <p id="ai-model-choice-note" class="field-hint"></p>
-                  </div>
-                  <p><span id="ai-model-name"></span> · <span id="ai-model-size"></span> · <span id="ai-model-license"></span></p>
-                  <button type="button" id="ai-download-btn" class="btn btn-secondary"><span class="btn-label">Download AI model</span></button>
-                  <div class="download-progress" id="ai-progress" hidden role="progressbar" aria-label="Model download progress" aria-valuemin="0" aria-valuemax="100"><div id="ai-progress-fill"></div></div>
-                  <p id="ai-download-status" class="status-line" role="status" aria-live="polite"></p>
-                </div>
-                <div class="ai-controls">
-                  <label for="ai-count">Number of suggestions</label>
-                  <input id="ai-count" type="number" min="1" max="40" value="10">
-                  <button type="button" id="ai-go" class="btn btn-secondary">Suggest words</button>
-                </div>
-                <details class="ai-advanced">
-                  <summary>Use my own Ollama model</summary>
-                  <ol class="ai-setup-steps">
-                    <li>Install and open Ollama.</li>
-                    <li>In PowerShell or Terminal, run <code>ollama pull llama3.2</code>.</li>
-                    <li>Leave Ollama running, then select <strong>Check connection</strong>.</li>
-                  </ol>
-                  <div class="ai-settings">
-                    <label for="ai-host">Ollama address</label>
-                    <input id="ai-host" type="text" value="http://localhost:11434">
-                    <label for="ai-model">Model name</label>
-                    <input id="ai-model" type="text" value="llama3.2">
-                  </div>
-                  <button type="button" id="ai-check-btn" class="btn btn-ghost">Check connection</button>
-                </details>
-                <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
-              </div>
-            </details>
           </div>
         </details>
 

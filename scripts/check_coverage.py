@@ -35,6 +35,9 @@ FLOORS = {
     # download is trusted enough to load — the same kind of consequence as the
     # write path, even though none of them touches a page set.
     "tdsnap/web/prompts.py": 95,
+    # Added with the suggestion-panel rework: this one decides which engine
+    # runs and what the user is told about it, and the two used to disagree.
+    "tdsnap/web/engines.py": 90,
     "tdsnap/web/grounding.py": 85,
     "tdsnap/web/localai.py": 75,
     # Phase 10. The Grid 3 write path; its automation half only runs on Windows

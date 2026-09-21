@@ -55,6 +55,175 @@ file starts tracking changes in detail from 2.2.0 onward.
   through the ribbon's own Undo button, Finish Editing is the fallback when F11 is ignored,
   and a minimised Grid 3 is restored before anything is typed.
 
+### Changed
+
+- **Grid 3 says what it can and cannot do before you commit to it, and every
+  gate names itself.** Grid 3 sits on the first screen beside TD Snap, which
+  does considerably more, and the narrower one only said so by failing part way
+  through. Choosing it now lists what it does and what it does not (the lists
+  themselves are Phase 10's, above: speaking cells and linked grids yes; cells
+  that jump, run commands or hold content, protected `.gridsetx` grid sets
+  including WordPower, and merged cells no). One decision decides that and the state text, in
+  `grid3.explain`, checked in the order the connect flow actually checks things
+  so a machine with no Grid 3 installed is never told about elevation instead.
+
+- **The administrator prompt explains itself.** Live Grid 3 editing asks for
+  approval on every connection, and a clinician who is not a local
+  administrator previously got "Administrator restart was cancelled." and
+  nothing else. It now says what the requirement is a property of (this build
+  being unsigned, not them or their computer), that it recurs on every connect
+  rather than once, that somebody with administrator rights has to approve it,
+  and that TD Snap editing and exported files need none of it.
+
+### Added
+
+- **A certificate is now a build flag rather than a hand edit.** `uiAccess` was
+  pinned off in four places, so the day a signature became available meant
+  editing the manifest, the verifier, a test, and CONTRIBUTING, each of which
+  throws by design. `packaging/build.ps1` picks the manifest from the signing
+  mode instead: an ordinary build embeds `aac-editor.manifest` as before, and
+  `-Sign` embeds the new `aac-editor-uiaccess.manifest`. Live Grid 3 editing
+  then reaches Grid 3 without elevating, which is what removes the
+  administrator prompt.
+
+  The guard is stronger than the one it replaces, not weaker.
+  `verify_manifest.ps1` refuses any binary that requests `uiAccess` without a
+  valid Authenticode signature, whatever it was told to expect, so an unsigned
+  build cannot ship a manifest Windows would refuse to start; signing therefore
+  runs before verification. The spec chooses from an allow-list rather than a
+  path, because the manifest decides what the process may do and an
+  environment variable naming any file would be a way to hand the app
+  privileges from outside the build.
+
+### Changed
+
+- **Suggestions are set up in one step, and nothing they produce reaches a page unasked.** The
+  feature existed and almost nobody could start it. It sat inside **More options** → *Help me think
+  of words*, checked whether it was ready only once somebody opened it, and then showed a download
+  card and a set of Ollama terminal instructions side by side with no indication which of the two
+  was for them. Clicking **Suggest words** then dropped every answer straight onto the page as
+  planned buttons, to be deleted one at a time if they were wrong.
+
+  It is now a panel in the page with its state on its face — **Ready**, **Setup needed**,
+  **Setting up…** — and the state is checked when the app opens rather than when somebody finds the
+  panel. Each state shows exactly one next step:
+
+  - **Setup needed** is one button, **Set up suggestions**, with the size of the one-time download
+    and the fact that it works offline afterwards said in plain language. The Ollama route is a
+    single link beside it, *I already use Ollama*, for the people it is actually for.
+  - **Setting up…** shows the download with a percentage and says you can keep adding words while it
+    runs. It picks the progress back up after a reload instead of looking abandoned, and a failed
+    download says what went wrong and leaves the button that retries it.
+  - **Ready** names the model the suggestions will actually come from.
+  - A build with no suggestion engine of its own says so, and offers the Ollama steps — the only
+    route it has — from a control rather than from a disclosure labelled as an advanced option.
+
+  Suggestions themselves now arrive in a tray, as candidates. Each one is kept with a click or
+  discarded with an ×; **Keep all** is the one-click equivalent of what the panel used to do on its
+  own, and keeping a round is undoable in one step. A discarded suggestion still rides on the next
+  request as "not this". Nothing is added to the page until somebody says so, which is where a bad
+  suggestion now stops.
+
+- **Which engine runs, and what the panel says about it, are now the same decision.** The endpoint
+  picked an engine and the browser described the situation separately, so the panel could read
+  "Ollama is connected, but no model is installed" while the request it would send ran the built-in
+  model instead. Both now ask `tdsnap/web/engines.py`, which returns one state, one sentence, and
+  one next step.
+
+- **The Ollama model is picked from the ones that are installed** instead of typed from memory into
+  a box that defaulted to `llama3.2` whether or not that model was there.
+
+### Added
+
+- **Where suggestions come from is a setting.** *Whichever is ready*, the built-in model, or your own
+  Ollama server. A choice that cannot run is stood in for rather than refused — somebody who chose
+  Ollama and forgot to start it gets working suggestions plus a sentence saying which model wrote
+  them — and the choice is remembered between launches.
+
+### Fixed
+
+- **Suggestions that were never usable no longer arrive as buttons.** A small model told to return
+  bare labels still answers with `1. Harry Potter`, `**Hermione**`, `Ron Weasley - his best friend`,
+  the page title echoed straight back, and the same name twice. Every one of those used to become a
+  planned button for somebody to notice and delete. Numbering, bullets, quotation marks, markdown and
+  trailing explanations are now stripped; the page title restated, an item that is really a sentence,
+  a repeat of another suggestion, anything already on the page, and anything the user rejected are
+  dropped. Both engines and the endpoint enforce it, so the guarantee holds whichever one ran and for
+  a merged answer as well as a single round.
+
+- **Asking for ten suggestions produces about ten.** Because cleaning drops items, the request to the
+  model now asks for half again as many, and an answer that comes back with fewer than half of what
+  was asked for — the case that used to read as *Added 1* — is asked once more, told what it already
+  produced. A round that still comes back short says so, rather than handing back four and leaving
+  the number unexplained.
+
+- **A long request no longer fails as "the model returned nothing".** The token budget was flat, so
+  forty phrases were cut off mid-JSON and the truncated reply failed to parse. It now scales with
+  what was asked for, and the built-in model's context window was doubled, which a grounded prompt
+  plus a long answer had been overrunning. A reply wrapped in prose or a markdown fence — which small
+  models produce often enough to matter — is now read rather than rejected.
+
+- **A button that speaks a phrase no longer fails the edit that created it.** TD Snap publishes a
+  button's spoken message as its accessibility name whenever one is set. Four places still looked a
+  button up by the label a review named it with, and so looked straight past exactly the buttons this
+  app is most often asked to edit — silently, as a "not found" indistinguishable from "that button is
+  gone":
+
+  - **Adding a word that speaks a phrase was rolled back.** After leaving edit mode the page is
+    re-read by name, and the page set on disk has not caught up with an edit made seconds earlier, so
+    the new name could not be resolved back to its label. Every such addition was reported missing
+    and the reviewed edit was undone under the user. This was the single largest source of failed
+    live edits. The re-read now accepts the spoken name the edit itself just wrote — and nothing
+    else, so a cell holding something unrelated still fails.
+  - **Removing such a button left TD Snap's confirmation dialog open.** "Is the button still there?"
+    was asked by label, the answer was always "no", and the prompt went unanswered — so the delete
+    never happened, the wait for it to disappear passed immediately, and the next step clicked into a
+    dialog that was still on screen. Removal now matches the message it was told the button holds.
+  - **A move left the moved button unverified**, because a move sets no message and the one the
+    button kept carrying was not recorded anywhere the check could see it.
+  - **Editing a page reached through a link that speaks** failed with "that button is not visible on
+    the current grid", because route steps come from the page set by label while the grid shows the
+    message.
+
+- **A locked button now says so on its face.** In the change/move/remove grid, a button AAC Editor
+  must not touch differed from one it may touch by border style alone — solid against dashed — with
+  the reason available only on hover and focus. Which buttons can be acted on is the first thing
+  anyone needs from that grid, and a pointing device is not how everyone arrives at it, so a locked
+  cell now carries a muted **locked** badge alongside the reason it already gave.
+
+- **"Change, move, or remove existing buttons" explains itself instead of disappearing.** When a page
+  set could not be read, or every button on the page opens a page or runs an action, the way in was
+  simply hidden — so a page AAC Editor cannot edit looked exactly like a build where the feature does
+  not exist. It now says which of the two it is, and that adding new buttons still works.
+
+- **A failed removal names the button the review named.** It quoted the live accessibility name,
+  which for a button that speaks a phrase is that phrase — so the error named something the user
+  never typed as a label. Resolving it cannot cost the error itself: a page repainting mid-failure
+  still reports that the removal did not happen.
+
+- **A failed edit reads as two sentences again.** The message a user sees most when an edit fails is
+  built by appending "The original page was restored." to whatever failed, and the failures that name
+  a button end on the button's own label — so it read "…in their reviewed cells: juice The original
+  page was restored.", which looks like something was cut off.
+
+- **Step headings are no longer ringed.** Each one is given focus as its step opens, so a screen
+  reader announces where the wizard went. Nothing can Tab to one, so the outline was already
+  suppressed — but the halo was not, which painted a stray blue box around the title of every screen,
+  starting with the first thing a new user sees.
+
+- **The app no longer requests a favicon it does not serve**, which put a 404 in the browser console
+  on every launch and left the tab blank. It uses the logo it already ships.
+
+- **A second TD Snap user on the same computer no longer locks editing on both.** One user per client
+  is ordinary for an SLP with a caseload, and for a family with two AAC users. Page titles do not tell
+  two page sets apart — every page set built from the same TD Snap template carries the same ones — so
+  the app could not identify either, which locked every button out of changing, moving, and removing
+  ("couldn't read this page set's saved button content"), left every spoken name unresolved in the
+  preview, and made grid geometry fall back to guesswork. The names TD Snap is publishing on the page
+  right now settle it, and they are now passed to every lookup that needs them instead of being
+  dropped. A page set written by an older TD Snap build, without a `Button.Message` column, is still
+  matched rather than silently ruled out.
+
 ## [2.3.0] - 2026-09-16
 
 The first release since 2.1.0. Everything under 2.2.0 below ships here too.

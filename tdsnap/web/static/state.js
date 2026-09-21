@@ -72,6 +72,10 @@ const state = {
   // Labels only — it never leaves this computer, and never reaches the one
   // outbound request the app can make (see the grounding note in ai.js).
   aiRejected: [],
+  // Suggestions offered but not yet decided on: [{label, suggested}]. They are
+  // candidates, not buttons — nothing here is on the page, and nothing reaches
+  // it until the user keeps it. Discarding one moves it to aiRejected above.
+  aiSuggestions: [],
   // Which Wikipedia article the last grounded suggestion actually used, plus
   // the runners-up, so the user can see it and say it is the wrong one:
   // {title, url, alternatives} or null when nothing was grounded.

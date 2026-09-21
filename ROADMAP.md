@@ -443,6 +443,38 @@ visibly match the page set's existing style · the eval set runs in CI with a re
 *met. The larger model is the one carried-forward item: the plumbing and its tests are in place, and
 the entry becomes available the moment its pin is verified, with no other change.*
 
+### Phase 6b — the part of it a beginner could reach *(shipped)*
+
+Everything above was true and almost nobody could start it. The panel was two disclosures deep
+(**More options** → *Help me think of words*), it only checked whether it was ready once somebody
+opened it, and it then showed a model download and a set of Ollama terminal commands side by side
+with nothing saying which of the two was theirs. This phase was not new capability; it was making
+the capability reachable, and holding it to the same bar as the write path.
+
+- **One state, one next step.** `tdsnap/web/engines.py` decides which engine runs and returns the
+  state, the sentence, and the action; `/api/ai/status` and `/api/ai/words` both ask it, and the
+  browser renders it. The two used to disagree — the panel could read "Ollama is connected, but no
+  model is installed" while the request ran the built-in model — because each worked the answer out
+  for itself from four booleans.
+
+- **The panel is in the page and checks on start-up.** "Is this ready?" is the first thing somebody
+  wants to know about a feature they have never used, and a panel that only finds out after you open
+  it cannot tell them.
+
+- **Nothing a model returns reaches a page unasked.** Suggestions land in a tray as candidates;
+  keeping one adds it, discarding one is remembered as "not this", **Keep all** is the one-click
+  equivalent of the old behaviour, and a kept round is undoable in one step. This is the quality gate
+  that belongs in front of a communication system, and it costs one click.
+
+- **Asking is not enforcing.** The prompt asked for bare labels; `prompts.clean_items` now makes it
+  so — numbering, bullets, quotes, markdown and trailing glosses stripped, the page title echoed
+  back dropped, repeats and anything already on the page or already rejected dropped. Because that
+  drops items, the request over-asks and a near-empty round is asked once more. Pinned by
+  `tests/test_ai_cleaning.py`, which is offline and has a failing case for every rule.
+
+**Exit:** somebody who has never used this can turn it on from the screen they are already on, and
+what a small model gets wrong stops before it becomes a button. — *met.*
+
 ---
 
 ## Phase 7 — Onboarding and experience tailoring *(~1–2 weeks)*

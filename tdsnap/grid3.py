@@ -715,6 +715,103 @@ def _describe_cell(cell: Grid3Cell, slot: int) -> dict:
         "locked_reason": None if kind == "speak" else LOCK_REASONS[kind],
     }
 
+# What live Grid 3 editing can and cannot do — the boundaries the code below
+# actually enforces, written for somebody deciding whether to start rather than
+# for somebody who already hit a wall. The app offers Grid 3 on the same screen
+# as TD Snap, which does far more, so saying this up front is the difference
+# between a narrow feature and a broken one.
+CAN_DO = (
+    "Add new words and phrases to empty single cells on the grid open in Grid 3.",
+    "Change, move, or remove a cell that just speaks — and undo that last change.",
+    "Create a new grid the size of the open one, linked from one of its empty cells.",
+)
+CANNOT_DO = (
+    "Change a cell that jumps to another grid, runs a command, or holds a word "
+    "list, picture, or app.",
+    "Open protected .gridsetx grid sets, including WordPower: Grid 3 encrypts them.",
+    "Fill or change a merged cell that spans more than one row or column.",
+    "Pick a symbol beyond the one Grid 3 captions exactly as the label.",
+)
+
+# Why administrator approval is asked for, in the terms the person in front of
+# it needs. This is a fact about how this copy was built, not about them or
+# their computer, and it is the single most common place Grid 3 stops.
+_ELEVATION_DETAIL = (
+    "This copy of AAC Editor is not code-signed, so Windows will not let it "
+    "reach Grid 3 any other way. You will be asked each time you connect, not "
+    "just once. If you are not an administrator on this computer, someone who "
+    "is has to approve it. TD Snap editing and exported files need none of this."
+)
+
+
+def explain(status: dict) -> dict:
+    """One state, one sentence, and the single next thing the user can do.
+
+    Checked in the order the connect flow actually checks things, so this never
+    describes a gate the app has not reached yet: a machine with no Grid 3
+    installed is told that and nothing about elevation.
+    """
+    status = status or {}
+    limits = {"can": list(CAN_DO), "cannot": list(CANNOT_DO)}
+
+    def report(state, summary, detail="", action=""):
+        return {
+            "state": state, "summary": summary, "detail": detail,
+            "action": action, "ready": state == "ready", "limits": limits,
+        }
+
+    if not status.get("available"):
+        return report(
+            "unsupported-platform",
+            "Grid 3 editing needs Windows.",
+            "The exported-file route works on any computer.",
+        )
+    if not status.get("installed"):
+        return report(
+            "not-installed",
+            "Grid 3 was not found on this computer.",
+            "AAC Editor looks for Grid 3 where its installer puts it. Install "
+            "Grid 3, or choose a different AAC app above.",
+            "install",
+        )
+    if status.get("needs_elevation"):
+        return report(
+            "needs-elevation",
+            "Grid 3 editing needs administrator approval.",
+            _ELEVATION_DETAIL,
+            "elevate",
+        )
+    if not status.get("running"):
+        return report(
+            "not-running",
+            "Grid 3 is not showing a grid to edit.",
+            status.get("error")
+            or "Open Grid 3 and go to the grid you want to change, then connect.",
+            "open",
+        )
+    if status.get("dirty"):
+        return report(
+            "unsaved-changes",
+            "Grid 3 has an unfinished change open.",
+            "Save or discard it in Grid 3, then connect. AAC Editor never edits "
+            "on top of a change somebody else started.",
+            "save",
+        )
+    if not status.get("unlocked"):
+        return report(
+            "locked",
+            "Windows is locked.",
+            "An edit drives the Grid 3 window, so the desktop has to stay "
+            "unlocked while it runs.",
+            "unlock",
+        )
+    page = str(status.get("page") or "").strip()
+    return report(
+        "ready",
+        f"Ready to edit “{page}”." if page else "Ready.",
+        status.get("compatibility_warning") or "",
+    )
+
 
 def inspect_page() -> dict:
     if not is_elevated():

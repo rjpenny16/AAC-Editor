@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  The signed build's manifest. Identical to aac-editor.manifest except for
+  uiAccess.
+
+  uiAccess="true" lets an accessibility client drive UI across the UIPI
+  boundary without being elevated. That is what live Grid 3 editing needs, and
+  it is why an unsigned build has to ask for administrator approval instead:
+  Windows refuses to start a uiAccess="true" executable that does not carry a
+  trusted Authenticode signature and does not live in a secure location.
+
+  So this file is only ever embedded by a signing build. packaging/build.ps1
+  selects it under -Sign, and packaging/verify_manifest.ps1 refuses any binary
+  that requests uiAccess without a valid signature, whatever it was asked to
+  expect.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity
+      type="win32"
+      name="AACEditor"
+      version="1.0.0.0"
+      processorArchitecture="*" />
+  <description>AAC Editor</description>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="true" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>

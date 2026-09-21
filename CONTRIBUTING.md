@@ -48,7 +48,14 @@ then attaches everything to a draft GitHub Release. Review the draft, then
 publish it. Exact direct build inputs live in
 `packaging/release-constraints.txt` and should be updated deliberately.
 
-The executable manifest must keep `uiAccess="false"`: Windows will not start a
-`uiAccess="true"` executable without a trusted Authenticode signature, and
-`packaging/verify_manifest.ps1` fails the build if that changes. Live Grid 3
-editing relies on the administrator restart instead.
+An unsigned build must keep `uiAccess="false"`: Windows will not start a
+`uiAccess="true"` executable without a trusted Authenticode signature. Live
+Grid 3 editing relies on the administrator restart instead, on every launch.
+
+`packaging/build.ps1` picks the manifest from the signing mode, so that stays
+true without anyone remembering it: an ordinary build embeds
+`aac-editor.manifest`, and `-Sign` embeds `aac-editor-uiaccess.manifest`.
+`packaging/verify_manifest.ps1` refuses any binary that requests `uiAccess`
+without a valid signature, whatever it was told to expect, which is why signing
+runs before verification. If a certificate becomes available, `-Sign` is the
+whole change, and live Grid 3 editing stops needing administrator approval.

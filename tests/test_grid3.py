@@ -750,3 +750,94 @@ def test_add_topic_page_rolls_back_when_the_new_grid_does_not_verify(grid_root, 
         grid3.add_topic_page("Snacks", [{"label": "apple", "slot": 1}, {"label": "pear", "slot": 2}],
                              fingerprint=fingerprint)
     assert fake.rollbacks == ["saved"] and fake.actions[-1] == "leave"
+
+
+
+
+# ---------- what the connect screen is told, and when ----------
+
+def _explained(**status):
+    """A Grid 3 status that has cleared every gate before the named one."""
+    base = {
+        "available": True, "installed": True, "running": True,
+        "unlocked": True, "needs_elevation": False, "dirty": False,
+        "page": "Home",
+    }
+    return grid3.explain({**base, **status})
+
+
+def test_every_gate_names_itself_and_the_next_step():
+    """A user stopped by Grid 3 gets the specific gate, not a generic refusal."""
+    cases = {
+        "unsupported-platform": {"available": False},
+        "not-installed": {"installed": False},
+        "needs-elevation": {"needs_elevation": True},
+        "not-running": {"running": False},
+        "unsaved-changes": {"dirty": True},
+        "locked": {"unlocked": False},
+        "ready": {},
+    }
+    for expected, status in cases.items():
+        report = _explained(**status)
+        assert report["state"] == expected, status
+        assert report["summary"], expected
+        assert report["ready"] is (expected == "ready")
+
+
+def test_gates_are_reported_in_the_order_the_app_actually_checks_them():
+    """A machine with no Grid 3 installed is told that, and nothing about
+    elevation: describing a gate the app never reached is how a user ends up
+    chasing the wrong problem."""
+    nothing_works = _explained(
+        available=True, installed=False, needs_elevation=True,
+        running=False, dirty=True, unlocked=False,
+    )
+    assert nothing_works["state"] == "not-installed"
+
+    # Elevation outranks everything the app cannot see until it is elevated.
+    assert _explained(needs_elevation=True, running=False, dirty=True)["state"] \
+        == "needs-elevation"
+
+
+def test_the_elevation_gate_explains_itself_rather_than_just_refusing():
+    """The single most common place Grid 3 stops, and the one a clinician can
+    do least about without being told why."""
+    report = _explained(needs_elevation=True)
+    detail = report["detail"]
+    assert "not code-signed" in detail
+    # It happens every launch, not once, and saying "once" would be a lie the
+    # user discovers tomorrow.
+    assert "each time" in detail
+    # Somebody who is not a local administrator needs to know that up front.
+    assert "administrator on this computer" in detail
+    # ... and that the rest of the app is unaffected.
+    assert "TD Snap editing and exported files need none of this" in detail
+    assert report["action"] == "elevate"
+
+
+def test_the_limits_ride_with_every_answer():
+    """The boundaries are the same whatever gate was hit, and the connect
+    screen shows them before the user commits rather than after."""
+    for status in ({"available": False}, {"needs_elevation": True}, {}):
+        limits = _explained(**status)["limits"]
+        assert limits["can"] and limits["cannot"]
+    can = " ".join(_explained()["limits"]["can"]).lower()
+    for supported in ("empty single cells", "change, move, or remove", "create a new grid"):
+        assert supported in can
+    cannot = " ".join(_explained()["limits"]["cannot"]).lower()
+    for unsupported in ("jumps to another grid", "gridsetx", "merged cell"):
+        assert unsupported in cannot
+
+
+def test_a_ready_grid_is_named_and_a_compatibility_warning_survives():
+    assert "Home" in _explained()["summary"]
+    warned = _explained(compatibility_warning="Grid 3 9.9 has not been certified.")
+    assert warned["state"] == "ready"
+    assert "not been certified" in warned["detail"]
+
+
+def test_explain_survives_a_status_it_cannot_read():
+    report = grid3.explain({})
+    assert report["state"] == "unsupported-platform"
+    assert report["ready"] is False
+    assert grid3.explain(None)["summary"]

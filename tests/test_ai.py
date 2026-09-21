@@ -306,11 +306,16 @@ def test_ai_endpoints(ai_client, recording_grounding, monkeypatch):
         for choice in status["local"]["choices"]
     )
 
-    # No engine ready → clear, actionable error.
+    # The panel renders one state; the server decides which it is.
+    assert status["ai"]["ready"] is False
+    assert status["ai"]["state"] == "unavailable"
+    assert status["ai"]["summary"]
+
+    # No engine ready → the same sentence the panel shows, not a code.
     response = client.post("/api/ai/words", json={"category": "Snacks"},
                            headers=headers)
     assert response.status_code == 400
-    assert "No AI engine is ready" in response.get_json()["error"]
+    assert response.get_json()["error"] == status["ai"]["summary"]
 
     # Download refused when the engine isn't installed.
     response = client.post("/api/ai/download", headers=headers)
@@ -433,6 +438,208 @@ def test_nothing_the_user_composed_reaches_wikipedia(ai_client, recording_ground
     sent = json.dumps(call)
     for private in ("Crackers", "Kale", "Chips", "I want more", "All done"):
         assert private not in sent
+
+
+def _ready_local(monkeypatch, replies):
+    """A built-in engine that answers from *replies*, recording each call."""
+    monkeypatch.setattr(localai, "engine_available", lambda: True)
+    monkeypatch.setattr(localai, "is_downloaded", lambda key=None: True)
+    calls = []
+    queue = list(replies)
+
+    def fake_generate(**kwargs):
+        calls.append(kwargs)
+        return (queue.pop(0) if len(queue) > 1 else queue[0]), None
+
+    monkeypatch.setattr(localai, "generate_words", fake_generate)
+    return calls
+
+
+def test_the_engine_is_asked_for_more_than_the_user_wants(ai_client, recording_grounding,
+                                                          monkeypatch):
+    """Cleaning drops repeats and echoes, so asking for exactly ten delivers
+    fewer than ten. The user's number is what they get back, not what is asked
+    for."""
+    client, headers = ai_client
+    calls = _ready_local(monkeypatch, [[f"Word {n}" for n in range(1, 21)]])
+
+    data = client.post(
+        "/api/ai/words", json={"category": "Snacks", "count": 10}, headers=headers
+    ).get_json()
+
+    assert calls[0]["count"] > 10
+    assert len(data["words"]) == 10
+    assert data["requested"] == 10 and data["returned"] == 10
+    assert data["retried"] is False
+
+
+def test_a_thin_answer_is_asked_again_and_a_merely_short_one_is_not(
+    ai_client, recording_grounding, monkeypatch
+):
+    """One retry, and only for the answer that is otherwise a dead end.
+
+    A second call costs real seconds on a laptop model. That is worth spending
+    to turn "Added 1" into a usable set and not worth spending to turn 9 into
+    10.
+    """
+    client, headers = ai_client
+    calls = _ready_local(monkeypatch, [["Chips"], ["Apple", "Juice", "Popcorn"]])
+
+    data = client.post(
+        "/api/ai/words", json={"category": "Snacks", "count": 4}, headers=headers
+    ).get_json()
+
+    assert len(calls) == 2
+    assert data["retried"] is True
+    # The second ask is told what the first already produced — which is neither
+    # "already on the page" nor "rejected".
+    assert calls[1]["already"] == ["Chips"]
+    assert data["words"] == ["Chips", "Apple", "Juice", "Popcorn"]
+
+    enough = _ready_local(monkeypatch, [["Chips", "Apple", "Juice"]])
+    data = client.post(
+        "/api/ai/words", json={"category": "Snacks", "count": 4}, headers=headers
+    ).get_json()
+    assert len(enough) == 1 and data["retried"] is False
+    assert data["returned"] == 3 and data["requested"] == 4
+
+
+def test_a_slow_first_round_is_not_given_a_second_one(
+    ai_client, recording_grounding, monkeypatch
+):
+    """The browser gives a generation 150 seconds and two rounds have to fit
+    inside it. A thin answer is still an answer; a request that times out is
+    nothing at all."""
+    from tdsnap.web import server
+
+    client, headers = ai_client
+    calls = _ready_local(monkeypatch, [["Chips"], ["Apple"]])
+    monkeypatch.setattr(server, "RETRY_BUDGET_SECONDS", -1)
+
+    data = client.post(
+        "/api/ai/words", json={"category": "Snacks", "count": 8}, headers=headers
+    ).get_json()
+
+    assert len(calls) == 1
+    assert data["retried"] is False and data["words"] == ["Chips"]
+
+
+def test_a_retry_that_fails_keeps_the_answer_the_first_round_gave(
+    ai_client, recording_grounding, monkeypatch
+):
+    client, headers = ai_client
+    monkeypatch.setattr(localai, "engine_available", lambda: True)
+    monkeypatch.setattr(localai, "is_downloaded", lambda key=None: True)
+    calls = []
+
+    def fake_generate(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return ["Chips"], None
+        return [], "the model fell over"
+
+    monkeypatch.setattr(localai, "generate_words", fake_generate)
+    data = client.post(
+        "/api/ai/words", json={"category": "Snacks", "count": 8}, headers=headers
+    ).get_json()
+
+    assert data["ok"] is True and data["words"] == ["Chips"]
+
+
+def test_the_page_title_and_the_page_never_come_back_as_suggestions(
+    ai_client, recording_grounding, monkeypatch
+):
+    """The last line of defence for what reaches somebody's communication
+    system: the engines clean their own answers, and the merge cleans again."""
+    client, headers = ai_client
+    monkeypatch.setattr(localai, "engine_available", lambda: True)
+    monkeypatch.setattr(localai, "is_downloaded", lambda key=None: True)
+    monkeypatch.setattr(
+        localai, "generate_words",
+        # An engine that did not clean up after itself — the shape a raw model
+        # reply has before prompts.parse_items sees it.
+        lambda **kw: (["Snacks", "Chips", "chips", "Crackers", "Apple"], None),
+    )
+
+    data = client.post("/api/ai/words", json={
+        "category": "Snacks", "count": 5, "existing": ["Crackers"],
+        "avoid": ["Apple"],
+    }, headers=headers).get_json()
+
+    assert data["words"] == ["Chips"]
+
+
+def test_the_user_can_say_which_engine_writes_the_suggestions(
+    ai_client, recording_grounding, monkeypatch
+):
+    client, headers = ai_client
+    _ready_local(monkeypatch, [["Chips"]])
+    monkeypatch.setattr(
+        ollama, "status",
+        lambda host=None: {"reachable": True, "models": ["m"], "message": "ok"},
+    )
+    monkeypatch.setattr(ollama, "generate_words", lambda **kw: (["Juice"], None))
+
+    # Ollama would win on its own; an explicit choice overrules that.
+    assert client.post(
+        "/api/ai/words", json={"category": "Snacks"}, headers=headers
+    ).get_json()["engine"] == "ollama"
+    data = client.post(
+        "/api/ai/words", json={"category": "Snacks", "engine": "local"},
+        headers=headers,
+    ).get_json()
+    assert data["engine"] == "local" and not data["note"]
+
+    # A choice that cannot run is stood in for, and said out loud rather than
+    # failing on something the user cannot see.
+    monkeypatch.setattr(
+        ollama, "status",
+        lambda host=None: {"reachable": False, "models": [], "message": "off"},
+    )
+    data = client.post(
+        "/api/ai/words", json={"category": "Snacks", "engine": "ollama"},
+        headers=headers,
+    ).get_json()
+    assert data["engine"] == "local" and "built-in model" in data["note"]
+
+    bad = client.post(
+        "/api/ai/words", json={"category": "Snacks", "engine": "magic"},
+        headers=headers,
+    )
+    assert bad.status_code == 400
+
+
+def test_the_status_endpoint_answers_the_question_the_panel_asks(
+    ai_client, monkeypatch
+):
+    """One state, one sentence, one next step — rather than four booleans the
+    browser has to reason about for a second time."""
+    client, headers = ai_client
+    monkeypatch.setattr(localai, "engine_available", lambda: True)
+
+    report = client.get("/api/ai/status", headers=headers).get_json()["ai"]
+    assert report["state"] == "setup" and report["action"] == "download"
+    assert report["ready"] is False and report["can_download"] is True
+
+    monkeypatch.setattr(localai, "is_downloaded", lambda key=None: True)
+    report = client.get("/api/ai/status", headers=headers).get_json()["ai"]
+    assert report["state"] == "ready" and report["ready"] is True
+    assert report["engine"] == "local"
+
+
+def test_candidates_waiting_in_the_tray_ride_along_as_already_returned(
+    ai_client, recording_grounding, monkeypatch
+):
+    """A suggestion on offer is neither on the page nor rejected. Telling the
+    model either would be untrue, and a model told something untrue drifts."""
+    client, headers = ai_client
+    calls = _ready_local(monkeypatch, [["Pretzel"]])
+
+    client.post("/api/ai/words", json={
+        "category": "Snacks", "count": 1, "already": ["Popcorn", "   "],
+    }, headers=headers)
+
+    assert calls[0]["already"] == ["Popcorn"]
 
 
 def test_grounding_source_is_named_and_can_be_rejected(ai_client, recording_grounding,

@@ -35,9 +35,16 @@ function setProviderState(provider, label, stateName = "") {
 
 function clearConnectionError() {
   $("connection-error").hidden = true;
+  $("connection-detail").hidden = true;
+  $("connection-detail").textContent = "";
 }
 
-function showConnectionError(product, message = "") {
+/* *detail* is the sentence that turns a refusal into something a user can act
+   on: why administrator approval is being asked for, what it is a property of,
+   and what still works without it. A bare "Administrator restart was
+   cancelled." told a clinician who is not a local administrator nothing they
+   could use. */
+function showConnectionError(product, message = "", detail = "") {
   const box = $("connection-error");
   if (product === "TD Snap") {
     box.querySelector("strong").textContent =
@@ -46,8 +53,39 @@ function showConnectionError(product, message = "") {
     box.querySelector("strong").textContent = `AAC Editor couldn’t reach ${product}. Nothing was changed.`;
   }
   $("live-status").textContent = message;
+  const note = $("connection-detail");
+  note.textContent = detail;
+  note.hidden = !detail;
   box.hidden = false;
   box.focus({ preventScroll: true });
+}
+
+/* The last guidance block /api/grid3/status returned, so a failure thrown
+   further down the connect flow can still explain the gate it hit. */
+let grid3Guidance = null;
+
+/* What live Grid 3 editing can and cannot do, listed before the user commits
+   rather than after. Rendered from the server's own list so the screen and the
+   code that enforces it cannot drift apart. */
+function renderGrid3Limits(guidance) {
+  const box = $("grid3-limits");
+  const limits = guidance && guidance.limits;
+  if (!limits) {
+    box.hidden = true;
+    return;
+  }
+  [["grid3-can", limits.can], ["grid3-cannot", limits.cannot]].forEach(
+    ([id, entries]) => {
+      const list = $(id);
+      list.innerHTML = "";
+      (entries || []).forEach((entry) => {
+        const item = document.createElement("li");
+        item.textContent = entry;
+        list.append(item);
+      });
+    },
+  );
+  box.hidden = state.provider !== "grid3" || state.connected;
 }
 
 function selectProvider(provider) {
@@ -72,6 +110,8 @@ function selectProvider(provider) {
     element.hidden = file;
   });
   $("layout-options-btn").hidden = grid3;
+  $("grid3-limits").hidden = !grid3;
+  if (grid3) void loadGrid3Guidance();
   $("connect-task-title").textContent = file
     ? "Open a TD Snap exported file"
     : grid3 ? "Use the grid open in Grid 3" : "Use the page open in TD Snap";
@@ -100,6 +140,31 @@ function selectProvider(provider) {
     ? "The editor works on a temporary copy and never overwrites your export."
     : "Direct editing follows the page open in the selected AAC app.";
   $("live-status").textContent = "";
+}
+
+/* Ask what Grid 3 can do the moment somebody looks at it, rather than after
+   they have committed to it and been stopped. One cheap call, only for the
+   people actually considering Grid 3, and a failure costs the panel and
+   nothing else — the connect attempt itself re-reads the same endpoint. */
+async function loadGrid3Guidance() {
+  if (grid3Guidance) {
+    renderGrid3Limits(grid3Guidance);
+    return;
+  }
+  try {
+    const data = await api("/api/grid3/status");
+    grid3Guidance = data.guidance || null;
+  } catch {
+    grid3Guidance = null;
+  }
+  if (state.provider === "grid3") renderGrid3Limits(grid3Guidance);
+}
+
+/* The explanation that belongs with whatever gate Grid 3 stopped at, or "" for
+   every other provider and for a Grid 3 failure the server never described. */
+function grid3Detail() {
+  if (state.provider !== "grid3" || !grid3Guidance) return "";
+  return grid3Guidance.ready ? "" : grid3Guidance.detail || "";
 }
 
 function selectProviderAndRemember(provider) {
@@ -257,6 +322,8 @@ $("live-connect-btn").addEventListener("click", async () => {
     }
     if (state.provider === "grid3") {
       const data = await api("/api/grid3/status");
+      grid3Guidance = data.guidance || null;
+      renderGrid3Limits(grid3Guidance);
       if (!data.available) throw new Error("Grid 3 editing is available on Windows only.");
       if (!data.installed) {
         setProviderState("grid3", "Not installed", "not-installed");
@@ -270,7 +337,7 @@ $("live-connect-btn").addEventListener("click", async () => {
         status.textContent = "Windows will ask for administrator approval. AAC Editor will reopen here.";
         const restarted = await window.pywebview.api.restart_elevated_for_grid3();
         if (!restarted || restarted.ok === false) {
-          throw new Error(restarted?.error || "Administrator restart was cancelled.");
+          throw new Error(restarted?.error || "Administrator approval was not given.");
         }
         return;
       }
@@ -391,7 +458,7 @@ $("live-connect-btn").addEventListener("click", async () => {
     }
     setActivity();
     setBusy(button, false);
-    showConnectionError(product, error.message);
+    showConnectionError(product, error.message, grid3Detail());
   } finally {
     setActivity();
     setBusy(button, false);
