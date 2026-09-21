@@ -10,7 +10,7 @@ import { state } from "./state.js";
 import { $, setBusy, setActivity } from "./dom.js";
 import { api } from "./api.js";
 import { existingLabels, pageCapacity, renderWords, takeWordInput } from "./chips.js";
-import { loadTargetLayout, refreshDetectedPages } from "./connect.js";
+import { followGrid3Page, loadTargetLayout, refreshDetectedPages } from "./connect.js";
 import {
   changePayload, countEdits, describeChange, describeMove, describeRemoval, editSummary,
   emptyEdits, movePayload,
@@ -71,7 +71,7 @@ function syncReviewPlacement() {
 /* Changes, moves, and removals only ever apply to the page already open, so
    they travel with an existing-page edit and are dropped everywhere else. */
 function pendingPageEdits() {
-  if (state.mode === "file" || state.provider === "grid3" || state.operation !== "existing") {
+  if (state.mode === "file" || state.operation !== "existing") {
     return { changes: [], removals: [], moves: [] };
   }
   return state.pageEdits;
@@ -126,7 +126,8 @@ function editPath(operation) {
 
 function prepareReview() {
   const title = $("title-input").value.trim();
-  const parentTitle = titleOf(state.parentId);
+  // Grid 3 has one parent: the grid open in Grid 3 when AAC Editor connected.
+  const parentTitle = state.provider === "grid3" ? state.currentPage : titleOf(state.parentId);
   const operation = state.operation;
   const edits = pendingPageEdits();
   const items = state.words.map((item) => ({
@@ -235,10 +236,13 @@ function prepareReview() {
    reaches back one edit, only within this session, and only while the page is
    still as AAC Editor left it. A TD Snap sync, or anybody editing the page in
    TD Snap, ends that. */
-const UNDO_LIMITS = [
-  "This reaches back one change only, and only while this window has been open.",
-  "It cannot reach back past a sync in TD Snap, or past a change made in TD Snap itself.",
-];
+function undoLimits() {
+  const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
+  return [
+    "This reaches back one change only, and only while this window has been open.",
+    `It cannot reach back past a sync in ${product}, or past a change made in ${product} itself.`,
+  ];
+}
 
 function prepareUndoReview() {
   const undo = state.lastEdit;
@@ -254,7 +258,7 @@ function prepareUndoReview() {
   state.pendingEdit = Object.freeze({
     kind: "undo",
     operation: "existing",
-    path: "/api/tdsnap/undo",
+    path: state.provider === "grid3" ? "/api/grid3/undo" : "/api/tdsnap/undo",
     payload: Object.freeze({}),
     title: undo.page,
     parentTitle: undo.page,
@@ -305,7 +309,7 @@ function prepareUndoReview() {
   const lead = document.createElement("strong");
   lead.textContent = "What undo can and cannot reach";
   const list = document.createElement("ul");
-  [...UNDO_LIMITS, ...(undo.warnings || [])].forEach((line) => {
+  [...undoLimits(), ...(undo.warnings || [])].forEach((line) => {
     const row = document.createElement("li");
     row.textContent = line;
     list.append(row);
@@ -454,6 +458,15 @@ $("confirm-update-btn").addEventListener("click", async () => {
         // The requested edit is already verified. A later reconnect can refresh the list.
       }
     }
+    // Grid 3 is left showing whichever grid the edit ended on — the new grid
+    // after creating one — and that grid is the only page the app can offer.
+    if (state.provider === "grid3") {
+      try {
+        await followGrid3Page();
+      } catch {
+        // The edit is already verified; the next reconnect reads the grid again.
+      }
+    }
     // A batch reports per page rather than as one edit, so it renders its own
     // outcome list and then finishes through the ordinary result screen.
     if (batching) {
@@ -492,14 +505,14 @@ $("confirm-update-btn").addEventListener("click", async () => {
     show("result");
   } catch (error) {
     if (undoing) {
-      showReviewError("TD Snap couldn’t undo the last change.", [
+      showReviewError(`${state.provider === "grid3" ? "Grid 3" : "TD Snap"} couldn’t undo the last change.`, [
         error.message,
         ...(error.problems || []),
         "Nothing was left half-done: the page is as it was before this undo.",
       ]);
       return;
     }
-    if (state.mode !== "file" && pending.operation === "new" && pending.title) {
+    if (state.provider === "tdsnap" && state.mode !== "file" && pending.operation === "new" && pending.title) {
       try {
         await refreshDetectedPages();
         const created = state.pages.find(

@@ -11,16 +11,59 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Added
+
+- **Grid 3 parity (Phase 10).** The grid open in Grid 3 can now be edited the way a TD Snap
+  page can: change, move, and remove existing speaking cells, undo the last change, and
+  create a new grid linked from the open one — the Grid 3 analogue of a topic page. Every
+  operation goes through Grid 3's own Edit Mode, then the saved grid-set file is read back
+  and compared with what was reviewed; a mismatch is undone and re-saved, and the message
+  names the cell that differed. Cells that jump, run a command, or span more than one
+  square stay locked and say why.
+
+- **A definite answer on `.gridsetx` / WordPower: unsupported, by design.** Every entry
+  inside a `.gridsetx` is encrypted by Grid 3, so the grid cannot be read before an edit
+  or verified afterwards, and the project will not circumvent a licence protection. The
+  README and the error message both say so.
+
+### Fixed
+
+- **Grid 3 editing did not work at all on Grid 3 3.0.93.** The cell locator walked nine
+  levels of the accessibility tree and clustered screen rectangles; Grid 3's viewer keeps its
+  cells eighteen levels down, and its Edit Mode is a second window that replaces the
+  viewer. Connecting failed at "did not expose a verifiable accessible cell grid" before
+  any edit. Cells are now found by the ids Grid 3 gives them — `Cell (x,y)` in the viewer,
+  `Cell_x_y` in Edit Mode — and looked up afresh before every selection, since Paste,
+  Delete, and a new Write command each rebuild the cell's control.
+- Home-tab ribbon buttons are looked for only after selecting the Home tab; Grid 3 keeps
+  whichever tab was last open, and Change Label is absent while Layout or Style shows.
+- `Ctrl+W` already opens the label editor; pressing Change Label again closed it, so the
+  label was typed into nothing. The switch is now only pressed when it is off, and typing
+  waits for the editor to hold focus.
+- The picture browser Grid 3 opens for Find Picture is its own window; it was searched for
+  inside the editor window, never found, and left open, so the save that followed went into
+  the dialog. It is now driven and closed as a window.
+- Nothing is typed into Grid 3 unless Grid 3 owns the keyboard. A window taking the
+  foreground mid-edit used to receive the label, the Enter, and every Ctrl+Z of the rollback.
+- Renaming a cell whose spoken text differs from its label keeps that text; "Same as cell
+  label" is never switched on programmatically, because doing so copies the spoken text
+  onto the label.
+- Measured against Super Core 50 as well as Fireworks: Grid 3 draws a workspace such as the
+  chat bar as something other than a cell control, so only cells AAC Editor could act on —
+  blanks and plain speaking cells — must be exposed; a locked cell may be absent. Write cells
+  are created through the Create Cell dialog rather than a keyboard shortcut, undo goes
+  through the ribbon's own Undo button, Finish Editing is the fallback when F11 is ignored,
+  and a minimised Grid 3 is restored before anything is typed.
+
 ### Changed
 
 - **Grid 3 says what it can and cannot do before you commit to it, and every
   gate names itself.** Grid 3 sits on the first screen beside TD Snap, which
   does considerably more, and the narrower one only said so by failing part way
-  through. Choosing it now lists what it does (new words into empty single
-  cells, keeping each cell's existing size, color, and style) and what it does
-  not (changing, moving, or removing a cell that already holds something;
-  creating or linking a grid; protected `.gridsetx` grid sets including
-  WordPower; merged cells). One decision decides that and the state text, in
+  through. Choosing it now lists what it does and what it does not (the lists
+  themselves are Phase 10's, above: speaking cells and linked grids yes; cells
+  that jump, run commands or hold content, protected `.gridsetx` grid sets
+  including WordPower, and merged cells no). One decision decides that and the state text, in
   `grid3.explain`, checked in the order the connect flow actually checks things
   so a machine with no Grid 3 installed is never told about elevation instead.
 
