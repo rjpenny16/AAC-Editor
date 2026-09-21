@@ -101,11 +101,13 @@ function selectProvider(provider) {
   const grid3 = provider === "grid3";
   const file = provider === "file";
   clearConnectionError();
+  // Grid 3 has no page picker (the open grid is the page); everything else
+  // on the live items step — creating a page, changing or undoing — it shares.
   document.querySelectorAll("[data-tdsnap-only]").forEach((element) => {
     element.hidden = grid3;
   });
-  document.querySelectorAll("[data-live-tdsnap-only]").forEach((element) => {
-    element.hidden = grid3 || file;
+  document.querySelectorAll("[data-live-only]").forEach((element) => {
+    element.hidden = file;
   });
   $("layout-options-btn").hidden = grid3;
   $("grid3-limits").hidden = !grid3;
@@ -187,6 +189,23 @@ function rememberDetectedPages(data) {
     id: title,
     title,
   }));
+}
+
+/* After a Grid 3 edit, the grid on screen is the only page the app can offer —
+   and after creating a grid, that is the new grid. Re-read it and its layout. */
+async function followGrid3Page() {
+  const data = await api("/api/grid3/status");
+  if (!data.running || !data.page) return null;
+  state.currentPage = data.page;
+  state.parentId = data.page;
+  state.pages = [{ id: data.page, title: data.page }];
+  state.grid = data.grid;
+  $("build-sub").textContent =
+    `Connected to “${data.page}” in ${data.grid_set} · ${data.grid.cols}×${data.grid.rows} grid`;
+  $("preview-live-text").textContent = `Grid 3 · ${data.page}`;
+  setOperation("existing");
+  state.pageEdits = emptyEdits();
+  return loadTargetLayout(data.page);
 }
 
 async function refreshDetectedPages() {
@@ -360,7 +379,8 @@ $("live-connect-btn").addEventListener("click", async () => {
       $("file-badge").hidden = false;
       setProviderState("grid3", "Ready", "ready");
       status.textContent = data.compatibility_warning || "";
-      show("items");
+      setOperation("existing");
+      show("operation");
       return;
     }
     let data = await api("/api/tdsnap/status");
@@ -475,8 +495,10 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     // Changing or removing needs the page set's stored content: without it
     // there is nothing to restore from if the edit fails part-way. A page set
     // AAC Editor cannot fully identify keeps working for adding buttons.
-    state.canEditExisting = state.provider === "tdsnap" && state.mode === "live" &&
+    state.canEditExisting = ["tdsnap", "grid3"].includes(state.provider) && state.mode === "live" &&
       state.operation === "existing" && data.content_readable === true;
+    // A Grid 3 layout carries the retained undo; TD Snap reports it separately.
+    if (state.provider === "grid3" && "undo" in data) state.lastEdit = data.undo;
     // Drop any pending edit whose button moved, was renamed, or stopped being
     // eligible while the live page was being followed.
     state.pageEdits = state.canEditExisting
@@ -555,4 +577,4 @@ async function syncLivePreview() {
   }
 }
 
-export { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor };
+export { followGrid3Page, loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor };

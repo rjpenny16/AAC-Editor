@@ -267,6 +267,97 @@ test('native window hides the browser-only quit control', async ({ page }) => {
   await expect(page.locator('#quit-btn')).toBeHidden();
 });
 
+/* The Grid 3 mocks: one 3x2 grid, 'hello' at slot 0 (a plain Write cell),
+   blanks at 1 and 5, and a workspace cell spanning the right column. */
+function mockGrid3(page, { layout = {}, status = {} } = {}) {
+  const editPlans = [];
+  page.route('**/api/grid3/status', (route) => fulfillJson(route, {
+    ok: true,
+    available: true,
+    installed: true,
+    running: true,
+    elevated: true,
+    needs_elevation: false,
+    unlocked: true,
+    dirty: false,
+    grid_set: 'Super Core 50 copy',
+    page: 'Home',
+    grid: { cols: 3, rows: 2 },
+    ...status,
+  }));
+  page.route('**/api/grid3/page-layout', (route) => fulfillJson(route, {
+    ok: true,
+    supported: true,
+    grid_set: 'Super Core 50 copy',
+    page: 'Home',
+    grid: { cols: 3, rows: 2 },
+    background: '#F0F0F0',
+    preview_aspect: 1.8,
+    fingerprint: 'grid3-home-v1',
+    free_slots: [1, 5],
+    content_readable: true,
+    undo: null,
+    buttons: [
+      { slot: 0, label: 'hello', existing: true, message: 'hi there', function: null,
+        symbol: true, editable: true, locked_reason: null },
+      { slot: 2, label: '', existing: true, message: null, function: null, symbol: false,
+        editable: false,
+        locked_reason: 'This cell covers more than one square, so AAC Editor leaves it alone.' },
+    ],
+    cells: [
+      { slot: 0, x: 0, y: 0, label: 'hello', safe_blank: false,
+        style: { key: 'Core', background: '#FFFFFF', border: '#333333', foreground: '#111111' },
+        rect: { left: 0, top: 0, width: .33, height: .5 } },
+      { slot: 1, x: 1, y: 0, label: '', safe_blank: true,
+        style: { key: 'Verb', background: '#FFF2CC', border: '#AA8800', foreground: '#111111' },
+        rect: { left: .34, top: 0, width: .32, height: .5 } },
+      { slot: 2, x: 2, y: 0, label: '', safe_blank: false,
+        style: { key: 'Workspace', background: '#DDDDDD', border: '#555555', foreground: '#111111' },
+        rect: { left: .67, top: 0, width: .33, height: 1 } },
+      { slot: 5, x: 2, y: 1, label: '', safe_blank: true,
+        style: { key: 'Other', background: '#DDEEFF', border: '#225588', foreground: '#111111' },
+        rect: { left: .34, top: .51, width: .32, height: .49 } },
+    ],
+    ...layout,
+  }));
+  page.route('**/api/grid3/probe', (route) => fulfillJson(route, {
+    ok: true,
+    supported: true,
+    checks: { edit_mode: 'pass', undo_without_save: 'pass' },
+  }));
+  page.route('**/api/grid3/edit-plan', (route) => {
+    const body = route.request().postDataJSON();
+    editPlans.push({ body, headers: route.request().headers() });
+    const created = body.operation === 'create_page';
+    return fulfillJson(route, {
+      ok: true,
+      page: created ? body.title : 'Home',
+      parent: 'Home',
+      grid_set: 'Super Core 50 copy',
+      buttons: body.items.length,
+      changed: (body.changes || []).length,
+      removed: (body.removals || []).length,
+      moved: (body.moves || []).length,
+      warnings: [],
+      undo: created ? undefined : { page: 'Home', grid: { cols: 3, rows: 2 }, warnings: [],
+        restores: { adds: [], changes: [], removals: [], moves: [] } },
+      checks: created
+        ? { grid3_edit: 'pass', created_grid: 'pass', linked_grid: 'pass', content: 'pass',
+            positions: 'pass', untouched_buttons: 'pass', save_completed: 'pass' }
+        : { grid3_edit: 'pass', target_grid: 'pass', content: 'pass',
+            positions: 'pass', style_preserved: 'pass', save_completed: 'pass' },
+    });
+  });
+  return editPlans;
+}
+
+async function connectGrid3(page) {
+  await page.goto(BASE_URL);
+  await page.locator('#provider-grid3').click();
+  await page.locator('#live-connect-btn').click();
+  await expect(page.locator('#wizard-operation')).toBeVisible();
+}
+
 /* What a Grid 3 user is told before they commit, and when it stops.
  *
  * Grid 3 sits on the first screen beside TD Snap, which does far more, and the
@@ -288,10 +379,14 @@ function grid3Guidance(overrides = {}) {
     action: 'elevate',
     ready: false,
     limits: {
-      can: ['Add new words and phrases to empty single cells on the grid open in Grid 3.'],
+      can: [
+        'Add new words and phrases to empty single cells on the grid open in Grid 3.',
+        'Change, move, or remove a cell that just speaks — and undo that last change.',
+        'Create a new grid the size of the open one, linked from one of its empty cells.',
+      ],
       cannot: [
-        'Change, move, or remove a cell that already holds something.',
-        'Create a new grid, or link one from a cell.',
+        'Change a cell that jumps to another grid, runs a command, or holds a word list, picture, or app.',
+        'Open protected .gridsetx grid sets, including WordPower: Grid 3 encrypts them.',
       ],
     },
     ...overrides,
@@ -316,8 +411,10 @@ test('Grid 3 says what it can and cannot do before anyone commits to it', async 
   const limits = page.locator('#grid3-limits');
   await expect(limits).toBeVisible();
   await expect(limits).toContainText('empty single cells');
-  await expect(limits).toContainText('already holds something');
+  await expect(limits).toContainText('Change, move, or remove');
   await expect(limits).toContainText('Create a new grid');
+  await expect(limits).toContainText('jumps to another grid');
+  await expect(limits).toContainText('WordPower');
 
   // Choosing a different app takes its limits off the screen with it.
   await page.locator('#provider-tdsnap').click();
@@ -429,6 +526,10 @@ test('Grid 3 uses the active-grid three-step flow and live styled rectangles', a
   await page.goto(BASE_URL);
   await page.locator('#provider-grid3').click();
   await page.locator('#live-connect-btn').click();
+  // Grid 3 offers the same two tasks TD Snap does; the open grid is the page.
+  await expect(page.locator('#wizard-operation')).toBeVisible();
+  await expect(page.locator('#operation-existing')).toHaveClass(/selected/);
+  await page.locator('#wizard-operation .wizard-next').click();
   await expect(page.locator('#wizard-items')).toBeVisible();
   await expect(page.locator('#wizard-progress-label')).toHaveText('Add');
   await expect(page.locator('#layout-options-btn')).toBeHidden();
@@ -471,6 +572,79 @@ test('Grid 3 uses the active-grid three-step flow and live styled rectangles', a
   expect(submitted.items.map((item) => item.slot)).toEqual([5, 1]);
   expect(mutationHeaders['x-aac-editor']).toBe('grid3');
   expect(mutationHeaders['x-tdsnap-token']).toBeTruthy();
+});
+
+test('Grid 3 changes, moves and removes speaking cells through the same review', async ({ page }) => {
+  const plans = mockGrid3(page);
+  await connectGrid3(page);
+  await page.locator('#wizard-operation .wizard-next').click();
+  await expect(page.locator('#wizard-items')).toBeVisible();
+  await expect(page.locator('#edit-existing-btn')).toBeVisible();
+  await page.locator('#edit-existing-btn').click();
+  await expect(page.locator('#preview')).toHaveClass(/grid3-preview/);
+
+  // The workspace cell is locked and says why; the Write cell is editable.
+  const locked = page.locator('#preview .cell.existing').filter({ hasNotText: 'hello' });
+  await expect(locked.first()).toHaveAttribute('title', /covers more than one square/);
+  const hello = page.locator('#preview .cell.existing').filter({ hasText: 'hello' });
+  await expect(hello).toHaveClass(/editable/);
+  await hello.click();
+  await expect(page.locator('#chip-editor-title')).toHaveText('Change this button');
+  await expect(page.locator('#edit-message')).toHaveValue('hi there');
+  await page.locator('#edit-label').fill('hey');
+  await page.locator('#edit-save').click();
+  await expect(page.locator('#preview .cell.marked-changed')).toHaveCount(1);
+
+  await page.locator('#placement-back-btn').click();
+  await expect(page.locator('#edit-existing-summary')).toHaveText('Pending: change 1 button on home.');
+  await page.locator('#build-btn').click();
+  await expect(page.locator('#review-action')).toHaveText('Change 1 button on Home');
+  await expect(page.locator('#review-changes')).toContainText('hello');
+  await page.locator('#confirm-update-btn').click();
+  await expect(page.locator('#result-heading')).toHaveText('Done — Grid 3 was updated');
+
+  expect(plans).toHaveLength(1);
+  expect(plans[0].body.operation).toBe('edit_page');
+  expect(plans[0].body.changes).toEqual([{ slot: 0, label: 'hey' }]);
+  expect(plans[0].body.fingerprint).toBe('grid3-home-v1');
+  expect(plans[0].headers['x-aac-editor']).toBe('grid3');
+});
+
+test('Grid 3 creates a linked grid the size of the open one, keeping its Back cell free', async ({ page }) => {
+  const plans = mockGrid3(page);
+  await connectGrid3(page);
+  await page.locator('#operation-new').click();
+  await page.locator('#wizard-operation .wizard-next').click();
+  await expect(page.locator('#wizard-title')).toBeVisible();
+  await page.locator('#title-input').fill('Snacks');
+  await page.locator('#wizard-title .wizard-next').click();
+  // No destination step: the link goes on the grid open in Grid 3.
+  await expect(page.locator('#wizard-items')).toBeVisible();
+  await expect(page.locator('#parent-capacity')).toHaveText(
+    '5 empty spaces on the new grid, linked from “Home”.',
+  );
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await page.locator('#word-input').fill('juice');
+  await page.locator('#word-add-btn').click();
+  await page.locator('#build-btn').click();
+  await expect(page.locator('#review-action')).toHaveText('Create Snacks with 2 buttons');
+  await expect(page.locator('#review-target')).toHaveText('Snacks, found from Home');
+  // The top-left square belongs to Grid 3's Back cell, so the first word lands beside it.
+  await page.locator('#adjust-placement-btn').click();
+  await expect(page.locator('#preview')).not.toHaveClass(/grid3-preview/);
+  const back = page.locator('#preview .cell.existing').filter({ hasText: 'Back' });
+  await expect(back).toHaveAttribute('title', /Back cell/);
+  await page.locator('#placement-back-btn').click();
+  await page.locator('#confirm-update-btn').click();
+  await expect(page.locator('#result-heading')).toHaveText('Done — Grid 3 was updated');
+  await expect(page.locator('#checks')).toContainText('created the new grid');
+
+  expect(plans).toHaveLength(1);
+  expect(plans[0].body.operation).toBe('create_page');
+  expect(plans[0].body.title).toBe('Snacks');
+  expect(plans[0].body.items.map((item) => item.slot)).toEqual([1, 2]);
+  expect(plans[0].body.fingerprint).toBe('grid3-home-v1');
 });
 
 test('connect opens TD Snap when it is not already running', async ({ page }) => {
@@ -1412,8 +1586,9 @@ test('the support report is shown before it is copied, and carries no page conte
 
   await page.locator('#support-report-btn').click();
   await expect(page.locator('#support-dialog')).toBeVisible();
+  // The dialog opens on "Collecting…" and fills in once the report arrives.
+  await expect(page.locator('#support-report-text')).toContainText('AAC Editor support report');
   const report = await page.locator('#support-report-text').textContent();
-  expect(report).toContain('AAC Editor support report');
   // 'Eating' is the mocked open page; the report must not name it.
   expect(report).not.toContain('Eating');
 });
