@@ -39,7 +39,9 @@ const CHECK_LABELS = {
   topic_format: "Topic-page row colors were applied in TD Snap",
   grid3_edit: "Grid 3 saved the change",
   target_grid: "The reviewed grid was updated",
-  style_preserved: "Every new cell retained its existing Grid 3 style",
+  created_grid: "Grid 3 created the new grid at the parent's size, with its Back cell",
+  linked_grid: "The new grid is linked from the reviewed empty cell",
+  style_preserved: "Every changed or moved cell kept its Grid 3 style",
   save_completed: "Your page set was saved",
 };
 
@@ -360,7 +362,7 @@ function resetConnection() {
   // has to go from the server as well as from here. It would be refused by the
   // fingerprint guard anyway; still offering it would be the wrong promise.
   if (undoAvailable(state)) {
-    void api("/api/tdsnap/last-edit", { method: "DELETE" })
+    void api(state.provider === "grid3" ? "/api/grid3/last-edit" : "/api/tdsnap/last-edit", { method: "DELETE" })
       .catch((error) => recordError("undo-forget", error.message));
   }
   state.lastEdit = null;

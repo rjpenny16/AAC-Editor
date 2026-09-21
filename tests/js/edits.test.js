@@ -246,12 +246,14 @@ test("a new button may use a cell this edit frees, but never one it fills", () =
 
 /* ---------- undo ---------- */
 
-test("undo is offered only for a live TD Snap session that has something to undo", () => {
+test("undo is offered only for a live TD Snap or Grid 3 session that has something to undo", () => {
   const undo = { page: "Snacks" };
   assert.equal(edits.undoAvailable({ lastEdit: undo, provider: "tdsnap", mode: "live" }), true);
+  assert.equal(edits.undoAvailable({ lastEdit: undo, provider: "grid3", mode: "live" }), true);
   assert.equal(edits.undoAvailable({ lastEdit: null, provider: "tdsnap", mode: "live" }), false);
+  assert.equal(edits.undoAvailable({ lastEdit: null, provider: "grid3", mode: "live" }), false);
   assert.equal(edits.undoAvailable({ lastEdit: undo, provider: "tdsnap", mode: "file" }), false);
-  assert.equal(edits.undoAvailable({ lastEdit: undo, provider: "grid3", mode: "live" }), false);
+  assert.equal(edits.undoAvailable({ lastEdit: undo, provider: "file", mode: "file" }), false);
 });
 
 test("each edit reads as a plain sentence on the review screen", () => {

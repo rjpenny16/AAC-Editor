@@ -283,7 +283,7 @@ function describeRemoval(button) {
    that has actually applied an edit. Exported files and Grid 3 have no retained
    snapshot to replay, so they never offer the control at all. */
 function undoAvailable({ lastEdit, provider, mode }) {
-  return Boolean(lastEdit && provider === "tdsnap" && mode === "live");
+  return Boolean(lastEdit && ["tdsnap", "grid3"].includes(provider) && mode === "live");
 }
 
 /* Row and column, one-based, because that is how somebody looking at a device

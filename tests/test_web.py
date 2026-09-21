@@ -116,10 +116,21 @@ def test_grid3_read_apis_and_elevated_mutation_security(client, monkeypatch):
     )
     calls = []
     monkeypatch.setattr(
-        server.grid3, "add_to_existing_page",
-        lambda items, fingerprint: calls.append((items, fingerprint)) or {
-            "page": "Home", "buttons": len(items), "checks": {"grid3_edit": "pass"}
+        server.grid3, "edit_page",
+        lambda items, changes, removals, moves, fingerprint: calls.append(
+            (items, changes, removals, moves, fingerprint)
+        ) or {"page": "Home", "buttons": len(items), "checks": {"grid3_edit": "pass"}},
+    )
+    monkeypatch.setattr(server.grid3, "last_edit", lambda: {"page": "Home", "restores": []})
+    monkeypatch.setattr(
+        server.grid3, "add_topic_page",
+        lambda title, items, fingerprint: calls.append(("topic", title, items, fingerprint)) or {
+            "page": title, "buttons": len(items), "checks": {"created_grid": "pass"}
         },
+    )
+    monkeypatch.setattr(
+        server.grid3, "undo_last_edit",
+        lambda: calls.append("undo") or {"page": "Home", "checks": {"undone": "pass"}},
     )
 
     assert client.get("/api/grid3/status?layout=1").get_json()["layout_requested"] is True
@@ -146,7 +157,37 @@ def test_grid3_read_apis_and_elevated_mutation_security(client, monkeypatch):
     )
     assert response.status_code == 200
     assert response.get_json()["checks"]["grid3_edit"] == "pass"
-    assert calls == [([{"label": "new", "slot": 1}], "grid-fingerprint")]
+    assert response.get_json()["undo"] == {"page": "Home", "restores": []}
+    assert calls == [([{"label": "new", "slot": 1}], [], [], [], "grid-fingerprint")]
+
+    # Changes, moves and removals ride the same endpoint as they do for TD Snap.
+    headers = {**token_headers(), "X-AAC-Editor": "grid3"}
+    edit = client.post("/api/grid3/edit-plan", json={
+        "operation": "edit_page", "items": [],
+        "changes": [{"slot": 0, "label": "hey"}], "removals": [3],
+        "moves": [{"slot": 4, "to": 5}], "fingerprint": "grid-fingerprint",
+    }, headers=headers)
+    assert edit.status_code == 200
+    assert calls[-1] == ([], [{"slot": 0, "label": "hey"}], [3], [{"slot": 4, "to": 5}], "grid-fingerprint")
+
+    topic = client.post("/api/grid3/edit-plan", json={
+        "operation": "create_page", "title": "Snacks",
+        "items": [{"label": "apple", "slot": 1}], "fingerprint": "grid-fingerprint",
+    }, headers=headers)
+    assert topic.status_code == 200 and topic.get_json()["page"] == "Snacks"
+    assert calls[-1] == ("topic", "Snacks", [{"label": "apple", "slot": 1}], "grid-fingerprint")
+
+    unsupported = client.post("/api/grid3/edit-plan", json={
+        "operation": "rename_grid", "fingerprint": "grid-fingerprint",
+    }, headers=headers)
+    assert unsupported.status_code == 400
+    assert "create a linked grid" in unsupported.get_json()["error"]
+
+    assert client.post("/api/grid3/undo", headers=token_headers()).status_code == 400
+    undo = client.post("/api/grid3/undo", headers=headers)
+    assert undo.status_code == 200 and undo.get_json()["checks"]["undone"] == "pass"
+    assert calls[-1] == "undo"
+    assert client.delete("/api/grid3/last-edit", headers=token_headers()).status_code == 200
 
 
 def test_grid3_elevation_restart_uses_runas_and_closes_only_after_success(monkeypatch):

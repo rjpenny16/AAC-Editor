@@ -521,7 +521,7 @@ set exports to `.obz` and re-imports without losing labels, messages, layout, or
 
 ---
 
-## Phase 10 — Grid 3 parity *(~3–4 weeks)*
+## Phase 10 — Grid 3 parity *(~3–4 weeks)* — **shipped**
 
 Grid 3 is capability-gated to adding vocabulary into safe blank cells on unprotected `.gridset`
 format-1 grids; the server answers anything else with *"This Grid 3 edit operation is not supported
@@ -543,6 +543,27 @@ TD Snap-only attribute sweeps. Depends on Phase 3.
 **Exit:** Grid 3 creates and links a topic grid · every unsupported case fails with a specific,
 actionable message naming exactly what Grid 3 did not expose · the README states a definite position
 on `.gridsetx`/WordPower.
+
+**Shipped (2026-09-21), measured on Grid 3 3.0.93.10 against a disposable copy.** Change, move,
+remove, undo, and create-and-link all run through Grid 3's own Edit Mode and verify against the
+saved file: a 2-cell addition with symbols in 12 s, a change + move + add in 17 s, a 3-cell linked
+grid in 27 s. The `.gridsetx` answer is *impossible by design* — every entry is encrypted
+(16-byte-aligned ciphertext, no plaintext anywhere in the archive) — and the README says so.
+
+What the investigation found, which the phase had to absorb: the shipped locator never reached
+Grid 3's cells on this build (see the CHANGELOG), so the phase began by making the read side work;
+Grid 3's New-grid Rows/Columns pickers are not usable through any input path (the result depends on
+whether the picker was driven by keyboard, mouse, or not at all — 6, 8, or the parent's rows), so a
+new grid is always the parent's size; and "Same as cell label" copies text *onto* the label when
+switched on, so spoken text is always written out explicitly. The icon-coordinate calibration
+variables are TD Snap's (`TDSNAP_LINK_ICON_*`, `TDSNAP_ADD_ICON_*`) and are untouched here — retiring
+them needs the same kind of live TD Snap session this phase had for Grid 3.
+
+Not built, and said so: Remote Editing, word-list cells, symbol choice beyond an exact caption match,
+and anything on a `.gridsetx`. `grid3.py` sits at ~59% coverage for the same reason `live.py` does —
+the automation half only runs on Windows against Grid 3; its planning, verification, rollback, and
+undo logic is covered against a fake Edit Mode that rewrites the grid-set package the way Grid 3
+does, and `GRID3_LIVE_E2E=1` runs the real matrix.
 
 ---
 

@@ -61,7 +61,12 @@ function renderGrid3Preview(preview) {
     if (style.foreground) cell.style.color = style.foreground;
 
     const wordIndex = state.words.findIndex((item) => item.slot === model.slot);
-    if (!model.safe_blank) {
+    // A cell a pending move vacates renders as the blank it will become; the
+    // cell that move is headed for shows the arriving button.
+    const existing = existingAt(model.slot);
+    if (existing) {
+      renderExistingCell(cell, existing, model.slot);
+    } else if (!model.safe_blank && !moveFrom(state.pageEdits, model.slot)) {
       cell.classList.add("existing");
       if (model.label) addPreviewCellContent(cell, model.label, "", false);
       cell.title = "Existing or special Grid 3 cell — locked";
@@ -98,17 +103,20 @@ function renderGrid3Preview(preview) {
         `${style.key || "existing"} style`
       );
     }
-    if (model.safe_blank) {
+    if (model.safe_blank || moveFrom(state.pageEdits, model.slot)) {
       cell.addEventListener("dragover", (event) => {
+        if (!canDrop(dragging, model.slot)) return;
         event.preventDefault();
         cell.classList.add("drop-target");
       });
       cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
       cell.addEventListener("drop", (event) => {
+        const payload = droppedPayload(event);
+        if (!canDrop(payload, model.slot)) return;
         event.preventDefault();
         cell.classList.remove("drop-target");
-        const payload = droppedPayload(event);
-        if (payload && payload.kind === "word") movePreviewItem(payload.index, model.slot);
+        if (payload.kind === "word") movePreviewItem(payload.index, model.slot);
+        else moveExistingButton(payload.slot, model.slot);
       });
     }
     preview.append(cell);

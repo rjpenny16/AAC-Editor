@@ -11,6 +11,44 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Added
+
+- **Grid 3 parity (Phase 10).** The grid open in Grid 3 can now be edited the way a TD Snap
+  page can: change, move, and remove existing speaking cells, undo the last change, and
+  create a new grid linked from the open one — the Grid 3 analogue of a topic page. Every
+  operation goes through Grid 3's own Edit Mode, then the saved grid-set file is read back
+  and compared with what was reviewed; a mismatch is undone and re-saved, and the message
+  names the cell that differed. Cells that jump, run a command, or span more than one
+  square stay locked and say why.
+
+- **A definite answer on `.gridsetx` / WordPower: unsupported, by design.** Every entry
+  inside a `.gridsetx` is encrypted by Grid 3, so the grid cannot be read before an edit
+  or verified afterwards, and the project will not circumvent a licence protection. The
+  README and the error message both say so.
+
+### Fixed
+
+- **Grid 3 editing did not work at all on Grid 3 3.0.93.** The cell locator walked nine
+  levels of the accessibility tree and clustered screen rectangles; Grid 3's viewer keeps its
+  cells eighteen levels down, and its Edit Mode is a second window that replaces the
+  viewer. Connecting failed at "did not expose a verifiable accessible cell grid" before
+  any edit. Cells are now found by the ids Grid 3 gives them — `Cell (x,y)` in the viewer,
+  `Cell_x_y` in Edit Mode — and looked up afresh before every selection, since Paste,
+  Delete, and a new Write command each rebuild the cell's control.
+- Home-tab ribbon buttons are looked for only after selecting the Home tab; Grid 3 keeps
+  whichever tab was last open, and Change Label is absent while Layout or Style shows.
+- `Ctrl+W` already opens the label editor; pressing Change Label again closed it, so the
+  label was typed into nothing. The switch is now only pressed when it is off, and typing
+  waits for the editor to hold focus.
+- The picture browser Grid 3 opens for Find Picture is its own window; it was searched for
+  inside the editor window, never found, and left open, so the save that followed went into
+  the dialog. It is now driven and closed as a window.
+- Nothing is typed into Grid 3 unless Grid 3 owns the keyboard. A window taking the
+  foreground mid-edit used to receive the label, the Enter, and every Ctrl+Z of the rollback.
+- Renaming a cell whose spoken text differs from its label keeps that text; "Same as cell
+  label" is never switched on programmatically, because doing so copies the spoken text
+  onto the label.
+
 ## [2.3.0] - 2026-09-16
 
 The first release since 2.1.0. Everything under 2.2.0 below ships here too.

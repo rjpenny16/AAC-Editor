@@ -8,7 +8,7 @@
 
 import { state } from "./state.js";
 import { $ } from "./dom.js";
-import { autoFormatTopicRows, renderWords, updateTopicInputRow } from "./chips.js";
+import { autoFormatTopicRows, firstAvailableSlot, renderWords, updateTopicInputRow } from "./chips.js";
 import { loadTargetLayout } from "./connect.js";
 import { clearDraft, takePendingResume } from "./draft.js";
 import { loadParentCapacity, titleOf, updatePlacementRecommendation } from "./parents.js";
@@ -137,8 +137,11 @@ function setOperation(operation) {
     ? `Adding to ${titleOf(state.parentId)}`
     : `Creating ${$("title-input").value.trim() || "a new page"}`;
   state.existingButtons = existing ? state.existingButtons : [];
-  state.layoutFingerprint = existing ? state.layoutFingerprint : null;
-  if (!existing) state.parentFree = null;
+  // A new Grid 3 grid is linked from the open grid, so that grid's fingerprint
+  // and free-cell count stay the guard for the create as well.
+  const keepParent = existing || state.provider === "grid3";
+  state.layoutFingerprint = keepParent ? state.layoutFingerprint : null;
+  if (!keepParent) state.parentFree = null;
   updateProgress(state.wizardStep);
   renderWords();
 }
@@ -171,9 +174,50 @@ function showStepError(step, message) {
   error.focus({ preventScroll: true });
 }
 
+/* Grid 3 has no page picker: the parent is the grid open in Grid 3, and a new
+   grid is the parent's size with Grid 3's own Back cell in the top-left
+   square. The items step is set up for that grid here, from the parent's
+   layout that connecting already read. */
+function prepareGrid3NewGrid() {
+  state.existingButtons = [{
+    slot: 0, label: "Back", existing: true, editable: false,
+    locked_reason: "Grid 3 puts a Back cell in the top-left square of every new grid.",
+  }];
+  state.availableSlots = Array.from(
+    { length: state.grid.cols * state.grid.rows }, (_, slot) => slot,
+  ).slice(1);
+  state.grid3Cells = [];
+  state.canEditExisting = false;
+  state.pageEdits = { changes: [], removals: [], moves: [] };
+  state.words.forEach((item) => {
+    if (!state.availableSlots.includes(item.slot)) item.slot = firstAvailableSlot(item.fn);
+  });
+  $("parent-capacity").classList.remove("error");
+  $("parent-capacity").textContent =
+    `${state.availableSlots.length} empty spaces on the new grid, linked from “${state.currentPage}”.`;
+  $("current-page-label").textContent = `Creating ${$("title-input").value.trim()}`;
+}
+
 async function continueWizard() {
   clearStepError(state.wizardStep);
   if (state.wizardStep === "operation") {
+    if (state.provider === "grid3") {
+      if (state.operation === "new") {
+        show("title");
+        return;
+      }
+      // The open grid was read when connecting; it is the only page on offer.
+      if (!state.layoutFingerprint) {
+        try {
+          await loadTargetLayout(state.currentPage);
+        } catch (error) {
+          showStepError("operation", `We couldn't read that grid. ${error.message}`);
+          return;
+        }
+      }
+      show("items");
+      return;
+    }
     if (state.operation === "new") {
       show("title");
       return;
@@ -200,6 +244,16 @@ async function continueWizard() {
       (page) => page.title.trim().toLocaleLowerCase() === title.toLocaleLowerCase()
     )) {
       showStepError("title", `A page named “${title}” already exists. Choose a different name.`);
+      return;
+    }
+    if (state.provider === "grid3") {
+      if (state.parentFree === 0) {
+        showStepError("title", `“${state.currentPage}” has no empty space to hold the link to the new grid.`);
+        return;
+      }
+      prepareGrid3NewGrid();
+      renderWords();
+      show("items");
       return;
     }
     updatePlacementRecommendation();
@@ -248,7 +302,10 @@ async function continueWizard() {
 function backWizard() {
   clearStepError(state.wizardStep);
   if (state.provider === "grid3") {
-    show("connect");
+    const previous = state.operation === "new"
+      ? { title: "operation", items: "title" }
+      : { items: "operation" };
+    show(previous[state.wizardStep] || "connect");
     return;
   }
   // Exported files walk the same two routes as TD Snap live now that they can

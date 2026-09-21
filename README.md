@@ -41,8 +41,12 @@ exported files never need it.
   locked and say why.
 - Undoes the last change it made, once, through the same review step — while the
   page is still as AAC Editor left it.
-- Adds vocabulary to empty spaces AAC Editor can update safely on the grid open in Grid 3, preserving
-  the grid-set file and each blank cell's existing style.
+- Does the same on the grid open in Grid 3: adds speaking cells to safe empty
+  spaces, changes, moves, or removes existing speaking cells, undoes the last
+  change, and creates a new grid linked from the open one — every step
+  performed by Grid 3's own Edit Mode and checked against the saved grid-set
+  file afterwards. Cells that jump to another grid, run a command, or span
+  more than one square stay locked and say why.
 - Creates word or color-coded topic pages and links them from an existing page.
 - Imports a word list: paste a spreadsheet column or open a CSV/TSV, map which
   column is the label, the message, the function, and the symbol words, and see
@@ -137,22 +141,43 @@ words** when the label is a poor query — searching `more` for a button that sa
 *more please*. The result names the buttons that ended up without a symbol, so
 there is no guessing about which ones to look at in TD Snap.
 
-For Grid 3, choose **Grid 3** on the first screen, open the exact existing grid
-you want to update, add vocabulary, review its order, and confirm the change.
-Grid 3 support is capability-based across grid-set
-families: AAC Editor reads the active grid's real geometry and only enables
-unprotected `.gridset` format-1 grids with accessible, single-cell blanks. It
-does not support `.gridsetx`/WordPower, Remote Editing, creating or linking
-grids, changing occupied cells, or word-list population.
+For Grid 3, choose **Grid 3** on the first screen and open the grid you want
+to work on. The same two tasks TD Snap offers are then available: add to the
+open grid — including changing, moving, or removing the speaking cells already
+on it — or create a new grid, which Grid 3 links from the first empty cell of
+the open grid. A new grid is always the open grid's size and carries Grid 3's
+own **Back** cell in its top-left square; Grid 3's row and column pickers are
+left alone because their result depends on how they are driven rather than on
+the value chosen. Grid 3 is left showing whichever grid the edit ended on.
+
+Grid 3 support is capability-based: AAC Editor reads the grid-set file for the
+grid's real content and finds every cell by the ids Grid 3 exposes through UI
+Automation, in the viewer and in Edit Mode. Only unprotected `.gridset`
+format-1 grids are supported. Anything the accessible surface does not offer is
+refused with a message naming what was missing. Not supported: Remote Editing,
+word-list population, and cells that are not plain speaking (Write) cells.
+
+**`.gridsetx` grid sets, including WordPower, are not supported, and cannot
+be.** Every file inside a `.gridsetx` — the settings, every grid, every
+picture — is encrypted by Grid 3. AAC Editor's safety model depends on reading
+the grid before an edit and checking the saved file afterwards, neither of
+which is possible without the key, and the project will not work around a
+licence protection. This is a definite position, not an unbuilt feature: edit
+those grid sets in Grid 3 itself.
 
 The Grid 3 connection runs a reversible Edit Mode compatibility check: it adds
 a provisional Write command and label to a safe blank, undoes it, and verifies
-that nothing was saved. If Grid 3 does not expose reliable accessible cell
-bounds or editor controls, the feature stops without coordinate guessing, OCR,
-computer vision, or direct grid-set mutation. The installed executable runs
-`asInvoker`. Connecting to Grid 3 asks for administrator approval through a
-normal UAC prompt and restarts the app elevated; cancelling leaves the running
-copy untouched.
+that nothing was saved. Every edit then happens in one Edit Mode session and one
+save; if the saved file does not match what was reviewed, AAC Editor undoes and
+re-saves until it does, and the message names the exact cell that differed.
+Because every step is typed into Grid 3, AAC Editor refuses to type at all if
+another window takes the keyboard mid-edit, rather than send a keystroke into
+whatever is in front. Keep the keyboard and mouse alone while an edit runs.
+
+Grid 3 runs with `uiAccess`, which puts its windows at a higher integrity level
+than an ordinary app, so reading its accessibility tree needs administrator
+rights. Connecting to Grid 3 asks for that approval through a normal UAC prompt
+and restarts the app elevated; cancelling leaves the running copy untouched.
 
 Keep Windows unlocked while an edit runs. The live editor is Windows-only and
 depends on the current TD Snap interface. The exported-file fallback is

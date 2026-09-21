@@ -998,13 +998,45 @@ def grid3_execute_plan():
     if request.headers.get("X-AAC-Editor") != "grid3":
         raise PagesetError("Direct Grid 3 edits must start in this app.")
     payload = _json_payload()
-    if payload.get("operation") != "add_to_existing_page":
-        raise PagesetError("This Grid 3 edit operation is not supported yet.")
+    operation = payload.get("operation")
+    # The same three operations TD Snap accepts, carrying the same payloads.
+    if operation not in {"add_to_existing_page", "edit_page", "create_page"}:
+        raise PagesetError(
+            "AAC Editor can add, change, move and remove speaking cells on the open "
+            "Grid 3 grid, undo that, and create a linked grid. Nothing else is "
+            "supported for Grid 3 yet."
+        )
     items = _validated_items(payload.get("items", []))
     fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
+    if operation == "create_page":
+        title = _bounded_text(payload.get("title"), "title", MAX_TITLE_CHARS, required=True)
+        with _LIVE_LOCK:
+            report = grid3.add_topic_page(title, items, fingerprint=fingerprint or None)
+        return jsonify({"ok": True, **report})
+    changes = _validated_changes(payload.get("changes", []))
+    removals = _validated_removals(payload.get("removals", []))
+    moves = _validated_moves(payload.get("moves", []))
     with _LIVE_LOCK:
-        report = grid3.add_to_existing_page(items, fingerprint or None)
+        report = grid3.edit_page(items, changes, removals, moves, fingerprint or None)
+        report["undo"] = grid3.last_edit()
     return jsonify({"ok": True, **report})
+
+
+@app.post("/api/grid3/undo")
+def grid3_undo():
+    if request.headers.get("X-AAC-Editor") != "grid3":
+        raise PagesetError("Direct Grid 3 edits must start in this app.")
+    with _LIVE_LOCK:
+        report = grid3.undo_last_edit()
+        report["undo"] = grid3.last_edit()
+    return jsonify({"ok": True, **report})
+
+
+@app.delete("/api/grid3/last-edit")
+def grid3_forget_last_edit():
+    with _LIVE_LOCK:
+        grid3.forget_last_edit()
+    return jsonify({"ok": True})
 
 
 @app.post("/api/pageset")
