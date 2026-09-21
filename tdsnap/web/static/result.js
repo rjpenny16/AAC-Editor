@@ -259,6 +259,8 @@ $("file-save-btn").addEventListener("click", async (event) => {
 });
 
 $("another-btn").addEventListener("click", async () => {
+  clearUndoHistory();
+  $("word-input").value = "";
   state.words = [];
   state.pageEdits = emptyEdits();
   state.applied = false;

@@ -65,6 +65,7 @@ const state = {
   previewAspect: null,
   gridBackground: null,
   layoutFingerprint: null,
+  layoutPage: null,
   pages: [],
   words: [], // [{label, message|null, fn|"", slot, symbol, source|""}]
   // Suggestions the user threw away. Fed back to the next request as negative

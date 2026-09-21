@@ -272,9 +272,37 @@ def test_page_name_prefers_the_top_title(monkeypatch):
     )
     title = control("Topic: Shopping", 10, 30)
     message = control("E of ", 40, 90)
-    monkeypatch.setattr(live, "_walk", lambda _window, _depth: [(title, 3), (message, 4)])
+    badge = control("!", 5, 20)
+    monkeypatch.setattr(live, "_walk", lambda _window, _depth: [
+        (badge, 3), (title, 3), (message, 4),
+    ])
 
     assert live._page_name(object(), group) == "Topic: Shopping"
+
+
+def test_hidden_buttons_are_reserved_outside_edit_mode(seeded_source, monkeypatch):
+    with sqlite3.connect(seeded_source) as conn:
+        conn.execute("UPDATE ElementPlacement SET Visible = 0 WHERE GridPosition = '0,0'")
+    monkeypatch.setattr(live, "_active_pageset_path", lambda *_args: seeded_source)
+    grid = live.Grid((10, 30, 50, 70), (10, 30, 50), 18, 18)
+    group = SimpleNamespace(Name="Home Page", GetChildren=lambda: [])
+    buttons = live._page_layout(group, grid)
+    assert buttons == [{"slot": 0, "label": "hello", "hidden": True}]
+    described, readable = live._describe_buttons("Home Page", buttons)
+    assert readable
+    assert not described[0]["editable"]
+    assert "Hidden" in described[0]["locked_reason"]
+    monkeypatch.setattr(live, "_page_group", lambda _: group)
+    assert live._empty_cell(object(), grid) == live.Cell(30, 10, 18, 18)
+
+
+def test_hidden_button_spans_reserve_every_covered_cell(seeded_source, monkeypatch):
+    with sqlite3.connect(seeded_source) as conn:
+        conn.execute("UPDATE ElementPlacement SET Visible = 0, GridSpan = '2,2' "
+                     "WHERE GridPosition = '0,0'")
+    monkeypatch.setattr(live, "_active_pageset_path", lambda *_args: seeded_source)
+    grid = live.Grid((10, 30, 50, 70), (10, 30, 50), 18, 18)
+    assert {b["slot"] for b in live._hidden_page_buttons("Home Page", grid)} == {0, 1, 4, 5}
 
 
 def test_grid_uses_saved_dimensions_for_a_completely_blank_page(tmp_path, monkeypatch):
@@ -926,6 +954,7 @@ def test_rollback_keeps_undoing_while_a_message_is_still_wrong(monkeypatch):
     state = {"undos": 0, "message": "the new message"}
     undo = SimpleNamespace(IsEnabled=True)
     monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
     monkeypatch.setattr(live, "_page_group", lambda _window: object())
     monkeypatch.setattr(live, "_fingerprint", lambda _group: ("unchanged",))
     monkeypatch.setattr(live, "_find", lambda *_args, **_kwargs: undo)
@@ -951,6 +980,7 @@ def test_rollback_keeps_undoing_while_a_message_is_still_wrong(monkeypatch):
 
 def test_rollback_reports_failure_when_the_prior_content_never_comes_back(monkeypatch):
     monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
+    monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
     monkeypatch.setattr(live, "_page_group", lambda _window: object())
     monkeypatch.setattr(live, "_fingerprint", lambda _group: ("unchanged",))
     monkeypatch.setattr(live, "_find", lambda *_args, **_kwargs: None)

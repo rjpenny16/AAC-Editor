@@ -9,6 +9,7 @@
 import { state } from "./state.js";
 import { $ } from "./dom.js";
 import { autoFormatTopicRows, renderWords, updateTopicInputRow } from "./chips.js";
+import { emptyEdits } from "./edits.js";
 import { loadTargetLayout } from "./connect.js";
 import { clearDraft, takePendingResume } from "./draft.js";
 import { loadParentCapacity, titleOf, updatePlacementRecommendation } from "./parents.js";
@@ -138,7 +139,16 @@ function setOperation(operation) {
     : `Creating ${$("title-input").value.trim() || "a new page"}`;
   state.existingButtons = existing ? state.existingButtons : [];
   state.layoutFingerprint = existing ? state.layoutFingerprint : null;
-  if (!existing) state.parentFree = null;
+  // A new page starts empty. The free-cell list and any pending edits describe
+  // the page that was being changed — loadTargetLayout refuses to run outside
+  // the "existing" operation, so nothing else would ever clear them, and a
+  // stale one-free-cell list would cap the new page at one button.
+  if (!existing) {
+    state.parentFree = null;
+    state.availableSlots = null;
+    state.pageEdits = emptyEdits();
+    state.canEditExisting = false;
+  }
   updateProgress(state.wizardStep);
   renderWords();
 }
@@ -291,7 +301,10 @@ function setPageStyle(style) {
   $("ai-go").textContent = style === "topic" ? "Suggest phrases" : "Suggest words";
   $("ai-summary-text").textContent =
     style === "topic" ? "Suggest phrases with AI" : "Suggest words with AI";
-  if (style !== "topic") setActiveFn("", false);
+  if (style !== "topic") {
+    setActiveFn("", false);
+    renderWords();
+  }
   else autoFormatTopicRows();
 }
 

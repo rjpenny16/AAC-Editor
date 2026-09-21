@@ -14,7 +14,7 @@
 
 import { state, FUNCTIONS } from "./state.js";
 import { $, appendNamedList } from "./dom.js";
-import { firstAvailableSlot, pageCapacity, renderWords } from "./chips.js";
+import { existingLabels, firstAvailableSlot, pageCapacity, renderWords } from "./chips.js";
 import { mapRows, planImport, readTable } from "./csv.js";
 import { titleOf } from "./parents.js";
 import { elsewhereNote } from "./vocabulary.js";
@@ -181,7 +181,7 @@ function refresh() {
   const plan = planImport(items, {
     capacity: pageCapacity() - state.words.length,
     existing: [
-      ...state.existingButtons.map((button) => button.label),
+      ...existingLabels(),
       ...state.words.map((item) => item.label),
     ],
     maxItems: MAX_ITEMS - state.words.length,
@@ -307,7 +307,7 @@ $("import-add-btn").addEventListener("click", () => {
   const plan = planImport(items, {
     capacity: pageCapacity() - state.words.length,
     existing: [
-      ...state.existingButtons.map((button) => button.label),
+      ...existingLabels(),
       ...state.words.map((item) => item.label),
     ],
     maxItems: MAX_ITEMS - state.words.length,

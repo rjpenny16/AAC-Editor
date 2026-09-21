@@ -29,7 +29,7 @@ import { AI_GENERATION_TIMEOUT_MS, state } from "./state.js";
 import { $, setBusy } from "./dom.js";
 import { api } from "./api.js";
 import {
-  editingWordIndex, firstAvailableSlot, functionForSlot, pushUndoSnapshot,
+  editingWordIndex, existingLabels, firstAvailableSlot, functionForSlot, pageCapacity, pushUndoSnapshot,
   rememberRejection, renderWords,
 } from "./chips.js";
 import { setActivity } from "./dom.js";
@@ -303,6 +303,13 @@ function describeKind() {
 /* One request shape for all three ways of asking: the whole panel, one item
    regenerated, and "more like this". Only `count` and `like` differ. */
 async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
+  const context = suggestionContext();
+  if (articleContext !== context) {
+    state.aiChosenArticle = "";
+    state.aiExcluded = [];
+    clearGroundingSource();
+    articleContext = context;
+  }
   const topic = state.pageStyle === "topic";
   const data = await api(
     "/api/ai/words",
@@ -328,8 +335,16 @@ async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
     },
     AI_GENERATION_TIMEOUT_MS
   );
+  if (context !== suggestionContext() || !["items", "layout"].includes(state.wizardStep)) {
+    throw new Error("The page changed while suggestions were being generated. Suggest again for this page.");
+  }
   renderGroundingSource(data.grounding);
   return data;
+}
+
+let articleContext = "";
+function suggestionContext() {
+  return JSON.stringify([state.provider, state.sessionId, state.operation, pageCategory(), state.pageStyle]);
 }
 
 /* A suggestion the user has not already got, in whatever shape the engine
@@ -343,8 +358,8 @@ function asSuggestion(raw) {
 
 function alreadyHave(label) {
   const folded = label.toLocaleLowerCase();
-  return [...state.existingButtons, ...state.words].some(
-    (item) => String(item.label || "").toLocaleLowerCase() === folded
+  return [...existingLabels(), ...state.words.map((item) => item.label)].some(
+    (text) => String(text || "").toLocaleLowerCase() === folded
   );
 }
 
@@ -361,9 +376,7 @@ function planned(label, suggested) {
 }
 
 function pageRoom() {
-  return state.availableSlots
-    ? state.availableSlots.length
-    : state.grid.cols * state.grid.rows - state.existingButtons.length;
+  return pageCapacity();
 }
 
 /* Phrases arrive comma-prone; add them one by one instead of splitting. */
@@ -467,6 +480,11 @@ $("ai-go").addEventListener("click", async () => {
       : "Give the page a title first — it's used as the category.";
     return;
   }
+  if (state.words.length >= pageRoom()) {
+    status.classList.add("error");
+    status.textContent = "The page is full — remove a planned button or choose another page first.";
+    return;
+  }
   const what = describeKind();
   setBusy(button, true, "Generating…");
   setActivity(`Generating ${what} for “${category}”…`);
@@ -478,7 +496,9 @@ $("ai-go").addEventListener("click", async () => {
     const added = absorb(data.words);
     renderWords();
     status.classList.add("success");
-    status.textContent = `Added ${added} suggestions — open one to swap it, ask for more like it, or remove it.`;
+    status.textContent = added
+      ? `Added ${added} suggestions — open one to swap it, ask for more like it, or remove it.`
+      : "No new suggestions fit. Try again or make room on the page.";
   } catch (error) {
     status.classList.add("error");
     status.textContent = `Suggestions couldn’t be generated. ${error.message}`;
@@ -520,6 +540,7 @@ $("edit-ai-regenerate").addEventListener("click", () => {
     const data = await askForSuggestions({
       count: CANDIDATES, alsoAvoid: [current.label],
     });
+    if (state.words[index] !== current || editingWordIndex() !== index || !$("chip-editor").open) return;
     const replacement = data.words
       .map(asSuggestion)
       .find((candidate) => candidate.label && !alreadyHave(candidate.label));
@@ -551,6 +572,7 @@ $("edit-ai-more").addEventListener("click", () => {
       count: CANDIDATES,
       like: [seed.message || seed.label],
     });
+    if (state.words[index] !== seed || editingWordIndex() !== index || !$("chip-editor").open) return;
     pushUndoSnapshot();
     const added = absorb(data.words);
     renderWords();

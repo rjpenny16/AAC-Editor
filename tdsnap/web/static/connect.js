@@ -8,7 +8,7 @@
 import { state } from "./state.js";
 import { $, setBusy, setActivity, setPreviewBusy } from "./dom.js";
 import { api } from "./api.js";
-import { firstAvailableSlot, renderWords } from "./chips.js";
+import { renderWords } from "./chips.js";
 import { emptyEdits, reconcile } from "./edits.js";
 import { parentFilter, parentSelect, renderParents } from "./parents.js";
 import { savePreference } from "./settings.js";
@@ -19,6 +19,7 @@ import { clearBuildError, setOperation, setPageStyle, show, showBuildError } fro
    cannot be reassigned across an ES module boundary. */
 let liveMonitor = null;
 let liveSyncing = false;
+let layoutRequest = 0;
 
 /* Stop following the page open in TD Snap (used when a session is torn down). */
 function stopLiveMonitor() {
@@ -380,8 +381,13 @@ $("live-connect-btn").addEventListener("click", async () => {
 
 async function loadTargetLayout(pageName, currentOnly = false) {
   if (state.operation !== "existing" || (!pageName && !currentOnly)) return null;
+  const request = ++layoutRequest;
+  const target = state.parentId;
+  const session = state.sessionId;
+  const provider = state.provider;
   clearBuildError();
   state.targetLoading = true;
+  state.layoutFingerprint = null;
   state.parentFree = null;
   parentSelect.disabled = true;
   $("parent-capacity").textContent = "Loading the existing layout…";
@@ -397,6 +403,12 @@ async function loadTargetLayout(pageName, currentOnly = false) {
         : currentOnly
           ? "/api/tdsnap/page-layout"
           : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
+    if (request !== layoutRequest || state.operation !== "existing" ||
+        state.parentId !== target || state.sessionId !== session || state.provider !== provider) {
+      return null;
+    }
+    if (state.layoutPage !== data.page) state.pageEdits = emptyEdits();
+    state.layoutPage = data.page;
     state.grid = data.grid;
     state.existingButtons = data.buttons || [];
     state.availableSlots = data.free_slots || [];
@@ -415,24 +427,21 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     state.pageEdits = state.canEditExisting
       ? reconcile(state.pageEdits, state.existingButtons)
       : emptyEdits();
-    const occupied = new Set(state.existingButtons.map((button) => button.slot));
-    state.words.forEach((item) => {
-      if (occupied.has(item.slot) || !state.availableSlots.includes(item.slot)) {
-        item.slot = firstAvailableSlot(item.fn);
-      }
-    });
     $("parent-capacity").classList.remove("error");
     $("parent-capacity").textContent = data.free_slots.length
       ? `${data.free_slots.length} empty space${data.free_slots.length === 1 ? "" : "s"} ` +
         `AAC Editor can update safely on “${data.page}”.`
       : `“${data.page}” is full. Choose another page or remove existing vocabulary in ${state.provider === "grid3" ? "Grid 3" : "TD Snap"}.`;
-    if (state.mode === "file") state.currentPage = state.parentId;
+    state.currentPage = state.mode === "file" ? state.parentId : data.page;
     $("current-page-label").textContent = `Adding to ${data.page}`;
     renderWords();
     return data;
   } catch (error) {
+    if (request !== layoutRequest || state.operation !== "existing" || state.parentId !== target) {
+      return null;
+    }
     state.existingButtons = [];
-    state.availableSlots = null;
+    state.availableSlots = [];
     state.grid3Cells = [];
     state.layoutFingerprint = null;
     state.canEditExisting = false;
@@ -442,9 +451,11 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     renderWords();
     throw error;
   } finally {
-    state.targetLoading = false;
-    parentSelect.disabled = false;
-    setPreviewBusy(false);
+    if (request === layoutRequest) {
+      state.targetLoading = false;
+      parentSelect.disabled = false;
+      setPreviewBusy(false);
+    }
   }
 }
 
@@ -469,9 +480,10 @@ async function syncLivePreview() {
     const status = await api("/api/tdsnap/status", {
       headers: { "X-TDSnap-Brief": "1" },
     });
-    if (state.targetLoading || state.parentId !== selectedPage) return;
+    if (state.targetLoading || state.parentId !== selectedPage || state.operation !== "existing") return;
     if (!status.running || !status.page || status.page === state.currentPage) return;
     const layout = await loadTargetLayout("", true);
+    if (!layout) return;
     state.currentPage = layout.page;
     state.parentId = layout.page;
     state.parentTouched = false;

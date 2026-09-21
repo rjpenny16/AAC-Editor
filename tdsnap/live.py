@@ -261,11 +261,18 @@ def _page_name(window, group=None):
         if (
             control.ControlTypeName == "TextControl"
             and name
+            and rect.right > rect.left
+            and rect.bottom > rect.top
             and rect.bottom <= page_rect.top
             and rect.left >= page_rect.left
             and rect.right <= page_rect.right
         ):
             titles.append(control)
+    # Toolbar badges (notably the sync "!") can sit a few pixels above the
+    # heading. Prefer the visible heading that identifies the grid itself.
+    matching = [title for title in titles if title.Name.strip() == group.Name.strip()]
+    if matching:
+        return matching[0].Name.strip()
     return min(
         titles,
         key=lambda control: control.BoundingRectangle.top,
@@ -642,7 +649,49 @@ def _page_layout(group, grid):
             "slot": row * len(grid.xs) + column,
             "label": label,
         })
+    occupied = {button["slot"] for button in buttons}
+    for hidden in _hidden_page_buttons(getattr(group, "Name", ""), grid):
+        if hidden["slot"] not in occupied:
+            buttons.append(hidden)
+            occupied.add(hidden["slot"])
     return sorted(buttons, key=lambda item: item["slot"])
+
+
+def _hidden_page_buttons(page, grid):
+    """Reserve stored hidden cells, which TD Snap omits outside edit mode.
+
+    Same-size layouts can differ with toolbar settings. Reserve their union:
+    an uncertain hidden cell is never an invitation to overwrite vocabulary.
+    """
+    if not page:
+        return []
+    path = _active_pageset_path(page)
+    if not path:
+        return []
+    cols, rows = len(grid.xs), len(grid.ys)
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+            records = conn.execute(
+                "SELECT b.Label, ep.GridPosition, ep.GridSpan, pl.PageLayoutSetting "
+                "FROM Page p JOIN PageLayout pl ON pl.PageId = p.Id "
+                "JOIN ElementPlacement ep ON ep.PageLayoutId = pl.Id "
+                "JOIN ElementReference er ON er.Id = ep.ElementReferenceId "
+                "JOIN Button b ON b.ElementReferenceId = er.Id "
+                "WHERE p.Title = ? COLLATE NOCASE AND ep.Visible = 0", (page,),
+            ).fetchall()
+        hidden = []
+        for label, position, span, setting in records:
+            if tuple(int(n) for n in setting.split(",")[:2]) != (cols, rows):
+                continue
+            x, y = (int(n) for n in position.split(",")[:2])
+            width, height = (int(n) for n in (span or "1,1").split(",")[:2])
+            for row in range(max(0, y), min(rows, y + height)):
+                for col in range(max(0, x), min(cols, x + width)):
+                    hidden.append({"slot": row * cols + col,
+                                   "label": label or "Hidden button", "hidden": True})
+        return hidden
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        return []
 
 
 def _accessible_labels(group):
@@ -836,8 +885,9 @@ def _describe_buttons(page, buttons):
             "message": stored["message"] if stored else None,
             "function": stored["function"] if stored else None,
             "symbol": stored["symbol"] if stored else False,
-            "editable": kind == "speak",
-            "locked_reason": None if kind == "speak" else LOCK_REASONS[kind],
+            "editable": kind == "speak" and not button.get("hidden"),
+            "locked_reason": "Hidden in TD Snap — kept unchanged" if button.get("hidden")
+            else None if kind == "speak" else LOCK_REASONS[kind],
         })
     return described, content is not None
 
@@ -902,9 +952,9 @@ def _empty_cell(window, grid, allow_scroll=True):
             child for child in group.GetChildren()
             if child.ControlTypeName == "ButtonControl"
         ]
-        empty = _first_empty(grid, [
-            button.BoundingRectangle for button in buttons if (button.Name or "").strip()
-        ])
+        occupied = {button["slot"] for button in _page_layout(group, grid)}
+        empty = next((_cell_at(grid, slot) for slot in range(len(grid.xs) * len(grid.ys))
+                      if slot not in occupied), None)
         if empty:
             return empty
         if not allow_scroll:
@@ -1271,6 +1321,7 @@ def _restore_page_state(window, baseline, content=None, maximum=0):
     _enter_edit_mode(window)
 
     def restored():
+        _collapse_editor(window)
         return (
             _fingerprint(_page_group(window)) == baseline
             and _content_restored(window, content)

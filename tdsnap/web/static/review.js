@@ -9,7 +9,7 @@
 import { state } from "./state.js";
 import { $, setBusy, setActivity } from "./dom.js";
 import { api } from "./api.js";
-import { pageCapacity, renderWords, takeWordInput } from "./chips.js";
+import { existingLabels, pageCapacity, renderWords, takeWordInput } from "./chips.js";
 import { loadTargetLayout, refreshDetectedPages } from "./connect.js";
 import {
   changePayload, countEdits, describeChange, describeMove, describeRemoval, editSummary,
@@ -358,12 +358,23 @@ buildForm.addEventListener("submit", (event) => {
 
   takeWordInput();
 
+  if (state.operation === "existing" && (state.targetLoading || !state.layoutFingerprint)) {
+    showStepError("items", "The page layout is not ready. Choose the page again before reviewing.");
+    return;
+  }
+
   if (!state.words.length && !countEdits(pendingPageEdits())) {
     showStepError("items", "Add at least one word or phrase before continuing.");
     return;
   }
-  if (state.availableSlots && state.words.length > pageCapacity()) {
+  if (state.words.length > pageCapacity()) {
     showStepError("items", "This page is full. Remove a planned button or choose another page.");
+    return;
+  }
+  const present = new Set(existingLabels().map((label) => label.toLocaleLowerCase()));
+  const duplicates = state.words.filter((item) => present.has(item.label.toLocaleLowerCase()));
+  if (duplicates.length) {
+    showStepError("items", `Already on this page: ${duplicates.map((item) => item.label).join(", ")}. Remove these planned duplicates or choose another page.`);
     return;
   }
 

@@ -45,8 +45,9 @@ function defaultLayout(pageName = 'Eating', overrides = {}) {
 async function mockTD(page, options = {}) {
   const status = options.status || defaultStatus();
   const layout = options.layout;
+  let visiblePage = status.page;
   await page.route('**/api/tdsnap/status', (route) => {
-    const value = typeof status === 'function' ? status(route) : status;
+    const value = typeof status === 'function' ? status(route) : { ...status, page: visiblePage };
     return fulfillJson(route, value);
   });
   await page.route('**/api/tdsnap/page-layout*', async (route) => {
@@ -55,6 +56,7 @@ async function mockTD(page, options = {}) {
       ? await layout(requested, route)
       : layout || defaultLayout(requested || status.page || 'Eating');
     if (value == null) return;
+    if (value.page) visiblePage = value.page;
     return fulfillJson(route, value);
   });
 }
@@ -135,6 +137,143 @@ async function blockingViolations(page) {
 // most recently registered route wins.
 test.beforeEach(async ({ page }) => {
   await mockSettings(page);
+});
+
+test.describe('beginner word-adding regressions', () => {
+  test('switching between topic rows and words keeps typing and review working', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple, pear');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('.more-options > summary').click();
+    await page.locator('#layout-options-btn').click();
+    await page.locator('#style-topic').click();
+    await page.locator('#style-words').click();
+    await page.locator('#layout-back-btn').click();
+    await expect(page.locator('#word-input')).toBeVisible();
+    await page.locator('#word-input').fill('banana');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-items li')).toHaveCount(3);
+    expect(errors).toEqual([]);
+  });
+
+  test('pasting a spreadsheet column replaces selected input and adds separate buttons', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('replace me');
+    await page.locator('#word-input').selectText();
+    await page.locator('#word-input').evaluate((input) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text', 'apple\r\npear\tbanana');
+      input.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+    });
+    await expect(page.locator('.chip-body')).toHaveText(['apple', 'pear', 'banana']);
+    await expect(page.locator('#word-input')).toHaveValue('');
+  });
+
+  test('Escape never repeats the previous save or removal', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple, pear, banana');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('.chip-body').filter({ hasText: 'apple' }).click();
+    await page.locator('#edit-remove').click();
+    await page.locator('.chip-body').filter({ hasText: 'pear' }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.chip-body')).toHaveText(['pear', 'banana']);
+    await page.locator('.chip-body').filter({ hasText: 'pear' }).click();
+    await page.locator('#edit-label').fill('grape');
+    await page.locator('#edit-save').click();
+    await page.locator('.chip-body').filter({ hasText: 'banana' }).click();
+    await page.locator('#edit-label').fill('discard this');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.chip-body')).toHaveText(['grape', 'banana']);
+  });
+
+  test('the draft survives time spent reviewing and choosing a destination', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-input').press('Enter');
+    await expect.poll(() => store.draft?.items.length).toBe(1);
+    await page.locator('#build-btn').click();
+    await page.waitForTimeout(2200);
+    expect(store.draft.items[0].label).toBe('apple');
+    await page.locator('#review-back-btn').click();
+    await page.locator('#choose-page-btn').click();
+    await page.waitForTimeout(2200);
+    expect(store.draft.items[0].label).toBe('apple');
+  });
+
+  test('renaming an existing button releases its old label for a new word', async ({ page }) => {
+    await mockTD(page, { layout: defaultLayout('Eating', {
+      content_readable: true,
+      buttons: [{ slot: 0, label: 'apple', message: '', editable: true }],
+      free_slots: [1, 2, 3, 4, 5],
+    }) });
+    await existingItems(page);
+    await page.locator('#edit-existing-btn').click();
+    await page.locator('#preview .cell.existing').filter({ hasText: 'apple' }).click();
+    await page.locator('#edit-label').fill('pear');
+    await page.locator('#edit-save').click();
+    await page.locator('#placement-back-btn').click();
+    await page.locator('#word-input').fill('apple, pear');
+    await page.locator('#word-input').press('Enter');
+    await expect(page.locator('.chip-body')).toHaveText(['apple']);
+    await expect(page.locator('#chip-note')).toContainText('pear is already');
+  });
+
+  test('changing pages does not carry a pending removal to the same label on another page', async ({ page }) => {
+    let current = 'Eating';
+    await mockTD(page, {
+      status: () => defaultStatus({ page: current }),
+      layout: (requested) => {
+        current = requested || current;
+        return defaultLayout(current, {
+          content_readable: true,
+          buttons: [{ slot: 0, label: 'help', message: '', editable: true }],
+          free_slots: [1, 2, 3, 4, 5],
+        });
+      },
+    });
+    await existingItems(page);
+    await page.locator('#edit-existing-btn').click();
+    await page.locator('#preview .cell.existing').filter({ hasText: 'help' }).click();
+    await page.locator('#edit-remove').click();
+    await page.locator('#placement-back-btn').click();
+    await page.locator('#choose-page-btn').click();
+    await page.locator('#parent-select').selectOption('Games');
+    await page.locator('#wizard-destination .wizard-next').click();
+    await expect(page.locator('#edit-existing-summary')).toBeHidden();
+    await expect(page.locator('#capacity')).toHaveText('5 spaces available');
+  });
+
+  test('a smaller destination keeps overflow words without assigning overlapping cells', async ({ page }) => {
+    let current = 'Eating';
+    await mockTD(page, {
+      status: () => defaultStatus({ page: current }),
+      layout: (requested) => {
+        current = requested || current;
+        return defaultLayout(current, current === 'Games' ? { free_slots: [4, 5] } : {});
+      },
+    });
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple, pear, banana');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#choose-page-btn').click();
+    await page.locator('#parent-select').selectOption('Games');
+    await page.locator('#wizard-destination .wizard-next').click();
+    await expect(page.locator('.chip-body')).toHaveCount(3);
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#items-error')).toContainText('full');
+    await page.getByRole('button', { name: 'Remove banana', exact: true }).click();
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-preview .cell.used')).toHaveCount(2);
+  });
 });
 
 // Only the connect screen used to be scanned, which left the screens where the
@@ -929,6 +1068,29 @@ test('existing labels are de-duplicated and page capacity is enforced', async ({
   await expect(page.locator('#capacity')).toHaveText('1 added · 0 spaces left');
 });
 
+/* A new page is empty, so it has the whole grid. The free-cell list belongs to
+   whichever page was open when "Create a new page" was clicked, and leaving it
+   in place capped the new page at that page's leftovers — one nearly-full page
+   meant one button, with the input disabled and no way to say why. */
+test('a new page gets the whole grid, not the free cells of the page it came from', async ({ page }) => {
+  await mockTD(page, {
+    status: defaultStatus({ grid: { cols: 3, rows: 2 }, pages: ['Eating', 'Topics Menu Page'] }),
+    layout: defaultLayout('Eating', {
+      grid: { cols: 3, rows: 2 },
+      buttons: [0, 1, 2, 3, 4].map((slot) => ({ slot, label: `Button ${slot}` })),
+      free_slots: [5],
+    }),
+  });
+  await newItems(page, 'Video games');
+  await expect(page.locator('#capacity')).toHaveText('6 spaces available');
+
+  await page.locator('#word-input').fill('Mario, Zelda, Minecraft');
+  await page.locator('#word-input').press('Enter');
+  await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+  await expect(page.locator('#word-input')).toBeEnabled();
+  await expect(page.locator('#capacity')).toHaveText('3 added · 3 spaces left');
+});
+
 test('duplicate feedback names every skipped button and preserves spelling', async ({ page }) => {
   await mockTD(page, {
     status: defaultStatus({ pages: ['Eating'] }),
@@ -1245,6 +1407,7 @@ test('the support report is shown before it is copied, and carries no page conte
 
   await page.locator('#support-report-btn').click();
   await expect(page.locator('#support-dialog')).toBeVisible();
+  await expect(page.locator('#support-report-text')).toContainText('AAC Editor support report');
   const report = await page.locator('#support-report-text').textContent();
   expect(report).toContain('AAC Editor support report');
   // 'Eating' is the mocked open page; the report must not name it.

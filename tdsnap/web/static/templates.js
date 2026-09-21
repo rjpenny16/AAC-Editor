@@ -19,7 +19,8 @@
 
 import { state, FUNCTIONS } from "./state.js";
 import { $, appendNamedList } from "./dom.js";
-import { firstAvailableSlot, pageCapacity, renderWords } from "./chips.js";
+import { existingLabels, firstAvailableSlot, pageCapacity, renderWords } from "./chips.js";
+import { openSlots } from "./preview.js";
 import { titleOf } from "./parents.js";
 import { deleteTemplate, getTemplates, saveTemplate } from "./settings.js";
 import { setPageStyle } from "./wizard.js";
@@ -147,7 +148,7 @@ function applyTemplate(template) {
   if (style !== state.pageStyle) setPageStyle(style);
 
   const present = new Set([
-    ...state.existingButtons.map((button) => String(button.label || "").toLocaleLowerCase()),
+    ...existingLabels().map((label) => label.toLocaleLowerCase()),
     ...state.words.map((item) => item.label.toLocaleLowerCase()),
   ]);
   const duplicates = [];
@@ -170,8 +171,8 @@ function applyTemplate(template) {
     // Keep the saved cell when this page has it free; otherwise take the next
     // one, which is what firstAvailableSlot already decides for a typed word.
     const wanted = Number.isInteger(item.slot) && item.slot < total ? item.slot : null;
-    const free = wanted !== null && !state.words.some((word) => word.slot === wanted)
-      && !state.existingButtons.some((button) => button.slot === wanted);
+    const free = wanted !== null && openSlots().includes(wanted)
+      && !state.words.some((word) => word.slot === wanted);
     state.words.push({
       label: item.label,
       message: item.message || null,

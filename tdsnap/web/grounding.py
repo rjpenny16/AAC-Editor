@@ -29,7 +29,9 @@ else could arrive.
 import json
 import os
 import re
+import unicodedata
 from collections.abc import Sequence
+from html import unescape
 from typing import Optional
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -37,6 +39,23 @@ from urllib.request import Request, urlopen
 _API = "https://en.wikipedia.org/w/api.php"
 _TIMEOUT = 6
 _TAG = re.compile(r"<[^>]+>")
+# Filter external reference material, never the vocabulary a person types.
+# Whole words avoid rejecting innocent names such as Essex or Scunthorpe.
+_EXPLICIT = re.compile(
+    r"\b(?:sex(?:ual\w*|ting)?|porn\w*|eroti\w*|hentai|hentais|"
+    r"fetish\w*|masturbat\w*|orgasm\w*|genital\w*|penis|penises|"
+    r"vagin\w*|vulva\w*|testicl\w*|intercourse|nudit\w*|nude\w*|"
+    r"prostitut\w*|brothel\w*|incest\w*|rape|raped|rapist\w*|"
+    r"bdsm|bondage|striptease|fuck\w*|cock|cocks|dick|dicks|pussy|"
+    r"blowjob\w*|cumshot\w*|semen|ejaculat\w*|onlyfans|nsfw|"
+    r"adult[\s-]+(?:film\w*|entertainment|content|video\w*))\b",
+    re.IGNORECASE,
+)
+
+
+def _appropriate(text: str) -> bool:
+    plain = unicodedata.normalize("NFKC", unescape(_TAG.sub("", str(text))))
+    return not _EXPLICIT.search(plain)
 
 
 def enabled(requested: bool = False) -> bool:
@@ -79,20 +98,28 @@ def _search_titles(query: str, limit: int = 5) -> list[str]:
     results = data.get("query", {}).get("search", [])
     # Prefer "List of ... characters/items" articles: they enumerate members,
     # which is exactly what a "<subject> characters" page wants.
-    titles = [r["title"] for r in results if r.get("title")]
+    titles = [
+        r["title"] for r in results
+        if r.get("title") and _appropriate(r["title"] + " " + r.get("snippet", ""))
+    ]
     titles.sort(key=lambda t: 0 if t.lower().startswith("list of") else 1)
     return titles
 
 
 def _extract(title: str, chars: int = 1500) -> str:
     data = _get({
-        "action": "query", "prop": "extracts",
+        "action": "query", "prop": "extracts|categories", "cllimit": "max",
         "explaintext": "1", "exchars": chars, "titles": title,
     })
     pages = data.get("query", {}).get("pages", [])
     if not pages:
         return ""
-    return str(pages[0].get("extract", "")).strip()
+    page = pages[0]
+    extract = str(page.get("extract", "")).strip()
+    metadata = " ".join(str(c.get("title", "")) for c in page.get("categories", []))
+    if not _appropriate(f"{page.get('title', title)} {metadata} {extract}"):
+        return ""
+    return extract
 
 
 def _empty() -> dict:
@@ -119,7 +146,7 @@ def lookup(
     search leaves something usable behind instead of silently grounding nothing.
     """
     category = str(category or "").strip()
-    if not enabled(requested) or len(category) < 2:
+    if not enabled(requested) or len(category) < 2 or not _appropriate(category):
         return _empty()
     rejected = {str(name or "").strip().casefold() for name in exclude}
     rejected.discard("")
@@ -129,19 +156,27 @@ def lookup(
             if found.casefold() not in rejected
         ]
         chosen = str(title or "").strip()
-        if chosen:
+        if chosen and chosen.casefold() not in rejected and _appropriate(chosen):
             # An explicitly chosen article leads; it is still only a Wikipedia
             # title, so the request shape is unchanged.
             candidates = [chosen] + [
                 found for found in candidates if found.casefold() != chosen.casefold()
             ]
-        for candidate in candidates[:3]:
-            extract = _extract(candidate)
+        vetted = []
+        for candidate in dict.fromkeys(candidates[:5]):
+            if not _appropriate(candidate):
+                continue
+            try:
+                extract = _extract(candidate)
+            except Exception:  # noqa: S112 - omit unverified external reference material
+                # An unverified alternative must never reach the UI or model.
+                continue
             if not extract:
                 continue
-            alternatives = [
-                other for other in candidates if other != candidate
-            ][:4]
+            vetted.append((candidate, extract))
+        if vetted:
+            candidate, extract = vetted[0]
+            alternatives = [other for other, _ in vetted[1:]]
             related = ", ".join(alternatives)
             text = f"Wikipedia — {candidate}:\n{extract}"
             if related:
