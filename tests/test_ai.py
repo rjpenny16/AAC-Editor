@@ -732,7 +732,7 @@ def test_grounding_builds_reference(monkeypatch):
                 {"title": "List of Roblox characters"},
             ]}})
         # extracts request — must target the "List of" article (preferred).
-        assert params["titles"] == "List of Roblox characters"
+        assert params["titles"] in {"List of Roblox characters", "Roblox"}
         return _FakeResponse({"query": {"pages": [
             {"extract": "Builderman, Noob, and Guest are notable <b>avatars</b>."}
         ]}})
@@ -746,7 +746,7 @@ def test_grounding_builds_reference(monkeypatch):
     assert "Builderman" in text
     assert "<b>" not in text  # HTML stripped
     assert "Related articles: Roblox" in text
-    assert len(calls) == 2
+    assert len(calls) == 3  # Alternatives are checked before being recommended too.
 
 
 def test_grounding_is_best_effort(monkeypatch):
@@ -798,7 +798,7 @@ def test_lookup_names_the_article_it_used(monkeypatch):
     assert source["url"] == "https://en.wikipedia.org/wiki/Mercury_%28element%29"
     assert source["alternatives"] == ["Mercury (planet)"]
     assert "chemical element" in source["text"]
-    assert asked == ["Mercury (element)"]
+    assert asked == ["Mercury (element)", "Mercury (planet)"]
 
 
 def test_lookup_honours_a_rejection_and_a_choice(monkeypatch):

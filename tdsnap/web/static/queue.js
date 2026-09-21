@@ -28,7 +28,7 @@
 import { state } from "./state.js";
 import { $, appendNamedList } from "./dom.js";
 import { countEdits, editSummary, emptyEdits } from "./edits.js";
-import { renderWords } from "./chips.js";
+import { clearUndoHistory, renderWords } from "./chips.js";
 import { titleOf } from "./parents.js";
 import { show } from "./wizard.js";
 
@@ -308,6 +308,7 @@ $("queue-add-btn").addEventListener("click", () => {
   // The queued payload is frozen and independent of live state, so the
   // composition can be cleared for the next page without disturbing it.
   state.words = [];
+  clearUndoHistory();
   state.pageEdits = emptyEdits();
   state.pendingEdit = null;
   state.placementAdjusted = false;

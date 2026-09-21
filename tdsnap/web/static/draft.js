@@ -18,7 +18,7 @@ import { titleOf } from "./parents.js";
 import { clearDraft as clearStoredDraft, getDraft, saveDraft } from "./settings.js";
 
 const AUTOSAVE_INTERVAL_MS = 2000;
-const BUILD_STEPS = new Set(["items", "layout", "placement"]);
+const BUILD_STEPS = new Set(["items", "layout", "placement", "review", "destination", "title", "operation"]);
 
 let pendingResume = null; // a draft the user chose to resume; applied once "items" shows
 let recoveryResolved = false; // true once the banner is answered, or the user composed anyway
@@ -68,8 +68,7 @@ async function autosaveTick() {
   }
   const signature = draft ? JSON.stringify(draft) : "";
   if (signature === lastSignature) return;
-  lastSignature = signature;
-  await saveDraft(draft);
+  if (await saveDraft(draft)) lastSignature = signature;
 }
 
 function startAutosave() {

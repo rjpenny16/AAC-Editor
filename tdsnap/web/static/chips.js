@@ -118,6 +118,7 @@ function takeWordInput() {
 }
 
 wordInput.addEventListener("keydown", (event) => {
+  if (event.isComposing) return;
   if (event.key === "Enter" || event.key === ",") {
     event.preventDefault();
     takeWordInput();
@@ -134,9 +135,13 @@ $("word-add-btn").addEventListener("click", () => {
 });
 wordInput.addEventListener("paste", (event) => {
   const text = (event.clipboardData || window.clipboardData).getData("text");
-  if (text && text.includes(",")) {
+  if (text && /[,\r\n\t]/.test(text)) {
     event.preventDefault();
-    addWords(text);
+    const start = wordInput.selectionStart ?? wordInput.value.length;
+    const end = wordInput.selectionEnd ?? start;
+    const combined = wordInput.value.slice(0, start) + text + wordInput.value.slice(end);
+    wordInput.value = "";
+    addWords(combined, wordInput.dataset.forced || null);
   }
 });
 
@@ -145,7 +150,7 @@ function firstAvailableSlot(preferredFn = "") {
   const available = openSlots().filter((slot) => !used.has(slot));
   return available.find((slot) => !preferredFn || functionForSlot(slot) === preferredFn)
     ?? available[0]
-    ?? state.grid.cols * state.grid.rows - 1;
+    ?? null;
 }
 
 /* How many new buttons fit in total, pending edits to existing buttons
@@ -188,9 +193,10 @@ function addWords(raw, forcedFn = null) {
   const capacity = pageCapacity();
   const duplicates = [];
   const overflow = [];
+  const tooLong = [];
   const added = [];
   raw
-    .split(",")
+    .split(/[,\r\n\t]+/)
     .map((word) => word.trim())
     .filter(Boolean)
     .forEach((word) => {
@@ -198,10 +204,12 @@ function addWords(raw, forcedFn = null) {
       const alreadyPlanned = state.words.some(
         (item) => item.label.toLocaleLowerCase() === normalized
       );
-      const alreadyPresent = state.existingButtons.some(
-        (item) => String(item.label || "").toLocaleLowerCase() === normalized
+      const alreadyPresent = existingLabels().some(
+        (label) => label.toLocaleLowerCase() === normalized
       );
-      if (alreadyPlanned || alreadyPresent) {
+      if ([...word].length > 60) {
+        tooLong.push(word);
+      } else if (alreadyPlanned || alreadyPresent) {
         duplicates.push(word);
       } else if (state.words.length >= capacity) {
         overflow.push(word);
@@ -219,6 +227,9 @@ function addWords(raw, forcedFn = null) {
       }
     });
   renderSkippedFeedback(duplicates, overflow, added);
+  if (tooLong.length) {
+    appendNamedList($("chip-note"), "Shorten these labels to 60 characters before adding:", tooLong);
+  }
   renderWords();
 }
 
@@ -226,7 +237,8 @@ function addWords(raw, forcedFn = null) {
 function renderSkippedFeedback(duplicates, overflow, added = []) {
   const note = $("chip-note");
   note.innerHTML = "";
-  const destination = titleOf(state.parentId);
+  const destination = state.operation === "new"
+    ? $("title-input").value.trim() || "the new page" : titleOf(state.parentId);
   // The word *was* added; this only says where else it already lives, because
   // the same concept existing twice in one page set is worth knowing about and
   // is sometimes exactly what was intended.
@@ -260,6 +272,18 @@ const PHRASE_MARK_SVG =
   '<path d="M12 6v12M7 9v6M2.5 11v2M17 9v6M21.5 11v2"/></svg>';
 
 function renderWords() {
+  const available = new Set(openSlots());
+  const used = new Set();
+  state.words.forEach((item) => {
+    if (!available.has(item.slot) || used.has(item.slot)) item.slot = null;
+    else used.add(item.slot);
+  });
+  state.words.forEach((item) => {
+    if (item.slot === null) item.slot = firstAvailableSlot(item.fn);
+  });
+  // The input moves into a topic row. Move it back before inserting standard
+  // chips, otherwise switching styles throws a DOM NotFoundError.
+  updateTopicInputRow();
   chipbox.querySelectorAll(".chip").forEach((chip) => chip.remove());
   state.words.forEach((item, index) => {
     const chip = document.createElement("span");
@@ -317,7 +341,8 @@ function renderWords() {
       const row = chipbox.querySelector(`[data-row-phrases="${item.fn}"]`);
       (row || chipbox).append(chip);
     } else {
-      chipbox.insertBefore(chip, wordInput);
+      if (wordInput.parentElement === chipbox) chipbox.insertBefore(chip, wordInput);
+      else chipbox.append(chip);
     }
   });
 
@@ -326,6 +351,8 @@ function renderWords() {
   const left = Math.max(0, capacity - state.words.length);
   meter.textContent = capacity === 0
     ? "Page is full"
+    : state.words.length > capacity
+      ? `${state.words.length} planned · ${state.words.length - capacity} won’t fit — remove buttons or choose another page`
     : state.words.length === 0
       ? `${capacity} space${capacity === 1 ? "" : "s"} available`
       : `${state.words.length} added · ${left} space${left === 1 ? "" : "s"} left`;
@@ -466,6 +493,7 @@ function showEditorFor(mode, {
   syncSymbolQuery();
   $("edit-revert").hidden = !canRevert;
   $("edit-remove").textContent = existing ? "Remove from the page" : "Remove button";
+  chipDialog.returnValue = "cancel";
   chipDialog.showModal();
 }
 
@@ -537,6 +565,12 @@ function labelTaken(label) {
     return (change ? change.label : button.label || "").toLocaleLowerCase() === folded;
   });
   return planned || present;
+}
+
+function existingLabels() {
+  return state.existingButtons
+    .filter((button) => !isRemoved(state.pageEdits, button.slot))
+    .map((button) => (changeFor(state.pageEdits, button.slot)?.label || button.label || "").trim());
 }
 
 $("chip-editor-form").addEventListener("submit", (event) => {
@@ -612,7 +646,7 @@ chipDialog.addEventListener("close", () => {
 
 export {
   autoFormatTopicRows, clearUndoHistory, editingWordIndex, firstAvailableSlot,
-  functionForSlot, openExistingEditor, pageCapacity, pushUndoSnapshot,
+  existingLabels, functionForSlot, openExistingEditor, pageCapacity, pushUndoSnapshot,
   rememberRejection, renderWords, takeWordInput, undoLastRemoval,
   updateTopicInputRow,
 };

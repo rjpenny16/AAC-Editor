@@ -42,7 +42,7 @@ import { AI_GENERATION_TIMEOUT_MS, state } from "./state.js";
 import { $, setBusy } from "./dom.js";
 import { api } from "./api.js";
 import {
-  editingWordIndex, firstAvailableSlot, functionForSlot, pushUndoSnapshot,
+  editingWordIndex, existingLabels, firstAvailableSlot, functionForSlot, pageCapacity, pushUndoSnapshot,
   rememberRejection, renderWords,
 } from "./chips.js";
 import { setActivity } from "./dom.js";
@@ -389,10 +389,25 @@ function describeKind() {
     : "phrases";
 }
 
+/* The chosen reference article and the refused ones belong to one page and
+   one style; carrying them to another page would ground "Snacks" on the
+   article picked for "Zoo". */
+let articleContext = "";
+function suggestionContext() {
+  return JSON.stringify([state.provider, state.sessionId, state.operation, pageCategory(), state.pageStyle]);
+}
+
 /* One request shape for all the ways of asking: the whole panel, more for the
    tray, one item regenerated, and "more like this". Only `count`, `like`, and
    `already` differ. */
 async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
+  const context = suggestionContext();
+  if (articleContext !== context) {
+    state.aiChosenArticle = "";
+    state.aiExcluded = [];
+    clearGroundingSource();
+    articleContext = context;
+  }
   const topic = state.pageStyle === "topic";
   const data = await api(
     "/api/ai/words",
@@ -422,6 +437,9 @@ async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
     },
     AI_GENERATION_TIMEOUT_MS
   );
+  if (context !== suggestionContext() || !["items", "layout"].includes(state.wizardStep)) {
+    throw new Error("The page changed while suggestions were being generated. Suggest again for this page.");
+  }
   renderGroundingSource(data.grounding);
   return data;
 }
@@ -437,8 +455,8 @@ function asSuggestion(raw) {
 
 function alreadyHave(label) {
   const folded = label.toLocaleLowerCase();
-  return [...state.existingButtons, ...state.words].some(
-    (item) => String(item.label || "").toLocaleLowerCase() === folded
+  return [...existingLabels(), ...state.words.map((item) => item.label)].some(
+    (text) => String(text || "").toLocaleLowerCase() === folded
   );
 }
 
@@ -462,9 +480,7 @@ function planned(label, suggested) {
 }
 
 function pageRoom() {
-  return state.availableSlots
-    ? state.availableSlots.length
-    : state.grid.cols * state.grid.rows - state.existingButtons.length;
+  return pageCapacity();
 }
 
 function roomLeft() {
@@ -760,6 +776,11 @@ async function runSuggestion(button, busyLabel) {
       : "Give the page a title first — it’s used as the topic.";
     return;
   }
+  if (state.words.length >= pageRoom()) {
+    status.classList.add("error");
+    status.textContent = "The page is full — remove a planned button or choose another page first.";
+    return;
+  }
   const what = describeKind();
   setBusy(button, true, busyLabel);
   setActivity(`Thinking of ${what} for “${category}”…`);
@@ -819,6 +840,7 @@ $("edit-ai-regenerate").addEventListener("click", () => {
     const data = await askForSuggestions({
       count: CANDIDATES, alsoAvoid: [current.label],
     });
+    if (state.words[index] !== current || editingWordIndex() !== index || !$("chip-editor").open) return;
     const replacement = data.words
       .map(asSuggestion)
       .find((candidate) => candidate.label && !alreadyHave(candidate.label));

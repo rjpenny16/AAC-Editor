@@ -9,6 +9,7 @@
 import { state } from "./state.js";
 import { $ } from "./dom.js";
 import { autoFormatTopicRows, firstAvailableSlot, renderWords, updateTopicInputRow } from "./chips.js";
+import { emptyEdits } from "./edits.js";
 import { loadTargetLayout } from "./connect.js";
 import { clearDraft, takePendingResume } from "./draft.js";
 import { loadParentCapacity, titleOf, updatePlacementRecommendation } from "./parents.js";
@@ -137,11 +138,20 @@ function setOperation(operation) {
     ? `Adding to ${titleOf(state.parentId)}`
     : `Creating ${$("title-input").value.trim() || "a new page"}`;
   state.existingButtons = existing ? state.existingButtons : [];
-  // A new Grid 3 grid is linked from the open grid, so that grid's fingerprint
-  // and free-cell count stay the guard for the create as well.
+  // A new page starts empty. The free-cell list and any pending edits describe
+  // the page that was being changed — loadTargetLayout refuses to run outside
+  // the "existing" operation, so nothing else would ever clear them, and a
+  // stale one-free-cell list would cap the new page at one button. A new
+  // Grid 3 grid is linked from the open grid, so that grid's fingerprint and
+  // free-cell count stay the guard for the create as well.
   const keepParent = existing || state.provider === "grid3";
   state.layoutFingerprint = keepParent ? state.layoutFingerprint : null;
   if (!keepParent) state.parentFree = null;
+  if (!existing) {
+    state.availableSlots = null;
+    state.pageEdits = emptyEdits();
+    state.canEditExisting = false;
+  }
   updateProgress(state.wizardStep);
   renderWords();
 }
@@ -346,8 +356,10 @@ function setPageStyle(style) {
     : "Add one word per button.";
   $("preview-legend").hidden = style !== "topic";
   $("ai-go-label").textContent = style === "topic" ? "Suggest phrases" : "Suggest words";
-  if (style !== "topic") setActiveFn("", false);
-  else autoFormatTopicRows();
+  if (style !== "topic") {
+    setActiveFn("", false);
+    renderWords();
+  } else autoFormatTopicRows();
 }
 
 function setActiveFn(fn, manual = true) {
