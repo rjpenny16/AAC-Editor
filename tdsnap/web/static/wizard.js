@@ -298,14 +298,11 @@ function setPageStyle(style) {
     ? "Add phrases across the communication functions below."
     : "Add one word per button.";
   $("preview-legend").hidden = style !== "topic";
-  $("ai-go").textContent = style === "topic" ? "Suggest phrases" : "Suggest words";
-  $("ai-summary-text").textContent =
-    style === "topic" ? "Suggest phrases with AI" : "Suggest words with AI";
+  $("ai-go-label").textContent = style === "topic" ? "Suggest phrases" : "Suggest words";
   if (style !== "topic") {
     setActiveFn("", false);
     renderWords();
-  }
-  else autoFormatTopicRows();
+  } else autoFormatTopicRows();
 }
 
 function setActiveFn(fn, manual = true) {

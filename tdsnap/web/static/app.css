@@ -257,7 +257,12 @@ h2 {
   letter-spacing: -0.035em;
 }
 
-h2:focus { outline: 0; }
+/* Each step heading is given focus when that step opens, so a screen reader
+   announces where the wizard just went. Nothing can Tab to one, so a focus
+   indicator on it marks nothing a keyboard user can act on — which is why the
+   outline was already suppressed here. The halo was not, so every step change
+   painted a stray blue box around its own title. */
+h2:focus { outline: 0; box-shadow: none; }
 
 h3 { margin: 0; font-size: 1rem; }
 
@@ -500,7 +505,7 @@ input:focus-visible, select:focus-visible {
 
 .more-options,
 .help-disclosure,
-.ai-suggest,
+.ai-options,
 .ai-advanced {
   margin-top: 1.25rem;
   border: 1px solid var(--line);
@@ -519,7 +524,7 @@ summary {
 }
 
 .more-options-body,
-.ai-body,
+.ai-options-body,
 .help-disclosure ol,
 .ai-advanced > :not(summary) { margin: 0; padding: 0.25rem 1rem 1rem; }
 .optional-tag { color: var(--ink-soft); font-size: 0.875rem; font-weight: 500; }
@@ -528,7 +533,95 @@ summary {
 .seg-btn { min-height: 2.75rem; padding: 0.6rem; border: 1px solid var(--line-strong); border-radius: 0.5rem; color: var(--ink); background: var(--surface); }
 .seg-btn.selected { color: var(--on-accent); border-color: var(--accent); background: var(--accent); }
 
-.ai-controls { display: grid; grid-template-columns: 1fr 6rem auto; align-items: end; gap: 0.65rem; }
+/* What a provider can and cannot do, on the screen where it is chosen.
+   Grid 3 sits beside TD Snap, which does far more, so the narrower one says
+   so before somebody commits rather than after they hit a wall. */
+.provider-limits {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--surface-soft);
+}
+
+.provider-limits h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.provider-limits ul { margin: 0; padding-left: 1.25rem; font-size: 0.875rem; }
+.provider-limits .field-hint { margin: 0.6rem 0 0.25rem; }
+.limits-cannot { color: var(--ink-soft); }
+.connection-detail { margin: 0.5rem 0 0; font-size: 0.875rem; }
+
+/* The suggestions panel.
+ *
+ * It used to be a disclosure inside another disclosure, which is where the
+ * "how do I even turn this on?" went. It sits in the page now, one state at a
+ * time, sized so that a panel nobody wants to use is still only a heading and
+ * one line of text. */
+.ai-panel {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: var(--surface-soft);
+}
+
+.ai-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.ai-head h3 { margin: 0; font-size: 1.05rem; }
+.ai-summary { margin: 0.45rem 0 0; font-weight: 600; }
+.ai-panel > .field-hint { margin-top: 0.3rem; }
+
+/* The state, said in one word, before anybody has to read a sentence. */
+.ai-pill {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: var(--surface);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.ai-panel[data-ai-state="ready"] .ai-pill {
+  color: var(--success);
+  border-color: currentcolor;
+  background: var(--success-soft);
+}
+
+.ai-panel[data-ai-state="setup"] .ai-pill,
+.ai-panel[data-ai-state="downloading"] .ai-pill {
+  color: var(--warning);
+  border-color: currentcolor;
+  background: var(--warning-soft);
+}
+
+.ai-stage { margin-top: 0.85rem; }
+.ai-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.ai-model-line { margin: 0 0 0.65rem; }
+.ai-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.ai-ask label { font-weight: 700; }
+.ai-ask input { width: 5rem; }
+
+/* Candidates, not buttons: nothing here is on the page yet. The dashed edge
+   is the whole point — it has to look unlike the chip box above it. */
+.ai-tray {
+  margin-top: 0.9rem;
+  padding: 0.85rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: 0.6rem;
+  background: var(--surface);
+}
+
+.ai-tray-head h4 { margin: 0 0 0.25rem; font-size: 0.95rem; }
+.ai-tray-head .field-hint { margin-top: 0; }
+.ai-tray-list { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.7rem 0; }
+.ai-tray-list:empty { display: none; }
+.ai-tray-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.chip.suggestion { border-style: dashed; background: var(--surface-soft); }
+.suggestion-mark { color: var(--accent); font-weight: 700; }
+.chip.suggestion .chip-body:disabled { color: var(--ink-soft); cursor: not-allowed; }
+.chip.suggestion > button:last-child:hover { color: var(--danger); background: var(--danger-soft); }
+
+.ai-options, .ai-advanced { background: var(--surface); }
+.ai-setup-steps { margin: 0 0 0.75rem; padding-left: 1.25rem; }
 .ai-grounding-option { display: flex; gap: 0.65rem; align-items: start; font-weight: 700; }
 .ai-grounding-option input { width: 1.25rem; height: 1.25rem; flex: none; margin-top: 0.15rem; }
 .ai-settings { display: grid; gap: 0.4rem; }
@@ -650,7 +743,13 @@ summary {
 /* An existing button this edit may touch. "Eligible" is an invitation while
    "changed" and "removing" are commitments, so the two committed states carry
    a word in the corner as well as a color — the difference has to survive a
-   reader who cannot tell the border colors apart. */
+   reader who cannot tell the border colors apart.
+
+   A locked button carries one too, for the same reason: it used to differ
+   from an eligible one by border style alone, which is the hardest of all
+   these states to see and the one somebody needs first. Its badge is muted
+   rather than colored — it marks what to skip, not something to act on, and
+   a menu page where every button is a page link should read as quiet. */
 .preview .cell.existing.editable { border-style: dashed; border-color: var(--line-strong); cursor: pointer; }
 .preview .cell.existing.editable:hover { border-color: var(--accent); background: var(--accent-soft); }
 .preview .cell.marked-changed,
@@ -660,6 +759,7 @@ summary {
 .preview .cell.marked-moved { border: 3px solid var(--accent); border-style: dashed; }
 .preview .cell.marked-removed { border: 3px solid var(--danger); background: var(--danger-soft); }
 .preview .cell.marked-removed .cell-label { text-decoration: line-through; }
+.preview .cell.existing.locked::after,
 .preview .cell.marked-changed::after,
 .preview .cell.marked-moved::after,
 .preview .cell.marked-removed::after {
@@ -672,6 +772,7 @@ summary {
   letter-spacing: 0.02em;
 }
 
+.preview .cell.existing.locked::after { content: "locked"; color: var(--ink-soft); font-weight: 700; }
 .preview .cell.marked-changed::after { content: "changed"; color: var(--accent); }
 .preview .cell.marked-moved::after { content: "moving"; color: var(--accent); }
 
@@ -836,7 +937,8 @@ summary {
   .wizard-actions .wizard-back { order: 2; }
   .review-actions #confirm-update-btn { order: -1; }
   .review-summary { grid-template-columns: 1fr; }
-  .ai-controls { grid-template-columns: 1fr; }
+  .ai-ask { align-items: stretch; }
+  .ai-ask input { width: 100%; }
   .chipbox.topic-mode { grid-template-columns: 6rem minmax(0, 1fr) auto; }
   .placement-order { display: block !important; }
   .placement-order li { grid-template-columns: 1fr 1fr; }

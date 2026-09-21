@@ -42,6 +42,57 @@ function defaultLayout(pageName = 'Eating', overrides = {}) {
   };
 }
 
+/* The suggestion panel renders one state, and the server decides which one
+   (see engines.py). These mirror what /api/ai/status returns for each. */
+const LOCAL_MODEL = {
+  engine_available: false,
+  downloaded: false,
+  selected: 'small',
+  memory_bytes: 8 * 1024 ** 3,
+  memory_measured: true,
+  choices: [],
+  model: { key: 'small', name: 'Local', size: 'about 1 GB', license: 'Apache-2.0' },
+  download: { status: 'idle' },
+};
+
+const AI_READY = {
+  ready: true, engine: 'ollama', state: 'ready',
+  summary: 'Ready — suggestions come from your Ollama model (llama3.2).',
+  detail: 'Nothing you write leaves this computer.',
+  action: '', note: '', can_download: false,
+};
+
+const AI_SETUP = {
+  ready: false, engine: null, state: 'setup',
+  summary: 'Suggestions need a one-time setup.',
+  detail: 'AAC Editor downloads a free suggestion model once (about 1 GB) and then works offline.',
+  action: 'download', note: '', can_download: true,
+};
+
+const AI_DOWNLOADING = {
+  ready: false, engine: null, state: 'downloading',
+  summary: 'Setting up suggestions…',
+  detail: 'You can keep adding words while this finishes.',
+  action: '', note: '', can_download: false,
+};
+
+const AI_UNAVAILABLE = {
+  ready: false, engine: null, state: 'unavailable',
+  summary: "Suggestions aren't available in this installation.",
+  detail: 'Suggestions need Ollama running on this computer instead.',
+  action: 'ollama', note: '', can_download: false,
+};
+
+function readyStatus(overrides = {}) {
+  return {
+    ok: true,
+    ollama: { reachable: true, models: ['llama3.2'] },
+    local: LOCAL_MODEL,
+    ai: AI_READY,
+    ...overrides,
+  };
+}
+
 async function mockTD(page, options = {}) {
   const status = options.status || defaultStatus();
   const layout = options.layout;
@@ -353,6 +404,102 @@ test('native window hides the browser-only quit control', async ({ page }) => {
   }));
   await page.goto(BASE_URL);
   await expect(page.locator('#quit-btn')).toBeHidden();
+});
+
+/* What a Grid 3 user is told before they commit, and when it stops.
+ *
+ * Grid 3 sits on the first screen beside TD Snap, which does far more, and the
+ * narrow one used to say so only by failing. The gate that stops it most often
+ * is administrator approval, which is a property of this build being unsigned
+ * rather than anything the person did — and a clinician who is not a local
+ * administrator could do nothing at all with "Administrator restart was
+ * cancelled."
+ */
+function grid3Guidance(overrides = {}) {
+  return {
+    state: 'needs-elevation',
+    summary: 'Grid 3 editing needs administrator approval.',
+    detail:
+      'This copy of AAC Editor is not code-signed, so Windows will not let it '
+      + 'reach Grid 3 any other way. You will be asked each time you connect, not '
+      + 'just once. If you are not an administrator on this computer, someone who '
+      + 'is has to approve it. TD Snap editing and exported files need none of this.',
+    action: 'elevate',
+    ready: false,
+    limits: {
+      can: ['Add new words and phrases to empty single cells on the grid open in Grid 3.'],
+      cannot: [
+        'Change, move, or remove a cell that already holds something.',
+        'Create a new grid, or link one from a cell.',
+      ],
+    },
+    ...overrides,
+  };
+}
+
+test('Grid 3 says what it can and cannot do before anyone commits to it', async ({ page }) => {
+  await page.route('**/api/grid3/status', (route) => fulfillJson(route, {
+    ok: true, available: true, installed: true, running: false,
+    elevated: false, needs_elevation: true, unlocked: true,
+    guidance: grid3Guidance(),
+  }));
+  await page.goto(BASE_URL);
+
+  // Nothing about Grid 3's limits belongs on the TD Snap screen.
+  await expect(page.locator('#grid3-limits')).toBeHidden();
+
+  // Choosing the card is enough: the limits are there before the commit, not
+  // after the refusal.
+  await page.locator('#provider-grid3').click();
+
+  const limits = page.locator('#grid3-limits');
+  await expect(limits).toBeVisible();
+  await expect(limits).toContainText('empty single cells');
+  await expect(limits).toContainText('already holds something');
+  await expect(limits).toContainText('Create a new grid');
+
+  // Choosing a different app takes its limits off the screen with it.
+  await page.locator('#provider-tdsnap').click();
+  await expect(limits).toBeHidden();
+});
+
+test('a Grid 3 user who cannot elevate is told why, not just refused', async ({ page }) => {
+  await page.route('**/api/grid3/status', (route) => fulfillJson(route, {
+    ok: true, available: true, installed: true, running: false,
+    elevated: false, needs_elevation: true, unlocked: true,
+    guidance: grid3Guidance(),
+  }));
+  await page.goto(BASE_URL);
+  await page.locator('#provider-grid3').click();
+  await page.locator('#live-connect-btn').click();
+
+  // Browser mode cannot elevate at all, which is the same dead end a
+  // non-administrator reaches in the desktop app.
+  await expect(page.locator('#connection-error')).toBeVisible();
+  const detail = page.locator('#connection-detail');
+  await expect(detail).toBeVisible();
+  await expect(detail).toContainText('not code-signed');
+  await expect(detail).toContainText('each time you connect');
+  await expect(detail).toContainText('TD Snap editing and exported files need none of this');
+  await expect(page.locator('#provider-grid3-state'))
+    .toHaveText('Administrator approval required');
+});
+
+test('the explanation does not follow the user to another AAC app', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/grid3/status', (route) => fulfillJson(route, {
+    ok: true, available: true, installed: true, running: false,
+    elevated: false, needs_elevation: true, unlocked: true,
+    guidance: grid3Guidance(),
+  }));
+  await page.goto(BASE_URL);
+  await page.locator('#provider-grid3').click();
+  await page.locator('#live-connect-btn').click();
+  await expect(page.locator('#connection-detail')).toBeVisible();
+
+  await page.locator('#provider-tdsnap').click();
+  await page.locator('#live-connect-btn').click();
+  await expect(page.locator('#connection-detail')).toBeHidden();
 });
 
 test('Grid 3 uses the active-grid three-step flow and live styled rectangles', async ({ page }) => {
@@ -746,6 +893,36 @@ test('words are required on the words-and-phrases question', async ({ page }) =>
   await expect(page.locator('#wizard-items')).toBeVisible();
 });
 
+test('a step heading is not ringed when the wizard focuses it', async ({ page }) => {
+  // Every step heading is focused as its step opens, so a screen reader
+  // announces the move. Nothing can Tab to one, so the indicator marks
+  // nothing actionable — and half-suppressing it left a stray blue halo
+  // around the title of every screen, starting with the first.
+  await mockTD(page);
+  await openEditor(page);
+
+  const painted = await page.locator('#load-heading').evaluate((heading) => {
+    const style = getComputedStyle(heading);
+    return {
+      focused: document.activeElement === heading,
+      outlineWidth: style.outlineWidth,
+      boxShadow: style.boxShadow,
+    };
+  });
+  expect(painted.focused).toBe(true);
+  expect(painted.boxShadow).toBe('none');
+  expect(painted.outlineWidth).toBe('0px');
+
+  // And the same on the next step, which is focused the same way.
+  await connect(page);
+  const next = await page.locator('#items-heading').evaluate((heading) => ({
+    focused: document.activeElement === heading,
+    boxShadow: getComputedStyle(heading).boxShadow,
+  }));
+  expect(next.focused).toBe(true);
+  expect(next.boxShadow).toBe('none');
+});
+
 test('locked Windows reports a plain-language connection error', async ({ page }) => {
   let locked = true;
   await page.route('**/api/tdsnap/status', (route) =>
@@ -913,29 +1090,26 @@ test('AI suggestions use the chosen existing page and current buttons', async ({
       fingerprint: 'breakfast-v1',
     }),
   });
-  await page.route('**/api/ai/status*', (route) => fulfillJson(route, {
-    ok: true,
-    ollama: { reachable: true, models: ['llama3.2'] },
-    local: {
-      engine_available: false,
-      downloaded: false,
-      model: { name: 'Local', size: '1 GB', license: 'Apache-2.0' },
-      download: { status: 'idle' },
-    },
-  }));
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus()));
   await page.route('**/api/ai/words', (route) => {
     request = route.request().postDataJSON();
-    return fulfillJson(route, { ok: true, words: ['Eggs', 'Waffles'], engine: 'ollama' });
+    return fulfillJson(route, {
+      ok: true, words: ['Eggs', 'Waffles'], engine: 'ollama',
+      requested: 10, returned: 2, retried: false, note: '',
+    });
   });
 
   await existingItems(page);
-  await page.locator('.more-options > summary').click();
-  await page.locator('#ai-suggest > summary').click();
   await expect(page.locator('#ai-go')).toBeEnabled();
   await page.locator('#ai-go').click();
 
   expect(request.category).toBe('Breakfast Foods');
   expect(request.existing).toEqual(['Eggs', 'Bacon']);
+  // Eggs is already on the page, so it is never offered; nothing reaches the
+  // page until the suggestion is kept.
+  await expect(page.locator('#ai-tray .chip')).toHaveCount(1);
+  await expect(page.locator('#chipbox .chip')).toHaveCount(0);
+  await page.locator('#ai-tray-keep-all').click();
   await expect(page.locator('#chipbox .chip')).toHaveCount(1);
   await expect(page.locator('#chipbox .chip')).toContainText('Waffles');
 });
@@ -954,21 +1128,13 @@ test('AI topic phrases keep meaning-matched colors and rows', async ({ page }) =
       fingerprint: 'topics-v1',
     }),
   });
-  await page.route('**/api/ai/status*', (route) => fulfillJson(route, {
-    ok: true,
-    ollama: { reachable: true, models: ['llama3.2'] },
-    local: {
-      engine_available: false,
-      downloaded: false,
-      model: { name: 'Local', size: '1 GB', license: 'Apache-2.0' },
-      download: { status: 'idle' },
-    },
-  }));
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus()));
   await page.route('**/api/ai/words', (route) => {
     request = route.request().postDataJSON();
     return fulfillJson(route, {
       ok: true,
       engine: 'ollama',
+      requested: 10, returned: 5, retried: false, note: '',
       words: [
         { label: 'Who is your favorite?', function: 'comment' },
         { label: 'The story has magic', function: 'question' },
@@ -984,9 +1150,10 @@ test('AI topic phrases keep meaning-matched colors and rows', async ({ page }) =
   await page.locator('#layout-options-btn').click();
   await page.locator('#style-topic').click();
   await page.locator('#layout-back-btn').click();
-  await page.locator('#ai-suggest > summary').click();
   await expect(page.locator('#ai-go')).toBeEnabled();
   await page.locator('#ai-go').click();
+  await expect(page.locator('#ai-tray')).toBeVisible();
+  await page.locator('#ai-tray-keep-all').click();
 
   expect(request.kind).toBe('phrases');
   const expected = [
@@ -1640,7 +1807,30 @@ test.describe('changing and removing existing buttons', () => {
     await expect(page.locator('#chip-editor')).toBeHidden();
   });
 
-  test('the way in is hidden when the page set content cannot be read', async ({ page }) => {
+  test('a locked button is marked as locked on its face', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await page.locator('#edit-existing-btn').click();
+
+    // Which buttons can be touched has to be readable without hovering
+    // anything: locked used to differ from eligible by border style alone.
+    const locked = page.locator('#preview .cell.existing').filter({ hasText: 'Games' });
+    await expect(locked).toHaveClass(/\blocked\b/);
+    // The badge is a pseudo-element, which toHaveCSS cannot reach.
+    const badge = await locked.evaluate(
+      (cell) => getComputedStyle(cell, '::after').content,
+    );
+    expect(badge).toBe('"locked"');
+
+    const editable = page.locator('#preview .cell.existing').filter({ hasText: 'pear' });
+    await expect(editable).not.toHaveClass(/\blocked\b/);
+    const noBadge = await editable.evaluate(
+      (cell) => getComputedStyle(cell, '::after').content,
+    );
+    expect(noBadge).toBe('none');
+  });
+
+  test('the way in says why it is not on offer, rather than vanishing', async ({ page }) => {
     await editablePage(page, {
       content_readable: false,
       buttons: EDITABLE_PAGE.buttons.map((button) => ({
@@ -1652,6 +1842,41 @@ test.describe('changing and removing existing buttons', () => {
     await connect(page);
 
     await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#edit-existing-summary')).toBeVisible();
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'couldn’t read this page set’s saved button content',
+    );
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'Adding new ones still works',
+    );
+  });
+
+  test('a page of nothing but page links says so too', async ({ page }) => {
+    await editablePage(page, {
+      buttons: [{
+        slot: 0, label: 'Games', message: null, function: null, symbol: true,
+        editable: false,
+        locked_reason: 'This button opens another page, so AAC Editor leaves it alone.',
+      }],
+    });
+    await connect(page);
+
+    await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#edit-existing-summary')).toContainText(
+      'Every button on this page opens a page or runs an action',
+    );
+  });
+
+  test('a pending edit still wins the summary line over any explanation', async ({ page }) => {
+    await editablePage(page);
+    await connect(page);
+    await openExisting(page, 'pear');
+    await page.locator('#edit-remove').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
+    await page.locator('#placement-back-btn').click();
+
+    await expect(page.locator('#edit-existing-summary')).toContainText('Pending:');
+    await expect(page.locator('#edit-existing-btn')).toBeVisible();
   });
 
   test('a change and a removal are named in review and sent as one edit', async ({ page }) => {
@@ -3052,81 +3277,392 @@ test.describe('queueing several pages and applying them together', () => {
   });
 });
 
-/* Steering the AI, and the model behind it (ROADMAP Phase 6).
+/* Getting suggestions started, steering them, and the model behind them.
  *
- * Suggestions used to be one shot, N items, take it or leave it. What these
- * pin is that every steer is visible and that none of it leaves the machine:
- * a rejected suggestion comes back as "not this", a kept one can ask for more
- * of its kind, style samples describe how the page set already writes a
- * button, and the Wikipedia lookup — the only outbound request the app makes —
- * is named, refusable, and never carries any of it.
+ * Two things are pinned here. The first is that the panel says one thing at a
+ * time and offers one next step: it used to be two disclosures deep, with a
+ * download card and a set of Ollama terminal instructions on screen together,
+ * and a status line that could describe one engine while the request ran the
+ * other.
+ *
+ * The second is that nothing a model returns reaches somebody's page without
+ * being kept. Suggestions arrive as candidates; keeping one adds it, and
+ * discarding one is remembered and sent back as "not this". Around that sit
+ * the rest of the steers — more of one kind, a swap in place, style samples
+ * describing how the page set already writes a button — and the Wikipedia
+ * lookup, the only outbound request the app makes, which is named, refusable,
+ * and carries none of it.
  */
-test.describe('steerable AI suggestions', () => {
-  const READY_STATUS = {
-    ok: true,
-    ollama: { reachable: true, models: ['llama3.2'] },
-    local: {
-      engine_available: false,
-      downloaded: false,
-      selected: 'small',
-      memory_bytes: 8 * 1024 ** 3,
-      memory_measured: true,
-      choices: [],
-      model: { key: 'small', name: 'Local', size: '1 GB', license: 'Apache-2.0' },
-      download: { status: 'idle' },
-    },
-  };
-
+test.describe('suggestions: setup, steering, and what reaches the page', () => {
   /* Answer every AI request, recording what was asked. `replies` is consumed
      one generation at a time so a test can say what the second round returns. */
-  async function mockAi(page, replies, { status = READY_STATUS } = {}) {
+  async function mockAi(page, replies, { status = readyStatus() } = {}) {
     const asked = [];
     const queue = [...replies];
-    await page.route('**/api/ai/status*', (route) => fulfillJson(route, status));
+    await page.route('**/api/ai/status*', (route) => fulfillJson(
+      route, typeof status === 'function' ? status() : status,
+    ));
     await page.route('**/api/ai/words', (route) => {
       asked.push(route.request().postDataJSON());
       const reply = queue.length > 1 ? queue.shift() : queue[0];
-      return fulfillJson(route, { ok: true, engine: 'ollama', ...reply });
+      return fulfillJson(route, {
+        ok: true,
+        engine: 'ollama',
+        requested: 10,
+        returned: (reply.words || []).length,
+        retried: false,
+        note: '',
+        ...reply,
+      });
     });
     return asked;
   }
 
-  async function openPanel(page) {
-    await page.locator('.more-options > summary').click();
-    await page.locator('#ai-suggest > summary').click();
+  async function ready(page) {
     await expect(page.locator('#ai-go')).toBeEnabled();
   }
 
-  async function suggestInto(page, title = 'Snacks') {
-    await newItems(page, title);
-    await openPanel(page);
-    await page.locator('#ai-go').click();
+  /* Style matching, the Wikipedia opt-in and the engine choice live behind one
+     disclosure now, so that somebody who has never used this is asked nothing
+     before the button that does the thing. */
+  async function openSettings(page) {
+    await page.locator('#ai-options > summary').click();
   }
 
-  test('a rejected suggestion is not offered again', async ({ page }) => {
+  /* Ask, then keep everything — the one-click equivalent of what the panel
+     used to do on its own. */
+  async function suggestInto(page, title = 'Snacks') {
+    await newItems(page, title);
+    await ready(page);
+    await page.locator('#ai-go').click();
+    await expect(page.locator('#ai-tray')).toBeVisible();
+    await page.locator('#ai-tray-keep-all').click();
+  }
+
+  function trayChip(page, label) {
+    return page.locator('#ai-tray .chip', { hasText: label });
+  }
+
+  /* ---------- getting started ---------- */
+
+  test('a build with no engine of its own says so, and offers the one route it has', async ({ page }) => {
+    // Ollama is not an alternative in this build — it is the only way — and
+    // the steps used to sit folded behind a summary reading "Use my own Ollama
+    // model", which is not where somebody with no model at all would look.
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: readyStatus({
+        ollama: { reachable: false, models: [] },
+        ai: AI_UNAVAILABLE,
+      }),
+    });
+    await existingItems(page);
+
+    await expect(page.locator('#ai-state-pill')).toHaveText('Not available');
+    await expect(page.locator('#ai-summary')).toContainText("aren't available");
+    await expect(page.locator('#ai-stage-ready')).toBeHidden();
+    await expect(page.locator('#ai-stage-setup')).toBeHidden();
+
+    await page.locator('#ai-ollama-btn-alt').click();
+    await expect(page.locator('.ai-setup-steps')).toBeVisible();
+    await expect(page.locator('.ai-setup-steps')).toContainText('ollama pull llama3.2');
+  });
+
+  test('a build with its own model offers one button, not two competing setups', async ({ page }) => {
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: readyStatus({
+        ollama: { reachable: false, models: [] },
+        local: { ...LOCAL_MODEL, engine_available: true },
+        ai: AI_SETUP,
+      }),
+    });
+    await existingItems(page);
+
+    await expect(page.locator('#ai-state-pill')).toHaveText('Setup needed');
+    await expect(page.locator('#ai-download-btn')).toBeVisible();
+    await expect(page.locator('#ai-summary')).toContainText('one-time setup');
+    await expect(page.locator('#ai-stage-setup')).toContainText('about 1 GB');
+    // The terminal instructions are not on screen beside it.
+    await expect(page.locator('.ai-setup-steps')).toBeHidden();
+    await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
+
+    // ... but they are one click away for somebody who already runs Ollama.
+    await page.locator('#ai-ollama-btn').click();
+    await expect(page.locator('#ai-advanced')).toHaveAttribute('open', '');
+    await expect(page.locator('.ai-setup-steps')).toBeVisible();
+  });
+
+  test('the panel knows where it stands before anybody opens anything', async ({ page }) => {
+    // The status used to be checked when a disclosure was opened, so "is this
+    // ready?" could not be answered until after you had gone looking.
+    let checks = 0;
+    await mockTD(page);
+    await page.route('**/api/ai/status*', (route) => {
+      checks += 1;
+      return fulfillJson(route, readyStatus());
+    });
+    await existingItems(page);
+
+    await expect(page.locator('#ai-state-pill')).toHaveText('Ready');
+    await expect(page.locator('#ai-summary')).toContainText('llama3.2');
+    expect(checks).toBeGreaterThan(0);
+  });
+
+  test('setup is one button that reports itself and says when it is done', async ({ page }) => {
+    await mockTD(page);
+    let started = false;
+    let finished = false;
+    await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus({
+      ollama: { reachable: false, models: [] },
+      local: { ...LOCAL_MODEL, engine_available: true, downloaded: finished },
+      ai: finished ? { ...AI_READY, engine: 'local' } : started ? AI_DOWNLOADING : AI_SETUP,
+    })));
+    await page.route('**/api/ai/download', (route) => {
+      if (route.request().method() === 'POST') {
+        started = true;
+        return fulfillJson(route, { ok: true, download: { status: 'downloading', done: 0, total: 1e9 } });
+      }
+      const download = finished
+        ? { status: 'ready', done: 1e9, total: 1e9 }
+        : { status: 'downloading', done: 5e8, total: 1e9 };
+      finished = true;
+      return fulfillJson(route, { ok: true, download });
+    });
+    await existingItems(page);
+
+    await page.locator('#ai-download-btn').click();
+    // The work is described while it runs, and the editor keeps working.
+    await expect(page.locator('#ai-state-pill')).toHaveText('Setting up…');
+    await expect(page.locator('#ai-progress-text')).toContainText('50%', { timeout: 5000 });
+    await expect(page.locator('#ai-progress-text')).toContainText('Keep working');
+    await expect(page.locator('#word-input')).toBeEnabled();
+
+    await expect(page.locator('#ai-state-pill')).toHaveText('Ready', { timeout: 5000 });
+    await expect(page.locator('#ai-status')).toContainText('ready');
+    await expect(page.locator('#ai-go')).toBeEnabled();
+  });
+
+  test('a setup that fails says so and leaves the button that retries it', async ({ page }) => {
+    await mockTD(page);
+    await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus({
+      ollama: { reachable: false, models: [] },
+      local: { ...LOCAL_MODEL, engine_available: true },
+      ai: AI_SETUP,
+    })));
+    await page.route('**/api/ai/download', (route) => {
+      if (route.request().method() === 'POST') {
+        return fulfillJson(route, { ok: true, download: { status: 'downloading' } });
+      }
+      return fulfillJson(route, {
+        ok: true,
+        download: { status: 'error', done: 0, total: 0, error: 'The connection was lost.' },
+      });
+    });
+    await existingItems(page);
+
+    await page.locator('#ai-download-btn').click();
+    await expect(page.locator('#ai-download-status')).toContainText(
+      'The connection was lost.', { timeout: 5000 },
+    );
+    await expect(page.locator('#ai-download-btn')).toBeEnabled();
+    await expect(page.locator('#ai-state-pill')).toHaveText('Setup needed');
+  });
+
+  test('the models Ollama actually has are offered rather than typed from memory', async ({ page }) => {
+    await mockTD(page);
+    await mockAi(page, [{ words: [] }], {
+      status: readyStatus({ ollama: { reachable: true, models: ['qwen2.5:7b', 'phi4'] } }),
+    });
+    await existingItems(page);
+    await openSettings(page);
+    await page.locator('#ai-advanced-summary').click();
+
+    await expect(page.locator('#ai-model-options option')).toHaveCount(2);
+    // The default "llama3.2" is not installed here, so the box points at one
+    // that is instead of failing with "model not found".
+    await expect(page.locator('#ai-model')).toHaveValue('qwen2.5:7b');
+    await expect(page.locator('#ai-model-hint')).toContainText('phi4');
+  });
+
+  /* ---------- nothing reaches the page unasked ---------- */
+
+  test('suggestions wait to be kept, and discarding one is remembered', async ({ page }) => {
     await mockTD(page, {
       status: defaultStatus({ pages: ['Eating'] }),
       layout: defaultLayout('Eating'),
     });
     const asked = await mockAi(page, [{ words: ['Kale', 'Chips'] }]);
 
-    await suggestInto(page);
-    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
-    // Nothing was rejected yet, so the first ask carried no negative
+    await newItems(page, 'Snacks');
+    await ready(page);
+    await page.locator('#ai-go').click();
+
+    // On offer, and nowhere near the page.
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(2);
+    await expect(page.locator('#chipbox .chip')).toHaveCount(0);
+    await expect(page.locator('#ai-status')).toContainText('Nothing is on your page yet');
+    // Nothing was discarded yet, so the first ask carried no negative
     // constraints at all.
     expect(asked[0].avoid).toEqual([]);
 
-    await page.locator('#chipbox .chip', { hasText: 'Kale' })
-      .getByRole('button', { name: 'Remove Kale' }).click();
-    await page.locator('#ai-go').click();
+    await trayChip(page, 'Chips').getByRole('button', { name: 'Keep Chips' }).click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await expect(page.locator('#chipbox .chip')).toContainText('Chips');
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(1);
 
+    await trayChip(page, 'Kale').getByRole('button', { name: 'Discard Kale' }).click();
+    await expect(page.locator('#ai-tray')).toBeHidden();
+
+    await page.locator('#ai-go').click();
     expect(asked[1].avoid).toEqual(['Kale']);
     // The page's own words are a different kind of "don't repeat" and stay
     // where they were.
     expect(asked[1].existing).toContain('Chips');
   });
 
-  test('a word the user typed is never treated as a rejected suggestion', async ({ page }) => {
+  test('candidates on offer are told apart from words on the page', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating'),
+    });
+    const asked = await mockAi(page, [{ words: ['Kale'] }, { words: ['Chips'] }]);
+
+    await newItems(page, 'Snacks');
+    await ready(page);
+    await page.locator('#ai-go').click();
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(1);
+
+    await page.locator('#ai-tray-more').click();
+    // Not rejected and not on the page — only used up, which is a third thing
+    // to tell a model.
+    expect(asked[1].already).toEqual(['Kale']);
+    expect(asked[1].avoid).toEqual([]);
+    expect(asked[1].existing).not.toContain('Kale');
+  });
+
+  test('a suggestion already on the page is never offered a second time', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating', {
+        buttons: [{ slot: 0, label: 'Chips' }],
+        free_slots: [1, 2, 3, 4, 5],
+      }),
+    });
+    await mockAi(page, [{ words: ['Chips', 'Kale'] }]);
+
+    await existingItems(page);
+    await ready(page);
+    await page.locator('#ai-go').click();
+
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(1);
+    await expect(page.locator('#ai-tray')).toContainText('Kale');
+    await expect(page.locator('#ai-status')).toContainText('already here');
+  });
+
+  test('discarding the whole round answers "not these" once', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating'),
+    });
+    const asked = await mockAi(page, [{ words: ['Kale', 'Beets'] }]);
+
+    await newItems(page, 'Snacks');
+    await ready(page);
+    await page.locator('#ai-go').click();
+    await page.locator('#ai-tray-clear').click();
+
+    await expect(page.locator('#ai-tray')).toBeHidden();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(0);
+    await page.locator('#ai-go').click();
+    expect(asked[1].avoid).toEqual(['Kale', 'Beets']);
+  });
+
+  test('a full page says so instead of quietly dropping what it cannot take', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ page: 'Eating', grid: { cols: 2, rows: 1 } }),
+      layout: defaultLayout('Eating', {
+        grid: { cols: 2, rows: 1 },
+        buttons: [{ slot: 0, label: 'Eggs' }],
+        free_slots: [1],
+      }),
+    });
+    await mockAi(page, [{ words: ['Kale', 'Chips', 'Beets'] }]);
+
+    await existingItems(page);
+    await ready(page);
+    await page.locator('#ai-go').click();
+    await page.locator('#ai-tray-keep-all').click();
+
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await expect(page.locator('#ai-status')).toContainText('page filled up');
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(2);
+    await expect(page.locator('#ai-tray-note')).toContainText('page is full');
+    await expect(page.locator('#ai-tray-keep-all')).toBeDisabled();
+  });
+
+  test('candidates for one page are not left on offer for another', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ page: 'Eating', pages: ['Eating', 'Games'] }),
+    });
+    await mockAi(page, [{ words: ['Kale', 'Chips'] }]);
+
+    await existingItems(page);
+    await ready(page);
+    await page.locator('#ai-go').click();
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(2);
+
+    await page.locator('#choose-page-btn').click();
+    await page.locator('#parent-select').selectOption('Games');
+    await expect(page.locator('#ai-tray')).toBeHidden();
+  });
+
+  test('a candidate the user has since typed is not kept twice', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating'),
+    });
+    await mockAi(page, [{ words: ['Kale', 'Chips'] }]);
+
+    await newItems(page, 'Snacks');
+    await ready(page);
+    await page.locator('#ai-go').click();
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(2);
+
+    // Typing one of them by hand does not redraw the tray, so the check has to
+    // happen when the candidate is kept, not only when it is drawn.
+    await page.locator('#word-input').fill('Chips');
+    await page.locator('#word-add-btn').click();
+    await trayChip(page, 'Chips').getByRole('button', { name: 'Keep Chips' }).click();
+
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await expect(page.locator('#ai-status')).toContainText('already here');
+
+    // And "Keep all" does not smuggle one in either.
+    await page.locator('#word-input').fill('Kale');
+    await page.locator('#word-add-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await page.locator('#ai-tray-keep-all').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await expect(page.locator('#ai-tray')).toBeHidden();
+  });
+
+  test('keeping a whole round is undoable in one step', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating'),
+    });
+    await mockAi(page, [{ words: ['Kale', 'Chips'] }]);
+
+    await suggestInto(page);
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await page.locator('#undo-remove-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(0);
+  });
+
+  /* ---------- steering ---------- */
+
+  test('a word the user typed is never treated as a discarded suggestion', async ({ page }) => {
     await mockTD(page, {
       status: defaultStatus({ pages: ['Eating'] }),
       layout: defaultLayout('Eating'),
@@ -3138,13 +3674,13 @@ test.describe('steerable AI suggestions', () => {
     await page.locator('#word-add-btn').click();
     await page.locator('#chipbox .chip', { hasText: 'Pretzel' })
       .getByRole('button', { name: 'Remove Pretzel' }).click();
-    await openPanel(page);
+    await ready(page);
     await page.locator('#ai-go').click();
 
     expect(asked[0].avoid).toEqual([]);
   });
 
-  test('one suggestion is swapped for another, in place', async ({ page }) => {
+  test('one kept suggestion is swapped for another, in place', async ({ page }) => {
     await mockTD(page, {
       status: defaultStatus({ pages: ['Eating'] }),
       layout: defaultLayout('Eating'),
@@ -3160,7 +3696,7 @@ test.describe('steerable AI suggestions', () => {
     await expect(page.locator('#edit-ai-field')).toBeVisible();
     await page.locator('#edit-ai-regenerate').click();
 
-    // Replaced where it sat, and the one it replaced counts as rejected.
+    // Replaced where it sat, and the one it replaced counts as discarded.
     await expect(page.locator('#chipbox .chip')).toHaveCount(2);
     await expect(page.locator('#chipbox')).toContainText('Popcorn');
     await expect(page.locator('#chipbox')).not.toContainText('Kale');
@@ -3174,7 +3710,7 @@ test.describe('steerable AI suggestions', () => {
     await expect(page.locator('#chipbox')).toContainText('Kale');
   });
 
-  test('"more like this" asks for more of one kind', async ({ page }) => {
+  test('"more like this" asks for more of one kind, and offers them', async ({ page }) => {
     await mockTD(page, {
       status: defaultStatus({ pages: ['Eating'] }),
       layout: defaultLayout('Eating'),
@@ -3190,7 +3726,9 @@ test.describe('steerable AI suggestions', () => {
     await page.locator('#edit-ai-more').click();
 
     expect(asked[1].like).toEqual(['Chips']);
-    await expect(page.locator('#chipbox .chip')).toHaveCount(3);
+    // They are offered, not added: "more like this" is still a suggestion.
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(2);
     await expect(page.locator('#ai-status')).toContainText('more like “Chips”');
   });
 
@@ -3211,8 +3749,9 @@ test.describe('steerable AI suggestions', () => {
 
     // A suggestion the user renames becomes their word, and stops offering to
     // regenerate something they already decided on.
-    await openPanel(page);
+    await ready(page);
     await page.locator('#ai-go').click();
+    await page.locator('#ai-tray-keep-all').click();
     await page.locator('#chipbox .chip', { hasText: 'Chips' })
       .getByRole('button', { name: /^Edit Chips/ }).click();
     await expect(page.locator('#edit-ai-field')).toBeVisible();
@@ -3240,17 +3779,55 @@ test.describe('steerable AI suggestions', () => {
     const asked = await mockAi(page, [{ words: ['Chips'] }]);
 
     await existingItems(page);
-    await openPanel(page);
+    await ready(page);
     await page.locator('#ai-go').click();
 
     // The page being edited leads, then the rest of the page set.
     expect(asked[0].style).toEqual(['Eggs', 'I want more', 'All done']);
 
     // Turning it off means the prompt says nothing about style at all.
+    await openSettings(page);
     await page.locator('#ai-style').uncheck();
     await page.locator('#ai-go').click();
     expect(asked[1].style).toEqual([]);
   });
+
+  test('the engine the user chose is the one the request asks for', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating'),
+    });
+    const asked = await mockAi(page, [{ words: ['Chips'] }]);
+
+    await existingItems(page);
+    await ready(page);
+    await page.locator('#ai-go').click();
+    expect(asked[0].engine).toBe('auto');
+
+    await openSettings(page);
+    await page.locator('#ai-engine').selectOption('local');
+    await page.locator('#ai-go').click();
+    expect(asked[1].engine).toBe('local');
+  });
+
+  test('an engine that stood in for the chosen one says so', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }),
+      layout: defaultLayout('Eating'),
+    });
+    await mockAi(page, [{
+      words: ['Chips'],
+      engine: 'local',
+      note: "Ollama wasn't reachable, so these came from the built-in model on this computer.",
+    }]);
+
+    await existingItems(page);
+    await ready(page);
+    await page.locator('#ai-go').click();
+    await expect(page.locator('#ai-status')).toContainText("Ollama wasn't reachable");
+  });
+
+  /* ---------- the reference lookup ---------- */
 
   test('the reference article is named, and can be refused', async ({ page }) => {
     await mockTD(page, {
@@ -3268,7 +3845,8 @@ test.describe('steerable AI suggestions', () => {
     }]);
 
     await newItems(page, 'Mercury');
-    await openPanel(page);
+    await ready(page);
+    await openSettings(page);
     await page.locator('#ai-grounding').check();
     await page.locator('#ai-go').click();
 
@@ -3282,8 +3860,8 @@ test.describe('steerable AI suggestions', () => {
     await expect(page.locator('#ai-grounding-note'))
       .toContainText('Suggest again to use “Mercury (planet)”');
     // Refusing arms the next request rather than silently throwing away
-    // suggestions the user may already have edited.
-    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    // suggestions the user may already have kept.
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(1);
 
     await page.locator('#ai-go').click();
     expect(asked[1].grounding_title).toBe('Mercury (planet)');
@@ -3304,7 +3882,8 @@ test.describe('steerable AI suggestions', () => {
     }]);
 
     await newItems(page, 'Mercury');
-    await openPanel(page);
+    await ready(page);
+    await openSettings(page);
     await page.locator('#ai-grounding').check();
     await page.locator('#ai-go').click();
     await page.locator('#ai-grounding-pick').selectOption('none');
@@ -3329,11 +3908,11 @@ test.describe('steerable AI suggestions', () => {
     const asked = await mockAi(page, [{ words: ['Kale'] }]);
 
     await newItems(page, 'Snacks');
-    await openPanel(page);
+    await ready(page);
+    await openSettings(page);
     await page.locator('#ai-grounding').check();
     await page.locator('#ai-go').click();
-    await page.locator('#chipbox .chip', { hasText: 'Kale' })
-      .getByRole('button', { name: 'Remove Kale' }).click();
+    await trayChip(page, 'Kale').getByRole('button', { name: 'Discard Kale' }).click();
     await page.locator('#ai-go').click();
 
     const request = asked[1];
@@ -3347,22 +3926,20 @@ test.describe('steerable AI suggestions', () => {
     expect(request.grounding_exclude).toEqual([]);
   });
 
+  /* ---------- which model ---------- */
+
   test('a bigger model is offered only where the machine was measured to hold it', async ({ page }) => {
     await mockTD(page, {
       status: defaultStatus({ pages: ['Eating'] }),
       layout: defaultLayout('Eating'),
     });
     await mockAi(page, [{ words: ['Chips'] }], {
-      status: {
-        ok: true,
+      status: readyStatus({
         ollama: { reachable: false, models: [] },
+        ai: AI_SETUP,
         local: {
+          ...LOCAL_MODEL,
           engine_available: true,
-          downloaded: false,
-          selected: 'small',
-          memory_bytes: 8 * 1024 ** 3,
-          memory_measured: true,
-          download: { status: 'idle' },
           model: { key: 'small', name: 'Small', size: '1 GB', license: 'Apache-2.0' },
           choices: [
             {
@@ -3378,12 +3955,10 @@ test.describe('steerable AI suggestions', () => {
             },
           ],
         },
-      },
+      }),
     });
 
     await newItems(page, 'Snacks');
-    await page.locator('.more-options > summary').click();
-    await page.locator('#ai-suggest > summary').click();
 
     const row = page.locator('#ai-model-choice-row');
     await expect(row).toBeVisible();
@@ -3400,36 +3975,34 @@ test.describe('steerable AI suggestions', () => {
       layout: defaultLayout('Eating'),
     });
     await mockAi(page, [{ words: ['Chips'] }], {
-      status: {
-        ok: true,
+      status: readyStatus({
         ollama: { reachable: false, models: [] },
+        ai: AI_SETUP,
         local: {
-          engine_available: true, downloaded: false, selected: 'small',
-          memory_bytes: 0, memory_measured: false,
-          download: { status: 'idle' },
-          model: { key: 'small', name: 'Small', size: '1 GB', license: 'Apache-2.0' },
+          ...LOCAL_MODEL,
+          engine_available: true,
+          memory_bytes: 0,
+          memory_measured: false,
           choices: [{
             key: 'small', name: 'Small', license: 'Apache-2.0', size: '1 GB',
             summary: 'Runs on a clinic laptop.', downloaded: false,
             supported: true, reason: '',
           }],
         },
-      },
+      }),
     });
 
     await newItems(page, 'Snacks');
-    await page.locator('.more-options > summary').click();
-    await page.locator('#ai-suggest > summary').click();
     await expect(page.locator('#ai-model-choice-row')).toBeHidden();
   });
 
-  test('the steering controls have no serious or critical accessibility violations', async ({ page }) => {
+  test('the panel and its tray have no serious or critical accessibility violations', async ({ page }) => {
     await mockTD(page, {
       status: defaultStatus({ pages: ['Eating'] }),
       layout: defaultLayout('Eating'),
     });
     await mockAi(page, [{
-      words: ['Kale'],
+      words: ['Kale', 'Chips'],
       grounding: {
         used: true, title: 'Snack', url: 'https://en.wikipedia.org/wiki/Snack',
         alternatives: ['Snack food'],
@@ -3437,13 +4010,17 @@ test.describe('steerable AI suggestions', () => {
     }]);
 
     await newItems(page, 'Snacks');
-    await openPanel(page);
+    await ready(page);
+    await openSettings(page);
     await page.locator('#ai-grounding').check();
     await page.locator('#ai-go').click();
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(2);
+    expect(await blockingViolations(page)).toEqual([]);
+
+    await page.locator('#ai-tray-keep-all').click();
     await page.locator('#chipbox .chip', { hasText: 'Kale' })
       .getByRole('button', { name: /^Edit Kale/ }).click();
     await expect(page.locator('#edit-ai-field')).toBeVisible();
-
     expect(await blockingViolations(page)).toEqual([]);
   });
 });

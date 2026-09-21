@@ -15,6 +15,17 @@ if ($Sign -and [string]::IsNullOrWhiteSpace($thumbprint)) {
     throw "Signing was requested, but AAC_EDITOR_SIGNING_THUMBPRINT is not configured."
 }
 
+# Only a signing build may request uiAccess. Windows will not start a
+# uiAccess="true" executable without a trusted Authenticode signature, so an
+# unsigned build that embedded it would ship a binary nobody can launch.
+#
+# What it buys when a certificate is available: live Grid 3 editing drives the
+# Grid 3 UI across the UIPI boundary without elevating, so the app stops asking
+# for administrator approval on every launch. That matters most where the
+# person doing the editing is not a local administrator, which in a school
+# district is the normal case.
+$manifestMode = if ($Sign) { "uiaccess" } else { "asinvoker" }
+
 function Find-Tool([string]$Name, [string]$FallbackPattern) {
     $command = Get-Command $Name -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
@@ -41,18 +52,22 @@ function Sign-File([string]$Path) {
 Push-Location $root
 try {
     if ($Stage -in @("All", "App")) {
+        $env:AAC_EDITOR_MANIFEST = $manifestMode
         python -m PyInstaller packaging/tdsnap.spec --noconfirm --clean
         if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed." }
-        & "$PSScriptRoot\verify_manifest.ps1" -Executable $exe
+        # Sign before verifying: the uiAccess check in verify_manifest.ps1 is a
+        # signature check, and an unsigned uiAccess binary is exactly what it
+        # exists to catch.
         if ($Sign) { Sign-File $exe }
-        Write-Output "Built app: $exe"
+        & "$PSScriptRoot\verify_manifest.ps1" -Executable $exe -Expect $manifestMode
+        Write-Output "Built app: $exe ($manifestMode manifest)"
     }
 
     if ($Stage -in @("All", "Installer")) {
         if (-not (Test-Path -LiteralPath $exe)) {
             throw "Packaged executable not found: $exe"
         }
-        & "$PSScriptRoot\verify_manifest.ps1" -Executable $exe
+        & "$PSScriptRoot\verify_manifest.ps1" -Executable $exe -Expect $manifestMode
         $iscc = Find-Tool "iscc.exe" "C:\Program Files*\Inno Setup *\ISCC.exe"
         & $iscc "/DAppVersion=$Version" "packaging\installer.iss"
         if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed." }
