@@ -378,6 +378,10 @@
           <div class="more-options-body">
             <button type="button" id="layout-options-btn" class="btn btn-secondary">Change page layout</button>
             <button type="button" id="import-list-btn" class="btn btn-secondary">Import a word list</button>
+            <button type="button" id="import-board-btn" class="btn btn-secondary">Import a board (.obf/.obz)</button>
+            <input id="import-board-file" class="sr-only" type="file" accept=".obf,.obz,.json,application/json,application/zip"
+              aria-label="Choose an Open Board Format board or board set">
+            <a id="export-obz-link" class="btn btn-secondary" download hidden>Export the page set as .obz</a>
             <button type="button" id="templates-btn" class="btn btn-secondary">Templates</button>
           </div>
         </details>
@@ -645,6 +649,24 @@
 
     <div class="dialog-actions">
       <button type="button" id="import-add-btn" class="btn btn-primary" disabled>Add these buttons</button>
+      <button type="submit" class="btn btn-ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="board-dialog" class="chip-dialog import-dialog" aria-labelledby="board-dialog-title">
+  <form method="dialog" id="board-form">
+    <h2 id="board-dialog-title">Import a board</h2>
+    <p class="field-hint">A board's buttons join this page with their labels, spoken text and
+      function colours. Symbols stay behind — they belong to the app that made the board.</p>
+    <div class="field" id="board-picker-field" hidden>
+      <label for="board-picker">Board to bring in</label>
+      <select id="board-picker"></select>
+    </div>
+    <div id="board-summary" class="import-summary" role="status" aria-live="polite"></div>
+    <p id="board-error" class="step-error" role="alert" tabindex="-1" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="board-add-btn" class="btn btn-primary" disabled>Add these buttons</button>
       <button type="submit" class="btn btn-ghost" value="cancel">Cancel</button>
     </div>
   </form>

@@ -44,6 +44,9 @@ FLOORS = {
     # against Grid 3, so the floor covers the planning, verification, rollback,
     # and undo logic that the fake Edit Mode in tests/test_grid3.py exercises.
     "tdsnap/grid3.py": 55,
+    # Phase 9. Pure file-in, file-out interchange; the roadmap asked for the
+    # highest coverage in the project here, and the round-trip tests give it.
+    "tdsnap/obf.py": 90,
 }
 
 

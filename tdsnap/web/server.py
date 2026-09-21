@@ -16,6 +16,7 @@ state.
 
 import contextlib
 import hashlib
+import io
 import json
 import os
 import secrets
@@ -32,7 +33,7 @@ from typing import Optional
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
-from .. import __version__, builder, grid3, live, pageset, schema, validate
+from .. import __version__, builder, grid3, live, obf, pageset, schema, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import diagnostics, engines, grounding, localai, ollama, prompts, settings
@@ -1230,6 +1231,74 @@ def add_page(session_id):
             "edits": session["edits"],
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Open Board Format interchange (Phase 9)
+
+MAX_BOARD_UPLOAD_BYTES = 64 * 1024 * 1024
+
+
+def _obz_response(pages, name):
+    if not name:
+        raise PagesetError("There is nothing to export.")
+    data = obf.write(pages, name=name)
+    stem = "".join(char if char.isalnum() or char in " -_" else "_" for char in name).strip() or "pages"
+    return send_file(
+        io.BytesIO(data), as_attachment=True, download_name=f"{stem}.obz",
+        mimetype="application/zip",
+    )
+
+
+@app.post("/api/obf/import")
+def obf_import():
+    """Read an .obf or .obz into pages the items step can take.
+
+    Nothing is written anywhere: the boards come back as labels, spoken text,
+    slots and function colours for the ordinary review flow. Buttons that open
+    another board are listed separately, so the user can import that board as
+    its own page and link it from this one.
+    """
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        raise PagesetError("No board file was uploaded.")
+    data = upload.read(MAX_BOARD_UPLOAD_BYTES + 1)
+    if len(data) > MAX_BOARD_UPLOAD_BYTES:
+        raise PagesetError("The board file is larger than AAC Editor will open (64 MB).")
+    filename = os.path.basename(upload.filename.replace("\\", "/"))
+    result = obf.read(data, filename)
+    return jsonify({"ok": True, "filename": filename, **result})
+
+
+@app.get("/api/pageset/<session_id>/obz")
+def download_obz(session_id):
+    """The whole exported-file session as an .obz: every page, linked, no symbols."""
+    current = _current_path(session_id)
+    session = _sessions[session_id]
+    with contextlib.closing(sqlite3.connect(f"file:{current}?mode=ro", uri=True)) as conn:
+        pages = obf.pages_from_pageset(conn)
+    return _obz_response(pages, os.path.splitext(session["filename"])[0])
+
+
+@app.get("/api/tdsnap/obz")
+def live_obz():
+    """The page set open in TD Snap as an .obz, read from its file, never edited."""
+    page = _bounded_text(request.args.get("page"), "page", MAX_PAGE_NAME_CHARS)
+    with _LIVE_LOCK:
+        path = live._active_pageset_path(page or None)
+    if not path:
+        raise PagesetError(
+            "AAC Editor could not tell which TD Snap page set is open. Connect to TD "
+            "Snap first, with the page set you want to export showing."
+        )
+    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+        pages = obf.pages_from_pageset(conn)
+        try:
+            row = conn.execute("SELECT FriendlyName FROM PageSetProperties LIMIT 1").fetchone()
+            name = (row[0] or "").strip() if row else ""
+        except sqlite3.Error:
+            name = ""
+    return _obz_response(pages, name or "TD Snap page set")
 
 
 @app.post("/api/pageset/<session_id>/close")
