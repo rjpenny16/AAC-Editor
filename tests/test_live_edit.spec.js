@@ -1413,8 +1413,9 @@ test('the support report is shown before it is copied, and carries no page conte
 
   await page.locator('#support-report-btn').click();
   await expect(page.locator('#support-dialog')).toBeVisible();
+  // The dialog opens on "Collecting…" and fills in once the report arrives.
+  await expect(page.locator('#support-report-text')).toContainText('AAC Editor support report');
   const report = await page.locator('#support-report-text').textContent();
-  expect(report).toContain('AAC Editor support report');
   // 'Eating' is the mocked open page; the report must not name it.
   expect(report).not.toContain('Eating');
 });
