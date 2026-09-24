@@ -596,6 +596,8 @@ summary {
 .ai-stage { margin-top: 0.85rem; }
 .ai-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .ai-model-line { margin: 0 0 0.65rem; }
+.ai-request { margin-bottom: 0.75rem; }
+.ai-request textarea { resize: vertical; font: inherit; }
 .ai-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
 .ai-ask label { font-weight: 700; }
 .ai-ask input { width: 5rem; }
@@ -866,7 +868,8 @@ summary {
    width the other dialogs do not, and its own scroll on a short window. */
 .import-dialog { width: min(48rem, calc(100% - 2rem)); }
 .import-dialog form { max-height: 88vh; overflow-y: auto; }
-.import-dialog textarea {
+.import-dialog textarea,
+.ai-request textarea {
   width: 100%;
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--line);

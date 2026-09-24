@@ -416,6 +416,7 @@ async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         category: pageCategory(),
+        request: $("ai-request").value.trim() || null,
         count,
         host: $("ai-host").value,
         model: $("ai-model").value,
