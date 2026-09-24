@@ -16,6 +16,7 @@ import { state } from "./state.js";
 import { $ } from "./dom.js";
 import { titleOf } from "./parents.js";
 import { clearDraft as clearStoredDraft, getDraft, saveDraft } from "./settings.js";
+import { applyPendingDraftResume } from "./wizard.js";
 
 const AUTOSAVE_INTERVAL_MS = 2000;
 const BUILD_STEPS = new Set(["items", "layout", "placement", "review", "destination", "title", "operation"]);
@@ -104,6 +105,9 @@ async function initDraftRecovery() {
         pendingResume = draft;
         banner.hidden = true;
         recoveryResolved = true;
+        // Already on the items step (connected before answering the banner):
+        // show() won't run again to pick it up, so land it now.
+        if (state.wizardStep === "items") applyPendingDraftResume();
       },
       { once: true },
     );
