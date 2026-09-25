@@ -556,6 +556,30 @@ def _stored_sparse_grid(group, buttons, width, height):
     )
 
 
+def _logical_bounds(group):
+    """The page area's bounds in the space TD Snap's buttons report.
+
+    TD Snap reports its page group in physical pixels but its buttons in
+    client-relative logical ones, and every grid point is later scaled by
+    ``_physical_point``. Buttons need that; the group must first be brought
+    into their space or, above 100% display scaling, it is scaled twice and
+    clicks on an empty page land off the cells.
+    """
+    bounds = group.BoundingRectangle
+    getter = getattr(group, "GetTopLevelControl", None)
+    window = getter() if getter else None
+    origin = _client_origin(window) if window else None
+    if origin is None:
+        return bounds.left, bounds.top, bounds.right, bounds.bottom
+    scale = _window_dpi(window) / 96
+    return (
+        origin[0] + (bounds.left - origin[0]) / scale,
+        origin[1] + (bounds.top - origin[1]) / scale,
+        origin[0] + (bounds.right - origin[0]) / scale,
+        origin[1] + (bounds.bottom - origin[1]) / scale,
+    )
+
+
 def _stored_empty_grid(group):
     """Infer clickable cell centers for a new page with no UIA buttons yet."""
     title = (getattr(group, "Name", "") or "").strip()
@@ -587,12 +611,12 @@ def _stored_empty_grid(group):
     cols, rows = dimensions.pop()
     if cols < 1 or rows < 1:
         return None
-    bounds = group.BoundingRectangle
-    x_step = (bounds.right - bounds.left) / cols
-    y_step = (bounds.bottom - bounds.top) / rows
+    left, top, right, bottom = _logical_bounds(group)
+    x_step = (right - left) / cols
+    y_step = (bottom - top) / rows
     return Grid(
-        tuple(round(bounds.left + (index + 0.5) * x_step) for index in range(cols)),
-        tuple(round(bounds.top + (index + 0.5) * y_step) for index in range(rows)),
+        tuple(round(left + (index + 0.5) * x_step) for index in range(cols)),
+        tuple(round(top + (index + 0.5) * y_step) for index in range(rows)),
         round(x_step),
         round(y_step),
     )

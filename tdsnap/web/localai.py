@@ -501,6 +501,7 @@ def generate_words(
     like: Optional[Sequence[str]] = None,
     style: Optional[Sequence[str]] = None,
     already: Optional[Sequence[str]] = None,
+    request: Optional[str] = None,
     model_key: Optional[str] = None,
 ) -> tuple[list, Optional[str]]:
     """Return ``(words, error)`` from the built-in model."""
@@ -513,7 +514,7 @@ def generate_words(
     count = max(1, min(int(count), 60))
     prompt = prompts.build_prompt(
         category, count, kind, function, existing, reference,
-        avoid=avoid, like=like, style=style, already=already,
+        avoid=avoid, like=like, style=style, already=already, request=request,
     )
     try:
         llm = _load_llm(key)

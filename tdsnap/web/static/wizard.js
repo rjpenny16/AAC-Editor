@@ -414,4 +414,4 @@ function showBuildError(message, details) {
   errorBox.hidden = false;
 }
 
-export { clearBuildError, clearStepError, continueWizard, setActiveFn, setOperation, setPageStyle, show, showBuildError, showStepError };
+export { applyPendingDraftResume, clearBuildError, clearStepError, continueWizard, setActiveFn, setOperation, setPageStyle, show, showBuildError, showStepError };

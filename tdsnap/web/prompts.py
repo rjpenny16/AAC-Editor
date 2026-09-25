@@ -46,7 +46,7 @@ PHRASES_SCHEMA = {
 
 _WORDS_PROMPT = """Generate exactly {count} useful AAC button labels for a page titled
 "{category}".
-{existing_line}{reference_line}
+{request_line}{existing_line}{reference_line}
 Requirements:
 - First infer the user's intended subject and type of answer from the entire title
 - If the title names a type (characters, foods, places, actions, feelings, etc.),
@@ -75,7 +75,7 @@ Example format:
 _PHRASE_PROMPT = """Generate exactly {count} ready-to-speak phrases about the topic "{category}"
 for an AAC (Augmentative and Alternative Communication) user's topic page.
 {function_line}
-{existing_line}{reference_line}
+{request_line}{existing_line}{reference_line}
 Requirements:
 - Infer what people commonly discuss, ask, like, dislike, and personally share
   about this topic; make every phrase specific and useful rather than generic
@@ -210,9 +210,20 @@ def build_prompt(
     like: Optional[Sequence[str]] = None,
     style: Optional[Sequence[str]] = None,
     already: Optional[Sequence[str]] = None,
+    request: Optional[str] = None,
 ) -> str:
     """Return the prompt for *count* words or quick-fire phrases."""
     existing_line = _constraint_lines(existing, avoid, like, style, already)
+    # The user's own description of what they want. It decides the subject,
+    # but the format rules below still hold, so cleaning and parsing keep working.
+    request_line = ""
+    if request and request.strip():
+        request_line = (
+            "The user described what they want, in their own words:\n"
+            '"""\n' + request.strip() + '\n"""\n'
+            "Follow this description; where it is more specific than the title, "
+            "it decides what the items are. The format requirements below still apply.\n"
+        )
     # Authoritative facts looked up for this title (see grounding.py). Kept
     # blank when absent so offline generation reads exactly as before.
     reference_line = "\n"
@@ -227,11 +238,12 @@ def build_prompt(
             count=count,
             category=category,
             function_line=_FUNCTION_LINES.get(function or "", ""),
+            request_line=request_line,
             existing_line=existing_line,
             reference_line=reference_line,
         )
     return _WORDS_PROMPT.format(
-        count=count, category=category,
+        count=count, category=category, request_line=request_line,
         existing_line=existing_line, reference_line=reference_line,
     )
 

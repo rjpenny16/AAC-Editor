@@ -44,7 +44,11 @@ parentSelect.addEventListener("change", async () => {
 
 function titleOf(pageId) {
   const page = state.pages.find((p) => p.id === pageId);
-  return page ? page.title : `Page ${pageId}`;
+  if (page) return page.title;
+  // Live ids (TD Snap, Grid 3) are the page titles themselves, so a page the
+  // list hasn't caught up with yet — one followed live or created this session —
+  // still names itself. Only an exported file's numeric id needs a stand-in.
+  return state.mode === "file" ? `Page ${pageId}` : pageId;
 }
 
 async function loadParentCapacity() {

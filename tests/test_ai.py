@@ -392,6 +392,7 @@ def test_steering_reaches_the_model(ai_client, recording_grounding, monkeypatch)
         "avoid": ["Kale", "  "],
         "like": ["Chips"],
         "style": ["I want more", "All done"],
+        "request": "  Crunchy snacks for a lunchbox  ",
         "model_key": "small",
     }, headers=headers).get_json()
     assert data["ok"] is True
@@ -399,6 +400,7 @@ def test_steering_reaches_the_model(ai_client, recording_grounding, monkeypatch)
     assert generated["like"] == ["Chips"]
     assert generated["style"] == ["I want more", "All done"]
     assert generated["model_key"] == "small"
+    assert generated["request"] == "Crunchy snacks for a lunchbox"
 
     prompt = prompts.build_prompt(
         "Snacks", 5, existing=["Crackers"], avoid=["Kale"], like=["Chips"],
@@ -407,6 +409,12 @@ def test_steering_reaches_the_model(ai_client, recording_grounding, monkeypatch)
     assert "rejected these suggestions" in prompt and "Kale" in prompt
     assert "more of the same kind" in prompt and "Chips" in prompt
     assert "writing style only" in prompt and "I want more" in prompt
+
+    # The user's description steers both prompt kinds; absent, nothing is added.
+    for kind in ("words", "phrases"):
+        described = prompts.build_prompt("Snacks", 5, kind, request="Only crunchy ones")
+        assert "described what they want" in described and "Only crunchy ones" in described
+    assert "described what they want" not in prompts.build_prompt("Snacks", 5, request="  ")
 
 
 def test_nothing_the_user_composed_reaches_wikipedia(ai_client, recording_grounding,
@@ -430,13 +438,14 @@ def test_nothing_the_user_composed_reaches_wikipedia(ai_client, recording_ground
         "avoid": ["Kale"],
         "like": ["Chips"],
         "style": ["I want more", "All done"],
+        "request": "Only the ones my son likes",
     }, headers=headers)
 
     assert len(recording_grounding) == 1
     call = recording_grounding[0]
     assert call["category"] == "Snacks"
     sent = json.dumps(call)
-    for private in ("Crackers", "Kale", "Chips", "I want more", "All done"):
+    for private in ("Crackers", "Kale", "Chips", "I want more", "All done", "my son"):
         assert private not in sent
 
 

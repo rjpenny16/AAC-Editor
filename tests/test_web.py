@@ -209,7 +209,7 @@ def test_grid3_elevation_restart_uses_runas_and_closes_only_after_success(monkey
         lambda _delay, callback: SimpleNamespace(start=callback),
     )
     api = desktop.NativeApi(8765)
-    api.window = SimpleNamespace(destroy=lambda: destroyed.append(True))
+    api._window = SimpleNamespace(destroy=lambda: destroyed.append(True))
 
     result = api.restart_elevated_for_grid3()
 
@@ -226,7 +226,7 @@ def test_grid3_uac_cancellation_keeps_original_window(monkeypatch):
     monkeypatch.setattr(desktop.sys, "platform", "win32")
     monkeypatch.setattr(ctypes, "windll", SimpleNamespace(shell32=shell), raising=False)
     api = desktop.NativeApi(8765)
-    api.window = SimpleNamespace(destroy=lambda: destroyed.append(True))
+    api._window = SimpleNamespace(destroy=lambda: destroyed.append(True))
 
     result = api.restart_elevated_for_grid3()
 
@@ -1165,3 +1165,14 @@ def test_a_label_is_listed_once_per_page_however_often_it_appears(seeded_pageset
     labels = pageset.labels_by_page(ps.conn)
 
     assert labels["more"] == ["Home Page"]
+
+
+def test_native_api_exposes_nothing_pywebview_would_walk_into():
+    """pywebview recurses into every public non-callable attribute of js_api.
+
+    Reaching the Window that way touches its .NET controls from a background
+    thread and freezes the whole app, web server included, on first load.
+    """
+    api = desktop.NativeApi(8765)
+    public = [name for name in vars(api) if not name.startswith("_")]
+    assert public == ["port"]

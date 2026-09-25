@@ -816,6 +816,31 @@ test('connect opens TD Snap when it is not already running', async ({ page }) =>
   expect(launches).toBe(1);
 });
 
+test('a followed page missing from the page list is still sent by its own name', async ({ page }) => {
+  // TD Snap moved to a page the list read at connect doesn't have (one just
+  // created, say). Its live id is its title; it must not become "Page <title>".
+  let submitted = null;
+  let shown = 'Eating';
+  await mockTD(page, {
+    status: () => defaultStatus({ page: shown, pages: ['Eating', 'Games'] }),
+    layout: (requested) => defaultLayout(requested || shown),
+  });
+  await page.route('**/api/tdsnap/edit-plan', (route) => {
+    submitted = route.request().postDataJSON();
+    return fulfillJson(route, { ok: false, error: 'stop here' });
+  });
+
+  await connect(page);
+  shown = 'Brand New Page';
+  await expect(page.locator('#current-page-label')).toHaveText('Adding to Brand New Page');
+  await page.locator('#word-input').fill('Help');
+  await page.locator('#word-input').press('Enter');
+  await page.locator('#build-btn').click();
+  await expect(page.locator('#review-target')).toHaveText('Brand New Page');
+  await page.locator('#confirm-update-btn').click();
+  await expect.poll(() => submitted?.page).toBe('Brand New Page');
+});
+
 test('open-page path goes straight to Add and edits only after confirmation', async ({ page }) => {
   let submitted = null;
   let editCalls = 0;

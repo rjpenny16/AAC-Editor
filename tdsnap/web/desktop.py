@@ -41,7 +41,10 @@ class NativeApi:
     """
 
     def __init__(self, port):
-        self.window = None  # set once the window exists
+        # Private on purpose: pywebview exposes every public attribute of the
+        # js_api object by walking it, and walking into the Window reaches its
+        # .NET controls from a background thread, which hangs the whole app.
+        self._window = None  # set once the window exists
         self.port = port
 
     def open_pageset(self):
@@ -49,7 +52,7 @@ class NativeApi:
         import webview
 
         try:
-            chosen = self.window.create_file_dialog(
+            chosen = self._window.create_file_dialog(
                 webview.OPEN_DIALOG, allow_multiple=False, file_types=FILE_TYPES
             )
             if not chosen:
@@ -65,7 +68,7 @@ class NativeApi:
 
         try:
             suggested = server.edited_filename(session_id)
-            chosen = self.window.create_file_dialog(
+            chosen = self._window.create_file_dialog(
                 webview.SAVE_DIALOG,
                 directory=os.path.expanduser("~"),
                 save_filename=suggested,
@@ -110,7 +113,7 @@ class NativeApi:
             # The elevated child waits for this server to release the normal
             # port. Destroying the window follows the same clean shutdown path
             # as the user closing it.
-            threading.Timer(0.25, self.window.destroy).start()
+            threading.Timer(0.25, self._window.destroy).start()
             return {"ok": True, "restarting": True}
         except (AttributeError, OSError) as exc:
             return {"ok": False, "error": f"Could not request administrator access: {exc}"}
@@ -187,7 +190,7 @@ def run_desktop(
             height=800,
             min_size=(760, 560),
         )
-        api.window = window
+        api._window = window
         server.set_focus_handler(lambda: _bring_to_front(window))
         webview.start()
     except Exception:

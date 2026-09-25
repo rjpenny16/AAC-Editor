@@ -284,6 +284,11 @@
           </div>
 
           <div id="ai-stage-ready" class="ai-stage" hidden>
+            <div class="field ai-request">
+              <label for="ai-request">Describe what you want <span class="optional-tag">optional</span></label>
+              <textarea id="ai-request" rows="2" maxlength="500" placeholder="e.g. Only the Death Eaters from the books, full names" aria-describedby="ai-request-hint"></textarea>
+              <p id="ai-request-hint" class="field-hint">A sentence or two about the words to find. Only the model on this computer sees it.</p>
+            </div>
             <div class="ai-ask">
               <label for="ai-count">How many</label>
               <input id="ai-count" type="number" min="1" max="40" value="10" inputmode="numeric">

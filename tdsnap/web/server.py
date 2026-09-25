@@ -49,6 +49,7 @@ MAX_SESSION_STORAGE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ITEMS = 200
 MAX_TITLE_CHARS = 60
 MAX_PAGE_NAME_CHARS = 120
+MAX_AI_REQUEST_CHARS = 500
 MAX_LABEL_CHARS = 60
 MAX_MESSAGE_CHARS = 200
 
@@ -1349,6 +1350,8 @@ def ai_words():
     # Candidates already waiting in the tray. Not rejected and not on the page
     # — only used up, which is a third thing to tell a model (see prompts.py).
     already = _validated_labels(payload.get("already"), "already", 60)
+    # A sentence or two describing what the user wants. Local model only.
+    user_request = _bounded_text(payload.get("request"), "request", MAX_AI_REQUEST_CHARS)
     grounding_title = _bounded_text(
         payload.get("grounding_title"), "grounding_title", MAX_PAGE_NAME_CHARS
     )
@@ -1365,6 +1368,7 @@ def ai_words():
         "like": like,
         "style": style,
         "already": already,
+        "request": user_request or None,
     }
     try:
         host = ollama.normalize_host(payload.get("host", ollama.DEFAULT_HOST))

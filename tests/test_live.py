@@ -501,6 +501,34 @@ def test_live_click_coordinates_scale_from_client_origin(monkeypatch):
     assert live._physical_point(object(), 2000, 800) == (2100, 980)
 
 
+def test_empty_page_cells_are_clicked_once_scaled(monkeypatch):
+    # Measured on a 125% display: TD Snap reports the page group in physical
+    # pixels, but _physical_point scales grid points as if logical. Cell 0's
+    # click must land on its physical center, not 25% further out.
+    monkeypatch.setattr(live, "_client_origin", lambda _window: (167, 83))
+    monkeypatch.setattr(live, "_window_dpi", lambda _window: 120)
+    monkeypatch.setattr(live, "_active_pageset_path", lambda *_args: "pageset.sps")
+
+    class Connection:
+        def execute(self, *_args):
+            return SimpleNamespace(fetchall=lambda: [("6,6",)])
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(live.sqlite3, "connect", lambda *_a, **_k: Connection())
+    window = object()
+    group = SimpleNamespace(
+        Name="Professors",
+        GetTopLevelControl=lambda: window,
+        BoundingRectangle=SimpleNamespace(left=326, top=304, right=1285, bottom=1250),
+    )
+
+    cell = live._cell_at(live._stored_empty_grid(group), 0)
+    physical = live._physical_point(window, cell.x, cell.y)
+    assert abs(physical[0] - 406) <= 1 and abs(physical[1] - 383) <= 1
+
+
 def test_existing_page_remeasures_grid_in_edit_mode(monkeypatch):
     view_grid = live.Grid((10, 20), (30, 40), 8, 8)
     edit_grid = live.Grid((110, 120), (130, 140), 18, 18)
