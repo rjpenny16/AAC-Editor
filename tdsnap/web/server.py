@@ -544,6 +544,24 @@ def _list_pages(path: str):
         conn.close()
 
 
+def _home_page_id(path: str) -> Optional[int]:
+    """The page the page set opens on, when it names one and it is a vocabulary page.
+
+    An exported file used to open on whichever page sorted first — in the
+    Motor Plan set, "Accessories" — so a new topic page was offered a link from
+    there. The home page is where somebody expects to start.
+    """
+    try:
+        with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+            row = conn.execute(
+                "SELECT p.Id FROM Page p JOIN PageSetProperties s "
+                "ON p.UniqueId = s.DefaultHomePageUniqueId WHERE p.PageType = 1 LIMIT 1"
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    return row[0] if row else None
+
+
 def _page_state(path: str, page_id: int, include_buttons: bool = True) -> dict:
     """The grid, buttons, empty cells, and fingerprint of one page in a file session.
 
@@ -687,6 +705,7 @@ def _register_session(session_id: str, session_dir: str, filename: str) -> dict:
         "schema_version": schema_version,
         "grid": {"cols": cols, "rows": rows},
         "pages": _list_pages(os.path.join(session_dir, "current")),
+        "home_page_id": _home_page_id(os.path.join(session_dir, "current")),
         "baseline_problems": baseline["problems"],
     }
 
@@ -1172,6 +1191,7 @@ def pageset_summary(session_id):
         "filename": session["filename"],
         "grid": {"cols": cols, "rows": rows},
         "pages": _list_pages(current),
+        "home_page_id": _home_page_id(current),
         "edits": session.get("edits", 0),
         "unsaved": _has_unsaved_edits(session),
     })

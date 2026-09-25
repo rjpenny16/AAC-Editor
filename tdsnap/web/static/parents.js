@@ -116,11 +116,10 @@ function tokens(text) {
   return normalized;
 }
 
-function recommendParent(title) {
+/* Every page with the score recommendParent gives it, best first. */
+function rankedParents(title) {
   const wanted = tokens(title);
-  if (!wanted.size || !state.pages.length) return state.currentPage || state.pages[0].id;
-  let best = null;
-  state.pages.forEach((page) => {
+  const scored = state.pages.map((page) => {
     const pageTokens = tokens(page.title);
     let score = [...wanted].filter((token) => pageTokens.has(token)).length * 8;
     AAC_PAGE_GROUPS.forEach((group) => {
@@ -132,10 +131,51 @@ function recommendParent(title) {
     });
     if (page.id === state.currentPage && page.title !== "Topics Menu Page") score += 2;
     if (/^your topic \d+$/i.test(page.title)) score -= 4;
-    if (!best || score > best.score) best = { id: page.id, title: page.title, score };
+    return { id: page.id, title: page.title, score };
   });
+  // A stable sort keeps the page set's own order among equal scores.
+  return scored.sort((left, right) => right.score - left.score);
+}
+
+function recommendParent(title) {
+  if (!tokens(title).size || !state.pages.length) return state.currentPage || state.pages[0].id;
+  const [best] = rankedParents(title);
   if (best && best.score > 0) return best.id;
   return (state.pages.find((page) => page.id === state.currentPage) || state.pages[0]).id;
+}
+
+/* The suggested page for a new page's link turned out to be full. In an
+   exported file checking a page costs one small read, so try the next-best
+   suggestions until one has room rather than leaving the user at "That page
+   is full" to hunt for one themselves. A live TD Snap check navigates TD Snap
+   to the page, so there the choice stays with the user. */
+const ROOM_SEARCH_LIMIT = 12;
+
+async function suggestParentWithRoom() {
+  if (state.mode !== "file" || state.parentTouched || state.parentFree !== 0) return false;
+  const full = titleOf(state.parentId);
+  const title = $("title-input").value;
+  const current = state.pages.find((page) => page.id === state.currentPage);
+  const candidates = [
+    ...rankedParents(title).filter((page) => page.score > 0),
+    ...(current ? [current] : []),
+    ...state.pages,
+  ].filter((page, index, list) =>
+    page.id !== state.parentId && list.findIndex((other) => other.id === page.id) === index);
+  for (const page of candidates.slice(0, ROOM_SEARCH_LIMIT)) {
+    state.parentId = page.id;
+    renderParents(parentFilter.value);
+    if (await loadParentCapacity()) {
+      state.recommendedParent = page.id;
+      $("placement-title").textContent = `Suggested location: ${page.title}`;
+      $("placement-copy").textContent =
+        `“${full}” has no empty space, so the new ${title.trim()} button will be added to ` +
+        `${page.title}. Choose another page if that isn’t where you want it.`;
+      $("use-placement").hidden = true;
+      return true;
+    }
+  }
+  return false;
 }
 
 function updatePlacementRecommendation() {
@@ -197,4 +237,7 @@ function renderParents(filter) {
   }
 }
 
-export { loadParentCapacity, parentFilter, parentSelect, renderParents, titleOf, updatePlacementRecommendation };
+export {
+  loadParentCapacity, parentFilter, parentSelect, renderParents, suggestParentWithRoom, titleOf,
+  updatePlacementRecommendation,
+};

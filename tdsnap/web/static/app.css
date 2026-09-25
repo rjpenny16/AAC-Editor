@@ -490,7 +490,13 @@ input:focus-visible, select:focus-visible {
 .topic-row-label { align-items: center; padding: 0.65rem; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
 .topic-row-phrases { min-height: 3.25rem; align-items: center; flex-wrap: wrap; gap: 0.4rem; padding: 0.4rem; border-bottom: 1px solid var(--line); }
 .topic-row-add { min-width: 3.25rem; min-height: 3.25rem; align-items: center; justify-content: center; border: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--accent); background: var(--surface); font-weight: 700; }
-.topic-row-add.active { display: none !important; }
+.topic-row-add.active { color: var(--on-accent); background: var(--accent); }
+
+/* Each row has its own Add, which is also where the typed phrase goes; one
+   more Add beside the whole box only raised the question of which row it meant. */
+.chipbox.topic-mode + #word-add-btn { display: none; }
+.word-entry-row:has(.topic-mode) { grid-template-columns: 1fr; }
+.fn-hint { margin: 0; }
 [data-row-fn="question"], [data-row-phrases="question"], [data-add-fn="question"] { grid-row: 1; }
 [data-row-fn="comment"], [data-row-phrases="comment"], [data-add-fn="comment"] { grid-row: 2; }
 [data-row-fn="positive"], [data-row-phrases="positive"], [data-add-fn="positive"] { grid-row: 3; }

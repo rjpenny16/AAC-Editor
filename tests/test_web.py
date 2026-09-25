@@ -1256,3 +1256,11 @@ def test_a_reloaded_page_can_pick_its_session_back_up(client, seeded_source):
     assert summary["grid"] == data["grid"]
     assert any(page["title"] == "Snacks" for page in summary["pages"])
     assert summary["edits"] == 1 and summary["unsaved"] is True
+
+
+def test_an_opened_file_names_its_home_page(client, seeded_source):
+    data = upload(client, seeded_source).get_json()
+    home = next(page for page in data["pages"] if page["title"] == "Home Page")
+    assert data["home_page_id"] == home["id"]
+    summary = client.get(f"/api/pageset/{data['session_id']}", headers=token_headers()).get_json()
+    assert summary["home_page_id"] == home["id"]

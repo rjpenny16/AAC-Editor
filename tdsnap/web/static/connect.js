@@ -318,7 +318,9 @@ async function useFileSession(data) {
   state.filename = data.filename || "page-set.sps";
   state.grid = data.grid || state.grid;
   state.pages = data.pages.map((page) => ({ id: String(page.id), title: page.title }));
-  state.currentPage = state.pages[0].id;
+  // Start on the page set's own home page when it names one.
+  const home = state.pages.find((page) => page.id === String(data.home_page_id));
+  state.currentPage = (home || state.pages[0]).id;
   state.parentId = state.currentPage;
   state.parentFree = null;
   state.parentTouched = false;

@@ -2815,6 +2815,45 @@ test.describe('exported file adds to an existing page', () => {
     await expect(page.locator('#success-state')).toBeVisible();
   }
 
+  test('a full suggested page hands the new page link to one with room, and it stays there', async ({ page }) => {
+    let submitted = null;
+    await openFile(page, {
+      '**/api/pageset/file-session/page/*/capacity': (route) => fulfillJson(route, {
+        ok: true, free_cells: route.request().url().includes('/page/2/') ? 0 : 3,
+      }),
+      '**/api/pageset/file-session/page': (route) => {
+        submitted = route.request().postDataJSON();
+        return fulfillJson(route, { ok: true, buttons: 1, edits: 1, checks: { navigation: 'pass' } });
+      },
+    });
+    await page.locator('#destination-new-btn').click();
+    // "Snacks" belongs with Eating, which is full.
+    await page.locator('#title-input').fill('Snacks');
+    await page.locator('#wizard-title .wizard-next').click();
+    await expect(page.locator('#parent-select')).toHaveValue('1');
+    await expect(page.locator('#placement-copy')).toContainText('“Eating” has no empty space');
+    await expect(page.locator('#destination-error')).toBeHidden();
+    await page.locator('#wizard-destination .wizard-next').click();
+    // Changing the layout must not move the link back onto the full page.
+    await page.locator('.more-options summary').click();
+    await page.locator('#layout-options-btn').click();
+    await page.locator('#style-topic').click();
+    await page.locator('#layout-back-btn').click();
+    await page.locator('#word-input').fill('Can I have chips?');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#success-state')).toBeVisible();
+    expect(submitted.parent_page_id).toBe(1);
+  });
+
+  test('a file opens on its own home page', async ({ page }) => {
+    await openFile(page, {
+      '**/api/pageset': (route) => fulfillJson(route, { ...SESSION, home_page_id: 2 }),
+    });
+    await expect(page.locator('#parent-select')).toHaveValue('2');
+  });
+
   test('the edited copy can be saved from the header at any time', async ({ page }) => {
     await openFile(page, { '**/api/pageset/file-session/page/1/buttons': APPLIED });
     // Nothing to save before an edit.

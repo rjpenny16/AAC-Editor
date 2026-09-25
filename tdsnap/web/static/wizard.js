@@ -12,7 +12,9 @@ import { autoFormatTopicRows, firstAvailableSlot, renderWords, updateTopicInputR
 import { emptyEdits } from "./edits.js";
 import { layoutSettled, loadTargetLayout } from "./connect.js";
 import { clearDraft, takePendingResume } from "./draft.js";
-import { loadParentCapacity, titleOf, updatePlacementRecommendation } from "./parents.js";
+import {
+  loadParentCapacity, suggestParentWithRoom, titleOf, updatePlacementRecommendation,
+} from "./parents.js";
 
 /* ---------- helpers ---------- */
 
@@ -235,6 +237,7 @@ async function continueWizard() {
     show("destination");
     try {
       await loadParentCapacity();
+      await suggestParentWithRoom();
     } catch (error) {
       showStepError("destination", `We couldn't check that page. ${error.message}`);
     }
@@ -339,8 +342,10 @@ function setActiveFn(fn, manual = true) {
 
 $("style-words").addEventListener("click", () => setPageStyle("words"));
 $("style-topic").addEventListener("click", () => {
+  // The link location was settled on the destination step, capacity checked
+  // included. Re-suggesting here silently moved it back onto a page that had
+  // already been found to be full.
   setPageStyle("topic");
-  if (state.operation === "new") updatePlacementRecommendation();
   if (state.wizardStep === "items") $("word-input").focus();
 });
 $("layout-options-btn").addEventListener("click", () => show("layout"));

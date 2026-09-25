@@ -371,6 +371,11 @@ buildForm.addEventListener("submit", (event) => {
     showStepError("items", "Add at least one word or phrase before continuing.");
     return;
   }
+  if (state.operation === "new" && state.provider !== "grid3" && state.parentFree === 0) {
+    showStepError("items", `“${titleOf(state.parentId)}” has no empty space for the link to the new ` +
+      "page. Go back and choose another page to link it from.");
+    return;
+  }
   if (state.words.length > pageCapacity()) {
     showStepError("items", "This page is full. Remove a planned button or choose another page.");
     return;
