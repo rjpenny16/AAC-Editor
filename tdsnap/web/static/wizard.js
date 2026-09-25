@@ -22,7 +22,6 @@ import { loadParentCapacity, titleOf, updatePlacementRecommendation } from "./pa
 function headingFor(step) {
   return {
     connect: "load-heading",
-    operation: "operation-heading",
     title: "title-heading",
     destination: "destination-heading",
     items: "items-heading",
@@ -51,10 +50,11 @@ function updateProgress(step) {
   $("wizard-announcer").textContent = label;
 }
 
-/* Every provider reaches the items step by a different path (tdsnap: live
-   connect → operation → destination; grid3: straight from connect; file:
-   connect → title → destination) so this is the one place robust to all of
-   them — applied once, the moment a resumed draft has somewhere to land. */
+/* Every provider reaches the items step by a different path (TD Snap and
+   Grid 3: straight from connect; exported file: connect → destination; any of
+   them via title and destination when creating a page) so this is the one
+   place robust to all of them — applied once, the moment a resumed draft has
+   somewhere to land. */
 function applyPendingDraftResume() {
   const draft = takePendingResume();
   if (!draft) return;
@@ -76,7 +76,7 @@ function show(step, focus = true) {
   document.body.dataset.step = step;
   if (step === "items") applyPendingDraftResume();
 
-  const buildSteps = ["operation", "title", "destination", "items", "layout", "placement"];
+  const buildSteps = ["title", "destination", "items", "layout", "placement"];
   $("step-load").hidden = step !== "connect";
   $("step-build").hidden = !buildSteps.includes(step);
   $("step-result").hidden = !["review", "result"].includes(step);
@@ -106,32 +106,21 @@ function setOperation(operation) {
   state.operation = operation;
   state.pendingEdit = null;
   const existing = operation === "existing";
-  $("operation-existing").classList.toggle("selected", existing);
-  $("operation-existing").setAttribute("aria-checked", existing);
-  $("operation-new").classList.toggle("selected", !existing);
-  $("operation-new").setAttribute("aria-checked", !existing);
-  $("operation-existing").tabIndex = existing ? 0 : -1;
-  $("operation-new").tabIndex = existing ? -1 : 0;
   $("title-field").hidden = existing;
+  $("destination-new-btn").hidden = !existing;
   $("destination-heading").textContent = existing
     ? "Which page would you like to change?"
     : "Where should people find this page?";
-  $("placement-advice").hidden = false;
-  if (existing) {
-    $("placement-title").textContent = "Start with a familiar page";
-    $("placement-copy").textContent =
-      "Choose the page where these words already belong. You can create a separate page later.";
-    $("use-placement").hidden = true;
-  }
+  // The suggestion box earns its space when a new page needs a home; for
+  // adding to a page it only restated the question above it.
+  $("placement-advice").hidden = existing;
+  if (existing) $("use-placement").hidden = true;
   $("target-label").textContent = existing ? "Page to change" : "Find it from";
   $("destination-intro").textContent = existing
     ? state.mode === "file"
       ? "Choose the page in this exported copy that the new buttons belong on."
       : "The page open in TD Snap is selected. Choose another page if this vocabulary belongs elsewhere."
     : "Choose the existing page where the new page's link belongs.";
-  $("operation-hint").textContent = existing
-    ? "Start by choosing the page where this vocabulary belongs."
-    : "Name the new page, then choose where its link belongs.";
   $("preview-hint").textContent = "Drag buttons to move them, or use the arrow keys.";
   $("build-btn-label").textContent = "Review changes";
   $("current-page-label").textContent = existing
@@ -156,18 +145,28 @@ function setOperation(operation) {
   renderWords();
 }
 
-$("operation-existing").addEventListener("click", async () => {
-  setOperation("existing");
-  try {
-    await loadTargetLayout(titleOf(state.parentId));
-  } catch (error) {
-    showBuildError("Couldn’t load the selected TD Snap page.", [error.message]);
-  }
-});
-$("operation-new").addEventListener("click", () => {
+/* Creating a page is a detour from wherever the user already was — the word
+   list for a live app, the page picker for an exported file — so Back from
+   naming it returns there, on the page they had open. */
+function startNewPage(from) {
+  state.newPageFrom = from;
   setOperation("new");
-  updatePlacementRecommendation();
-});
+  if (state.provider !== "grid3") updatePlacementRecommendation();
+  show("title");
+}
+
+async function abandonNewPage() {
+  const destination = state.newPageFrom || (state.mode === "file" ? "destination" : "items");
+  setOperation("existing");
+  show(destination);
+  try {
+    await loadTargetLayout(state.provider === "grid3" ? state.currentPage : titleOf(state.parentId));
+  } catch (error) {
+    showBuildError("Couldn’t load the selected page.", [error.message]);
+  }
+}
+
+$("destination-new-btn").addEventListener("click", () => startNewPage("destination"));
 
 function clearStepError(step) {
   const error = document.querySelector(`[data-error-for="${step}"]`);
@@ -210,40 +209,6 @@ function prepareGrid3NewGrid() {
 
 async function continueWizard() {
   clearStepError(state.wizardStep);
-  if (state.wizardStep === "operation") {
-    if (state.provider === "grid3") {
-      if (state.operation === "new") {
-        show("title");
-        return;
-      }
-      // The open grid was read when connecting; it is the only page on offer.
-      if (!state.layoutFingerprint) {
-        try {
-          await loadTargetLayout(state.currentPage);
-        } catch (error) {
-          showStepError("operation", `We couldn't read that grid. ${error.message}`);
-          return;
-        }
-      }
-      show("items");
-      return;
-    }
-    if (state.operation === "new") {
-      show("title");
-      return;
-    }
-    if (!state.layoutFingerprint && state.parentId) {
-      try {
-        await loadTargetLayout(titleOf(state.parentId));
-      } catch (error) {
-        showStepError("operation", `We couldn't read that page. ${error.message}`);
-        return;
-      }
-    }
-    show("destination");
-    return;
-  }
-
   if (state.wizardStep === "title") {
     const title = $("title-input").value.trim();
     if (!title) {
@@ -311,19 +276,17 @@ async function continueWizard() {
 
 function backWizard() {
   clearStepError(state.wizardStep);
-  if (state.provider === "grid3") {
-    const previous = state.operation === "new"
-      ? { title: "operation", items: "title" }
-      : { items: "operation" };
-    show(previous[state.wizardStep] || "connect");
+  if (state.operation === "new" && state.wizardStep === "title") {
+    void abandonNewPage();
     return;
   }
-  // Exported files walk the same two routes as TD Snap live now that they can
-  // add to an existing page, so one map serves both.
-  const previous = state.operation === "new"
-    ? { operation: "connect", title: "operation", destination: "title", items: "destination" }
-    : { operation: "connect", destination: "operation", items: "destination" };
-  show(previous[state.wizardStep] || "operation");
+  // Grid 3 has no page picker: the open grid is the only page.
+  const previous = state.provider === "grid3"
+    ? state.operation === "new" ? { items: "title" } : {}
+    : state.operation === "new"
+      ? { destination: "title", items: "destination" }
+      : { items: "destination" };
+  show(previous[state.wizardStep] || "connect");
 }
 
 document.querySelectorAll(".wizard-next").forEach((button) => {
@@ -414,4 +377,7 @@ function showBuildError(message, details) {
   errorBox.hidden = false;
 }
 
-export { applyPendingDraftResume, clearBuildError, clearStepError, continueWizard, setActiveFn, setOperation, setPageStyle, show, showBuildError, showStepError };
+export {
+  applyPendingDraftResume, clearBuildError, clearStepError, continueWizard, setActiveFn,
+  setOperation, setPageStyle, show, showBuildError, showStepError, startNewPage,
+};

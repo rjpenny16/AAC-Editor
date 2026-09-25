@@ -10,7 +10,7 @@ import { $, setBusy, setActivity, setPreviewBusy } from "./dom.js";
 import { api, userRequestInFlight } from "./api.js";
 import { renderWords } from "./chips.js";
 import { emptyEdits, reconcile } from "./edits.js";
-import { parentFilter, parentSelect, renderParents } from "./parents.js";
+import { parentFilter, parentSelect, renderParents, titleOf } from "./parents.js";
 import { savePreference } from "./settings.js";
 import { loadVocabulary } from "./vocabulary.js";
 import { clearBuildError, setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
@@ -113,19 +113,16 @@ function selectProvider(provider) {
   $("layout-options-btn").hidden = grid3;
   $("grid3-limits").hidden = !grid3;
   if (grid3) void loadGrid3Guidance();
-  $("connect-task-title").textContent = file
-    ? "Open a TD Snap exported file"
-    : grid3 ? "Use the grid open in Grid 3" : "Use the page open in TD Snap";
   $("connect-task-copy").textContent = file
-    ? "Choose an .sps or .spb export. Your original file stays unchanged."
+    ? "Choose an .sps or .spb file exported from TD Snap. Your original file stays unchanged."
     : grid3
-      ? "Open the grid you want in Grid 3. Do not enter Edit Mode."
-      : "Open the page you want to change and keep Windows unlocked.";
+      ? "Open Grid 3 to the grid you want to change (not in Edit Mode), then connect."
+      : "Open TD Snap to the page you want to change, then connect.";
   $("live-connect-btn").querySelector(".btn-label").textContent = file
-    ? "Choose exported page set"
+    ? "Choose a file"
     : grid3
       ? (state.elevated ? "Connect to Grid 3" : "Enable Grid 3 editing")
-      : "Use the page open in TD Snap";
+      : "Connect to TD Snap";
   $("connection-help").innerHTML = file
     ? "<li>Export the page set from TD Snap as an .sps or .spb file.</li>" +
       "<li>Choose that exported file here and add the new page.</li>" +
@@ -136,7 +133,7 @@ function selectProvider(provider) {
         "<li>Return here and connect. Windows may request administrator approval.</li>"
       : "<li>Open TD Snap and choose the person and page set you want to edit.</li>" +
         "<li>Open the page you want to change.</li>" +
-        "<li>Return here and select <strong>Use the page open in TD Snap</strong>.</li>";
+        "<li>Return here and select <strong>Connect to TD Snap</strong>.</li>";
   $("connection-help-note").textContent = file
     ? "The editor works on a temporary copy and never overwrites your export."
     : "Direct editing follows the page open in the selected AAC app.";
@@ -267,8 +264,38 @@ async function resumeFileSession() {
   }
 }
 
+/* The edited copy can be saved from the header at any point, not only from the
+   result screen — which a reload, or simply moving on to the next page, used
+   to leave with no way back to. */
+function syncFileSave() {
+  const link = $("header-save-btn");
+  const available = state.mode === "file" && state.connected && state.edits > 0;
+  link.hidden = !available;
+  if (!available) {
+    link.removeAttribute("href");
+    return;
+  }
+  link.href = `/api/pageset/${encodeURIComponent(state.sessionId)}/download`;
+  link.download = state.filename.replace(/(\.[^.]+)?$/, ".edited$1");
+  link.classList.toggle("btn-primary", state.fileUnsaved);
+  link.classList.toggle("btn-secondary", !state.fileUnsaved);
+  link.textContent = state.fileUnsaved ? "Save edited copy" : "Save again";
+}
+
+$("header-save-btn").addEventListener("click", (event) => {
+  if (state.native && window.pywebview?.api?.save_pageset) {
+    // The native window saves through its own dialog, as the result screen does.
+    event.preventDefault();
+    $("file-save-btn").click();
+    return;
+  }
+  state.fileUnsaved = false;
+  syncFileSave();
+});
+
 function showFileResumeNote(data) {
-  const note = $("chip-note");
+  syncFileSave();
+  const note = $("destination-intro");
   note.textContent = data.unsaved
     ? `Picked up where you left off in ${data.filename}. Your earlier changes are ` +
       "still here — save the edited copy when you're done."
@@ -306,9 +333,8 @@ async function useFileSession(data) {
   state.placementAdjusted = false;
   $("title-input").value = "";
   setPageStyle("words");
-  // Exported files can now add to a page that already exists, so they open on
-  // the same first question the live providers ask instead of assuming a new
-  // page is wanted. Adding to a familiar page is the shorter path, so it leads.
+  // Adding to a page that already exists is the shorter, more common path, so
+  // an exported file opens on the page picker; creating a page is a link there.
   setOperation("existing");
   renderParents("");
   $("file-badge").textContent = `${state.filename} · Change file`;
@@ -320,8 +346,13 @@ async function useFileSession(data) {
   $("live-result-note").textContent =
     "Save the edited copy, review it, then import it into TD Snap.";
   setProviderState("file", "Ready", "ready");
+  show("destination");
+  try {
+    await loadTargetLayout(titleOf(state.parentId));
+  } catch (error) {
+    showBuildError("Couldn’t load that page. Choose another one.", [error.message]);
+  }
   await loadVocabulary();
-  show("operation");
   return true;
 }
 
@@ -433,7 +464,7 @@ $("live-connect-btn").addEventListener("click", async () => {
       setProviderState("grid3", "Ready", "ready");
       status.textContent = data.compatibility_warning || "";
       setOperation("existing");
-      show("operation");
+      show("items");
       return;
     }
     let data = await api("/api/tdsnap/status");
@@ -652,5 +683,5 @@ async function syncLivePreview() {
 
 export {
   followGrid3Page, loadTargetLayout, refreshDetectedPages, rememberFileSession,
-  resumeFileSession, selectProvider, stopLiveMonitor,
+  resumeFileSession, selectProvider, stopLiveMonitor, syncFileSave,
 };

@@ -1586,6 +1586,15 @@ def instance_running(port: int) -> bool:
 
 def pick_port(preferred: int = DEFAULT_PORT) -> int:
     with socket.socket() as probe:
+        # The server itself binds with SO_REUSEADDR, so a port whose last
+        # connections are still closing (TIME_WAIT, for a minute or so after a
+        # quit) is free to it. Without the same option this probe called that
+        # port taken, and a quick restart moved the app to a random port that
+        # nothing — a bookmark, the launcher — knew about. Windows lets a
+        # TIME_WAIT port be bound anyway, and its SO_REUSEADDR means something
+        # else entirely, so the option is only set elsewhere.
+        if os.name != "nt":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(("127.0.0.1", preferred))
             return probe.getsockname()[1]

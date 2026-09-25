@@ -63,6 +63,7 @@ const state = {
   // rather than something re-derived from live state later. See queue.js.
   queue: [],
   placementReturn: "review", // which step the placement editor returns to
+  newPageFrom: "", // the step "Create a new page" was chosen from; Back returns there
   availableSlots: null,
   grid3Cells: [],
   previewAspect: null,

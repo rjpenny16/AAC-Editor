@@ -551,7 +551,9 @@ $("confirm-update-btn").addEventListener("click", async () => {
         // Keep the original error if TD Snap cannot be inspected for recovery.
       }
     }
-    showReviewError(`${state.provider === "grid3" ? "Grid 3" : "TD Snap"} couldn't complete the edit.`, [
+    showReviewError(state.mode === "file"
+      ? "The edit couldn’t be made. Your exported copy is unchanged."
+      : `${state.provider === "grid3" ? "Grid 3" : "TD Snap"} couldn't complete the edit.`, [
       error.message,
       ...(error.problems || []),
     ]);

@@ -157,6 +157,7 @@ button { cursor: pointer; }
   margin-left: auto;
   display: flex;
   align-items: center;
+  gap: 0.6rem;
 }
 
 .local-status,
@@ -295,8 +296,8 @@ h3 { margin: 0; font-size: 1rem; }
   background: var(--surface-soft);
 }
 
-.primary-task strong { font-size: 1.0625rem; }
-.primary-task p { margin: 0.25rem 0 0; color: var(--ink-soft); font-size: 0.875rem; }
+.primary-task p { margin: 0; color: var(--ink); font-size: 1rem; font-weight: 600; }
+.primary-task .btn { flex: none; white-space: nowrap; }
 
 .btn {
   min-height: 2.75rem;
@@ -751,7 +752,12 @@ summary {
    from an eligible one by border style alone, which is the hardest of all
    these states to see and the one somebody needs first. Its badge is muted
    rather than colored — it marks what to skip, not something to act on, and
-   a menu page where every button is a page link should read as quiet. */
+   a menu page where every button is a page link should read as quiet.
+
+   It is shown only where some buttons on the page can be changed. When none
+   can — an exported file, or a page of links — every existing button said
+   "locked", on top of its own symbol and label, and the new buttons were the
+   hardest thing on the grid to find. The muted fill says "already there". */
 .preview .cell.existing.editable { border-style: dashed; border-color: var(--line-strong); cursor: pointer; }
 .preview .cell.existing.editable:hover { border-color: var(--accent); background: var(--accent-soft); }
 .preview .cell.marked-changed,
@@ -761,7 +767,7 @@ summary {
 .preview .cell.marked-moved { border: 3px solid var(--accent); border-style: dashed; }
 .preview .cell.marked-removed { border: 3px solid var(--danger); background: var(--danger-soft); }
 .preview .cell.marked-removed .cell-label { text-decoration: line-through; }
-.preview .cell.existing.locked::after,
+.preview.has-editable .cell.existing.locked::after,
 .preview .cell.marked-changed::after,
 .preview .cell.marked-moved::after,
 .preview .cell.marked-removed::after {
@@ -774,7 +780,7 @@ summary {
   letter-spacing: 0.02em;
 }
 
-.preview .cell.existing.locked::after { content: "locked"; color: var(--ink-soft); font-weight: 700; }
+.preview.has-editable .cell.existing.locked::after { content: "locked"; color: var(--ink-soft); font-weight: 700; }
 .preview .cell.marked-changed::after { content: "changed"; color: var(--accent); }
 .preview .cell.marked-moved::after { content: "moving"; color: var(--accent); }
 
@@ -817,9 +823,13 @@ summary {
 .review-placement-preview .preview-frame { margin-top: 0.65rem; }
 .review-placement-preview .preview { pointer-events: none; }
 .review-placement-preview .preview .cell.used { outline: 2px solid var(--ink); outline-offset: -2px; box-shadow: inset 0 0 0 5px var(--focus); }
-.review-placement-order { margin: 0.75rem 0 0; padding-left: 1.5rem; }
 
-.checks { display: grid; gap: 0.65rem; margin: 1.25rem 0 0; padding: 0; list-style: none; }
+/* Every check passing is one line; the list is there for whoever wants it.
+   Anything that needs review opens it. */
+.checks-details { margin: 1.25rem 0 0; }
+.checks-details > summary { display: flex; gap: 0.7rem; align-items: center; padding: 0.85rem; border: 1px solid #a7d7b7; border-radius: 0.6rem; color: #115f31; background: var(--success-soft); font-weight: 700; cursor: pointer; }
+.checks-details.has-warning > summary { color: var(--warning); border-color: #e4c585; background: var(--warning-soft); }
+.checks { display: grid; gap: 0.65rem; margin: 0.65rem 0 0; padding: 0; list-style: none; }
 .checks li { display: flex; gap: 0.7rem; align-items: start; padding: 0.85rem; border: 1px solid #a7d7b7; border-radius: 0.6rem; color: #115f31; background: var(--success-soft); }
 .checks li.warning { color: var(--warning); border-color: #e4c585; background: var(--warning-soft); }
 .check-icon { width: 1.5rem; height: 1.5rem; flex: none; display: grid; place-items: center; border-radius: 50%; background: #ccebd6; }

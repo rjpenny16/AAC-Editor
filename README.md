@@ -122,7 +122,7 @@ stored in plain language, and **Clear all saved data** deletes the file.
 ## Quick start
 
 1. Open TD Snap and the page set you want to edit.
-2. Open AAC Editor and select **Use the page open in TD Snap**.
+2. Open AAC Editor and select **Connect to TD Snap**.
 3. Add buttons, review their positions, and confirm the result-specific action.
 4. Use **Choose another page** or **Create a new page** only when needed.
 5. Review the checks before returning to TD Snap.

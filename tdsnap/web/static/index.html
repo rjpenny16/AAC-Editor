@@ -18,6 +18,7 @@
     <h1>AAC Editor</h1>
     <div class="connection-area">
       <span class="local-status"><span aria-hidden="true"></span>Local by default</span>
+      <a id="header-save-btn" class="btn btn-primary btn-compact header-save" hidden>Save edited copy</a>
       <button type="button" id="file-badge" class="file-badge" aria-label="Change AAC app" hidden></button>
     </div>
   </div>
@@ -67,17 +68,17 @@
     <div class="provider-list" role="radiogroup" aria-label="AAC app">
       <button type="button" id="provider-tdsnap" class="choice-card provider-card selected" role="radio" aria-checked="true">
         <strong>TD Snap</strong>
-        <span>Edit the open page or create and link a new page.</span>
+        <span>Change the page open in TD Snap, or create and link a new page.</span>
         <small id="provider-tdsnap-state"></small>
       </button>
       <button type="button" id="provider-grid3" class="choice-card provider-card" role="radio" aria-checked="false">
         <strong>Grid 3</strong>
-        <span>Add vocabulary to empty spaces AAC Editor can update safely on the grid already open.</span>
+        <span>Change the grid open in Grid 3, or create and link a new grid.</span>
         <small id="provider-grid3-state"></small>
       </button>
       <button type="button" id="provider-file" class="choice-card provider-card" role="radio" aria-checked="false">
         <strong>TD Snap exported file</strong>
-        <span>Create a page in a separate edited copy. Useful outside Windows or when direct editing is unavailable.</span>
+        <span>Work on an exported .sps or .spb copy. No TD Snap needed while you edit.</span>
         <small id="provider-file-state"></small>
       </button>
     </div>
@@ -85,12 +86,9 @@
     <input id="file-input" class="sr-only" type="file" accept=".sps,.spb,application/octet-stream" aria-label="Choose a TD Snap exported page set">
 
     <div class="primary-task">
-      <div>
-        <strong id="connect-task-title">Use the page open in TD Snap</strong>
-        <p id="connect-task-copy">Open the page you want to change and keep Windows unlocked.</p>
-      </div>
+      <p id="connect-task-copy">Open TD Snap to the page you want to change, then connect.</p>
       <button type="button" id="live-connect-btn" class="btn btn-primary">
-        <span class="btn-label">Use the page open in TD Snap</span>
+        <span class="btn-label">Connect to TD Snap</span>
       </button>
     </div>
     <section id="grid3-limits" class="provider-limits" aria-labelledby="grid3-limits-heading" hidden>
@@ -115,7 +113,7 @@
       <ol id="connection-help">
         <li>Open TD Snap and choose the person and page set you want to edit.</li>
         <li>Open the page you want to change.</li>
-        <li>Return here and select <strong>Use the page open in TD Snap</strong>.</li>
+        <li>Return here and select <strong>Connect to TD Snap</strong>.</li>
       </ol>
       <p id="connection-help-note">Direct changes keep the page set’s existing sharing and sync identity.</p>
     </details>
@@ -124,28 +122,6 @@
   <section id="step-build" class="wizard-card" aria-label="Guided editor" hidden>
     <p id="build-sub" class="sr-only"></p>
     <form id="build-form" novalidate>
-      <section id="wizard-operation" class="wizard-step" data-wizard-step="operation" aria-labelledby="operation-heading" hidden>
-        <p class="step-eyebrow">Choose a task</p>
-        <h2 id="operation-heading" tabindex="-1">What would you like to do?</h2>
-        <p class="lead">Choose the option that matches what you want to change today.</p>
-        <div class="choice-list" role="radiogroup" aria-label="What would you like to do?">
-          <button type="button" id="operation-existing" class="choice-card selected" role="radio" aria-checked="true">
-            <strong>Add buttons to an existing page</strong>
-            <span>Use a page that is already in this TD Snap page set.</span>
-          </button>
-          <button type="button" id="operation-new" class="choice-card" role="radio" aria-checked="false">
-            <strong>Create a new page</strong>
-            <span>Make a page and link it from an existing page.</span>
-          </button>
-        </div>
-        <p id="operation-hint" class="field-hint">The shorter path adds buttons to a page you already use.</p>
-        <p class="step-error" data-error-for="operation" role="alert" tabindex="-1" hidden></p>
-        <div class="wizard-actions">
-          <button type="button" class="btn btn-ghost wizard-back">Back</button>
-          <button type="button" class="btn btn-primary wizard-next">Continue</button>
-        </div>
-      </section>
-
       <section id="wizard-title" class="wizard-step" data-wizard-step="title" aria-labelledby="title-heading" hidden>
         <p class="step-eyebrow">Name the page</p>
         <h2 id="title-heading" tabindex="-1">What should the new page be called?</h2>
@@ -184,6 +160,7 @@
             <select id="parent-select" aria-describedby="parent-capacity destination-error"></select>
           </div>
           <p class="field-hint"><span id="parent-capacity"></span></p>
+          <button type="button" id="destination-new-btn" class="text-button">Create a new page instead</button>
           <p id="destination-error" class="step-error" data-error-for="destination" role="alert" tabindex="-1" hidden></p>
         </div>
         <div id="build-error" class="alert" role="alert" tabindex="-1" hidden></div>
@@ -492,7 +469,7 @@
         <div class="preview-frame">
           <div id="review-preview" class="preview" aria-label="Preview of the reviewed button positions"></div>
         </div>
-        <ol id="review-placement-order" class="review-placement-order" aria-label="New buttons in position order"></ol>
+        <ol id="review-placement-order" class="review-placement-order sr-only" aria-label="New buttons in position order"></ol>
       </section>
       <div id="review-error" class="alert" role="alert" tabindex="-1" hidden></div>
       <div class="wizard-actions review-actions">
@@ -510,7 +487,10 @@
         <h3>What happened to each page</h3>
         <ul id="batch-outcome" class="batch-outcome"></ul>
       </div>
-      <ul id="checks" class="checks" aria-label="Verification results"></ul>
+      <details id="checks-details" class="checks-details">
+        <summary id="checks-summary">Checks</summary>
+        <ul id="checks" class="checks" aria-label="Verification results"></ul>
+      </details>
       <div id="result-warnings" class="alert warning" role="status" hidden></div>
       <div class="wizard-actions">
         <button type="button" id="another-btn" class="btn btn-secondary">Add more buttons</button>

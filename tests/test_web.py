@@ -63,7 +63,7 @@ def test_index_explains_both_local_ai_setup_options(client):
     assert "Nothing reaches your page until you do" in page
     assert "Drop your" not in page
     assert "TD Snap exported file" in page
-    assert "Create a page in a separate edited copy" in page
+    assert "Work on an exported .sps or .spb copy" in page
     assert "sends only this page title to Wikipedia" in page
     assert "Drag buttons to the exact cells" in page
 
@@ -423,6 +423,23 @@ def test_pick_port_prefers_free_falls_back_when_busy():
         open_port = probe.getsockname()[1]
     assert server.pick_port(open_port) == open_port
     assert free  # OS gave us something
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows binds over TIME_WAIT without help")
+def test_pick_port_keeps_a_port_whose_connections_are_still_closing():
+    # A quick quit-and-relaunch leaves the port in TIME_WAIT. The server can
+    # bind it, so the probe must not send the app to a random port instead.
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    client = socket.create_connection(("127.0.0.1", port))
+    accepted, _ = listener.accept()
+    accepted.close()  # the server side closes first, so it holds TIME_WAIT
+    listener.close()
+    client.close()
+    assert server.pick_port(port) == port
 
 
 def test_instance_running_is_false_on_a_dead_port():

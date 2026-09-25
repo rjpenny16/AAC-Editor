@@ -494,7 +494,8 @@ async function connectGrid3(page) {
   await page.goto(BASE_URL);
   await page.locator('#provider-grid3').click();
   await page.locator('#live-connect-btn').click();
-  await expect(page.locator('#wizard-operation')).toBeVisible();
+  // The open grid is the page, so connecting lands on the word list.
+  await expect(page.locator('#wizard-items')).toBeVisible();
 }
 
 /* What a Grid 3 user is told before they commit, and when it stops.
@@ -665,10 +666,7 @@ test('Grid 3 uses the active-grid three-step flow and live styled rectangles', a
   await page.goto(BASE_URL);
   await page.locator('#provider-grid3').click();
   await page.locator('#live-connect-btn').click();
-  // Grid 3 offers the same two tasks TD Snap does; the open grid is the page.
-  await expect(page.locator('#wizard-operation')).toBeVisible();
-  await expect(page.locator('#operation-existing')).toHaveClass(/selected/);
-  await page.locator('#wizard-operation .wizard-next').click();
+  // The open grid is the page, so connecting goes straight to the word list.
   await expect(page.locator('#wizard-items')).toBeVisible();
   await expect(page.locator('#wizard-progress-label')).toHaveText('Add');
   await expect(page.locator('#layout-options-btn')).toBeHidden();
@@ -716,8 +714,6 @@ test('Grid 3 uses the active-grid three-step flow and live styled rectangles', a
 test('Grid 3 changes, moves and removes speaking cells through the same review', async ({ page }) => {
   const plans = mockGrid3(page);
   await connectGrid3(page);
-  await page.locator('#wizard-operation .wizard-next').click();
-  await expect(page.locator('#wizard-items')).toBeVisible();
   await expect(page.locator('#edit-existing-btn')).toBeVisible();
   await page.locator('#edit-existing-btn').click();
   await expect(page.locator('#preview')).toHaveClass(/grid3-preview/);
@@ -752,8 +748,7 @@ test('Grid 3 changes, moves and removes speaking cells through the same review',
 test('Grid 3 creates a linked grid the size of the open one, keeping its Back cell free', async ({ page }) => {
   const plans = mockGrid3(page);
   await connectGrid3(page);
-  await page.locator('#operation-new').click();
-  await page.locator('#wizard-operation .wizard-next').click();
+  await page.locator('#create-page-btn').click();
   await expect(page.locator('#wizard-title')).toBeVisible();
   await page.locator('#title-input').fill('Snacks');
   await page.locator('#wizard-title .wizard-next').click();
@@ -1057,11 +1052,9 @@ test('exported TD Snap file can create and save an edited copy', async ({ page }
     mimeType: 'application/octet-stream',
     buffer: Buffer.from('synthetic pageset'),
   });
-  // An exported file now asks the same first question as a live connection,
-  // because it can add to an existing page as well as create one.
-  await expect(page.locator('#wizard-operation')).toBeVisible();
-  await page.locator('#operation-new').click();
-  await page.locator('#wizard-operation .wizard-next').click();
+  // An exported file opens on the page picker; creating a page is a link there.
+  await expect(page.locator('#wizard-destination')).toBeVisible();
+  await page.locator('#destination-new-btn').click();
   await expect(page.locator('#wizard-title')).toBeVisible();
   await page.locator('#title-input').fill('Snacks');
   await page.locator('#wizard-title .wizard-next').click();
@@ -1072,7 +1065,7 @@ test('exported TD Snap file can create and save an edited copy', async ({ page }
   await page.locator('#build-btn').click();
   await page.locator('#confirm-update-btn').click();
 
-  await expect(page.locator('#result-heading')).toHaveText('Done — TD Snap was updated');
+  await expect(page.locator('#result-heading')).toHaveText('Done — save the edited copy to keep it');
   await expect(page.locator('#file-save-btn')).toBeVisible();
   await expect(page.locator('#file-save-btn')).toHaveAttribute(
     'href', '/api/pageset/file-session/download',
@@ -1163,6 +1156,21 @@ test('a request that never resolves exits the connection busy state', async ({ p
   await expect(page.locator('#app-activity')).toBeHidden();
 });
 
+test('Back from naming a new page returns to the word list on the same page', async ({ page }) => {
+  await mockTD(page);
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-input').press('Enter');
+  await page.locator('#create-page-btn').click();
+  await expect(page.locator('#wizard-title')).toBeVisible();
+  await page.locator('#wizard-title .wizard-back').click();
+  // Straight back where the user was — no screen they never saw on the way in.
+  await expect(page.locator('#wizard-items')).toBeVisible();
+  await expect(page.locator('#current-page-label')).toHaveText('Adding to Eating');
+  await expect(page.locator('#capacity')).toHaveText('1 added · 5 spaces left');
+  await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+});
+
 test('a partial create resumes on the created page without duplicate buttons', async ({ page }) => {
   let created = false;
   await mockTD(page, {
@@ -1192,7 +1200,7 @@ test('a partial create resumes on the created page without duplicate buttons', a
   await page.locator('#confirm-update-btn').click();
 
   await expect(page.locator('#wizard-items')).toBeVisible();
-  await expect(page.locator('#operation-existing')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('#current-page-label')).toHaveText('Adding to World Cup Final');
   await expect(page.locator('#parent-select')).toHaveValue('World Cup Final');
   await expect(page.locator('#chipbox .chip')).toHaveCount(1);
   await expect(page.locator('#chipbox .chip')).toContainText('Cheer');
@@ -2671,7 +2679,7 @@ test.describe('exported file adds to an existing page', () => {
       mimeType: 'application/octet-stream',
       buffer: Buffer.from('synthetic pageset'),
     });
-    await expect(page.locator('#wizard-operation')).toBeVisible();
+    await expect(page.locator('#wizard-destination')).toBeVisible();
   }
 
   test('buttons are added to a chosen page and the review names it', async ({ page }) => {
@@ -2689,9 +2697,7 @@ test.describe('exported file adds to an existing page', () => {
       },
     });
 
-    // "Add buttons to an existing page" leads, as it does for a live connection.
-    await expect(page.locator('#operation-existing')).toHaveAttribute('aria-checked', 'true');
-    await page.locator('#wizard-operation .wizard-next').click();
+    // Adding to an existing page leads; the file opens on the page picker.
     await expect(page.locator('#parent-capacity')).toContainText('5 empty spaces');
     await page.locator('#wizard-destination .wizard-next').click();
 
@@ -2709,7 +2715,7 @@ test.describe('exported file adds to an existing page', () => {
     await expect(page.locator('#review-target')).toHaveText('Home');
 
     await page.locator('#confirm-update-btn').click();
-    await expect(page.locator('#result-heading')).toHaveText('Done — TD Snap was updated');
+    await expect(page.locator('#result-heading')).toHaveText('Done — save the edited copy to keep it');
     await expect(page.locator('#file-save-btn')).toBeVisible();
     expect(submitted.fingerprint).toBe('file-home-v1');
     expect(submitted.items.map((item) => item.slot)).toEqual([1, 2]);
@@ -2725,7 +2731,6 @@ test.describe('exported file adds to an existing page', () => {
         error: 'This page changed after the preview. Reload the page and review the edit again.',
       }, 400),
     });
-    await page.locator('#wizard-operation .wizard-next').click();
     await page.locator('#wizard-destination .wizard-next').click();
     await page.locator('#word-input').fill('Chips');
     await page.locator('#word-input').press('Enter');
@@ -2735,6 +2740,75 @@ test.describe('exported file adds to an existing page', () => {
     await expect(page.locator('#review-error')).toContainText(
       'This page changed after the preview.',
     );
+  });
+
+  const APPLIED = (route) => fulfillJson(route, {
+    ok: true, buttons: 1, edits: 1,
+    checks: { sqlite_integrity: 'pass', target_page: 'pass', positions: 'pass' },
+  });
+
+  async function addOneWord(page) {
+    await page.locator('#wizard-destination .wizard-next').click();
+    await page.locator('#word-input').fill('Chips');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#success-state')).toBeVisible();
+  }
+
+  test('the edited copy can be saved from the header at any time', async ({ page }) => {
+    await openFile(page, { '**/api/pageset/file-session/page/1/buttons': APPLIED });
+    // Nothing to save before an edit.
+    await expect(page.locator('#header-save-btn')).toBeHidden();
+    await addOneWord(page);
+    const save = page.locator('#header-save-btn');
+    await expect(save).toBeVisible();
+    await expect(save).toHaveText('Save edited copy');
+    await expect(save).toHaveAttribute('href', '/api/pageset/file-session/download');
+    await expect(save).toHaveAttribute('download', 'sample.edited.sps');
+    // Moving on to the next page keeps it within reach.
+    await page.locator('#another-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await expect(save).toBeVisible();
+  });
+
+  test('starting over asks before an unsaved edited copy is thrown away', async ({ page }) => {
+    await openFile(page, { '**/api/pageset/file-session/page/1/buttons': APPLIED });
+    await addOneWord(page);
+    const messages = [];
+    page.once('dialog', (dialog) => {
+      messages.push(dialog.message());
+      return dialog.dismiss();
+    });
+    await page.locator('#file-badge').click();
+    expect(messages[0]).toContain("hasn't been saved");
+    // Cancelled: still working in the same file.
+    await expect(page.locator('#step-result')).toBeVisible();
+    await expect(page.locator('#file-badge')).toBeVisible();
+  });
+
+  test('a reload picks the same edited copy back up', async ({ page }) => {
+    await page.route('**/api/pageset/file-session', (route) => fulfillJson(route, {
+      ...SESSION, edits: 1, unsaved: true,
+    }));
+    await openFile(page, { '**/api/pageset/file-session/page/1/buttons': APPLIED });
+    await addOneWord(page);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.reload();
+    await expect(page.locator('#wizard-destination')).toBeVisible();
+    await expect(page.locator('#file-badge')).toHaveText('sample.sps · Change file');
+    await expect(page.locator('#destination-intro')).toContainText('Picked up where you left off');
+    await expect(page.locator('#header-save-btn')).toBeVisible();
+  });
+
+  test('a reload whose session is gone starts cleanly on the first screen', async ({ page }) => {
+    await page.route('**/api/pageset/file-session', (route) => fulfillJson(route, {
+      ok: false, error: 'Unknown or expired session; re-upload the file.',
+    }, 400));
+    await openFile(page);
+    await page.reload();
+    await expect(page.locator('#step-load')).toBeVisible();
+    await expect(page.locator('#app-error')).toBeHidden();
   });
 });
 
