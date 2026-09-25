@@ -1559,8 +1559,10 @@ test('a page-layout error is visible and a later selection recovers', async ({ p
   await mockTD(page, {
     status: defaultStatus({ pages: ['Eating', 'Places'] }),
     layout: async (requested, route) => {
-      if (requested === 'Places' && ++placesAttempts === 1) {
-        await firstPlacesGate;
+      // A single failed read is retried (see the next test), so the first
+      // selection fails on every attempt it makes.
+      if (requested === 'Places' && ++placesAttempts <= 3) {
+        if (placesAttempts === 1) await firstPlacesGate;
         return route.fulfill({
           status: 400,
           contentType: 'application/json',
@@ -1586,6 +1588,63 @@ test('a page-layout error is visible and a later selection recovers', async ({ p
   await expect(page.locator('#parent-capacity')).toContainText(
     '6 empty spaces AAC Editor can update safely',
   );
+});
+
+test('a page caught mid-navigation is read again rather than reported as an error', async ({ page }) => {
+  // TD Snap has no page grid for a moment while it changes pages; a read at
+  // that instant used to send the user to the page picker with an error.
+  let attempts = 0;
+  await mockTD(page, {
+    layout: async (requested, route) => {
+      if (++attempts === 1) {
+        return route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: false, error: "TD Snap's current page could not be identified." }),
+        });
+      }
+      return defaultLayout(requested || 'Eating');
+    },
+  });
+  await connect(page);
+  await expect(page.locator('#current-page-label')).toHaveText('Adding to Eating');
+  await expect(page.locator('#build-error')).toBeHidden();
+  expect(attempts).toBe(2);
+});
+
+test('Continue waits for the page being loaded instead of asking for another click', async ({ page }) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  await mockTD(page, {
+    status: defaultStatus({ pages: ['Eating', 'Places'] }),
+    layout: async (requested) => {
+      if (requested === 'Places') await gate;
+      return defaultLayout(requested || 'Eating');
+    },
+  });
+  await connect(page);
+  await page.locator('#choose-page-btn').click();
+  await page.locator('#parent-select').selectOption('Places');
+  await page.locator('#wizard-destination .wizard-next').click();
+  await expect(page.locator('#destination-error')).toBeHidden();
+  release();
+  await expect(page.locator('#wizard-items')).toBeVisible();
+  await expect(page.locator('#current-page-label')).toHaveText('Adding to Places');
+});
+
+test('planned words that follow TD Snap to another page say so', async ({ page }) => {
+  let visible = 'Eating';
+  await mockTD(page, {
+    status: () => defaultStatus({ page: visible }),
+    layout: (requested) => defaultLayout(requested || visible),
+  });
+  await existingItems(page);
+  await page.locator('#word-input').fill('pizza');
+  await page.locator('#word-input').press('Enter');
+  visible = 'Games';
+  await expect(page.locator('#current-page-label')).toHaveText('Adding to Games', { timeout: 10_000 });
+  await expect(page.locator('#chip-note')).toContainText('TD Snap is now showing “Games”');
+  await expect(page.locator('#chip-note')).toContainText('“Eating”');
 });
 
 test('verification warnings appear only after explicit confirmation', async ({ page }) => {

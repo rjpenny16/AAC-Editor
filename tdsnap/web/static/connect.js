@@ -549,6 +549,35 @@ $("live-connect-btn").addEventListener("click", async () => {
   }
 });
 
+/* A live app is sometimes caught between pages — TD Snap has no page grid for
+   a moment while it navigates or redraws — and a read at that instant fails
+   although nothing is wrong. Try again briefly before calling it a failure;
+   an exported file is a file, and fails the first time for real. A timeout is
+   never retried: the app has already been given a minute. */
+const LAYOUT_RETRIES = 2;
+const LAYOUT_RETRY_DELAY_MS = 700;
+
+async function readLayout(path, stillWanted) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await api(path);
+    } catch (error) {
+      const retry = state.mode === "live" && error.name !== "TimeoutError" &&
+        attempt < LAYOUT_RETRIES && stillWanted();
+      if (!retry) throw error;
+      await new Promise((resolve) => setTimeout(resolve, LAYOUT_RETRY_DELAY_MS));
+    }
+  }
+}
+
+/* Resolves once no page layout is loading, so Continue can wait for the page
+   the user just picked rather than asking them to click again. */
+async function layoutSettled() {
+  while (state.targetLoading) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
 async function loadTargetLayout(pageName, currentOnly = false) {
   if (state.operation !== "existing" || (!pageName && !currentOnly)) return null;
   const request = ++layoutRequest;
@@ -565,14 +594,15 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     ? "Refreshing the live TD Snap page…"
     : `Loading “${pageName}”…`);
   try {
-    const data = await api(state.mode === "file"
+    const path = state.mode === "file"
       ? `/api/pageset/${encodeURIComponent(state.sessionId)}` +
         `/page/${encodeURIComponent(state.parentId)}/layout`
       : state.provider === "grid3"
         ? "/api/grid3/page-layout"
         : currentOnly
           ? "/api/tdsnap/page-layout"
-          : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
+          : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`;
+    const data = await readLayout(path, () => request === layoutRequest);
     if (request !== layoutRequest || state.operation !== "existing" ||
         state.parentId !== target || state.sessionId !== session || state.provider !== provider) {
       return null;
@@ -663,8 +693,18 @@ async function syncLivePreview() {
     // "busy": AAC Editor is already driving TD Snap for something the user
     // asked for. The next poll will look again.
     if (status.busy || !status.running || !status.page || status.page === state.currentPage) return;
+    const previousPage = state.currentPage;
     const layout = await loadTargetLayout("", true);
     if (!layout) return;
+    // Planned words follow the page open in TD Snap. Say so, rather than
+    // letting words meant for one page quietly land on another.
+    if (state.words.length && layout.page !== previousPage) {
+      const count = state.words.length;
+      $("chip-note").textContent =
+        `TD Snap is now showing “${layout.page}”, so your ${count} planned ` +
+        `button${count === 1 ? "" : "s"} will go there. Go back to ` +
+        `“${previousPage}” in TD Snap to add them to that page instead.`;
+    }
     state.currentPage = layout.page;
     state.parentId = layout.page;
     state.parentTouched = false;
@@ -682,6 +722,6 @@ async function syncLivePreview() {
 }
 
 export {
-  followGrid3Page, loadTargetLayout, refreshDetectedPages, rememberFileSession,
+  followGrid3Page, layoutSettled, loadTargetLayout, refreshDetectedPages, rememberFileSession,
   resumeFileSession, selectProvider, stopLiveMonitor, syncFileSave,
 };

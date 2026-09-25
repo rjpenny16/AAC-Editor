@@ -10,7 +10,7 @@ import { state } from "./state.js";
 import { $ } from "./dom.js";
 import { autoFormatTopicRows, firstAvailableSlot, renderWords, updateTopicInputRow } from "./chips.js";
 import { emptyEdits } from "./edits.js";
-import { loadTargetLayout } from "./connect.js";
+import { layoutSettled, loadTargetLayout } from "./connect.js";
 import { clearDraft, takePendingResume } from "./draft.js";
 import { loadParentCapacity, titleOf, updatePlacementRecommendation } from "./parents.js";
 
@@ -247,8 +247,8 @@ async function continueWizard() {
       return;
     }
     if (state.operation === "existing" && state.targetLoading) {
-      showStepError("destination", "Please wait while the page finishes loading.");
-      return;
+      await layoutSettled();
+      if (state.wizardStep !== "destination") return;
     }
     if (state.operation === "existing" && !state.layoutFingerprint) {
       try {
