@@ -225,6 +225,56 @@ async function refreshDetectedPages() {
   return data;
 }
 
+/* Which exported-file session this tab is working in, kept for this tab only,
+   so a reload picks the same temporary copy back up — edits included — rather
+   than stranding it. */
+const FILE_SESSION_KEY = "aac-editor-file-session";
+
+function rememberFileSession(sessionId) {
+  try {
+    if (sessionId) window.sessionStorage.setItem(FILE_SESSION_KEY, sessionId);
+    else window.sessionStorage.removeItem(FILE_SESSION_KEY);
+  } catch {
+    /* storage can be unavailable; a reload then simply starts over */
+  }
+}
+
+function rememberedFileSession() {
+  try {
+    return window.sessionStorage.getItem(FILE_SESSION_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+/* After a reload: reopen the exported copy this tab was working in, if the
+   app still has it. Quietly does nothing when it does not. */
+async function resumeFileSession() {
+  const sessionId = rememberedFileSession();
+  if (!sessionId || state.connected) return false;
+  try {
+    const data = await api(`/api/pageset/${encodeURIComponent(sessionId)}`);
+    selectProvider("file");
+    await useFileSession(data);
+    state.edits = data.edits || 0;
+    state.fileUnsaved = Boolean(data.unsaved);
+    $("live-status").textContent = "";
+    showFileResumeNote(data);
+    return true;
+  } catch {
+    rememberFileSession("");
+    return false;
+  }
+}
+
+function showFileResumeNote(data) {
+  const note = $("chip-note");
+  note.textContent = data.unsaved
+    ? `Picked up where you left off in ${data.filename}. Your earlier changes are ` +
+      "still here — save the edited copy when you're done."
+    : `Picked up where you left off in ${data.filename}.`;
+}
+
 async function useFileSession(data) {
   if (!data || data.ok === false) throw new Error(data?.error || "The page set could not be opened.");
   if (data.cancelled) return false;
@@ -232,6 +282,8 @@ async function useFileSession(data) {
     throw new Error("The page set does not contain any editable pages.");
   }
   clearInterval(liveMonitor);
+  rememberFileSession(data.session_id);
+  state.fileUnsaved = false;
   state.mode = "file";
   state.provider = "file";
   state.connected = true;
@@ -598,4 +650,7 @@ async function syncLivePreview() {
   }
 }
 
-export { followGrid3Page, loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor };
+export {
+  followGrid3Page, loadTargetLayout, refreshDetectedPages, rememberFileSession,
+  resumeFileSession, selectProvider, stopLiveMonitor,
+};

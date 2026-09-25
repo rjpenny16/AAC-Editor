@@ -847,15 +847,13 @@ summary {
 .foot-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
 .quit-screen { margin: 2rem auto; }
 
-/* Unexpected JavaScript failures. Fixed to the viewport so the message is
-   visible wherever the user is in the wizard when something breaks. */
+/* Unexpected failures and the draft-recovery offer. In the page flow, above
+   the wizard, rather than floating over it: pinned to the bottom of the
+   window they sat on top of Review, Confirm and Continue, which is exactly
+   where somebody's next click was going. */
 .app-error {
-  position: fixed;
-  z-index: 60;
-  inset-inline: 1rem;
-  bottom: 1rem;
-  margin-inline: auto;
-  max-width: 32rem;
+  width: min(calc(100% - 2rem), 48rem);
+  margin: 1rem auto 0;
   background: var(--surface);
   box-shadow: var(--shadow);
 }

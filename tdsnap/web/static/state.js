@@ -100,6 +100,9 @@ const state = {
   filename: "",
   edits: 0,
   applied: false, // has the current word list already been written to the page set?
+  // An exported-file session holds edits that exist only in AAC Editor's
+  // temporary copy until the user saves it. Losing the tab loses them.
+  fileUnsaved: false,
   native: false, // running inside the app's own window (pywebview)?
   elevated: false,
   apiToken: "",

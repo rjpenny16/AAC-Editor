@@ -10,13 +10,15 @@ import { $, setBusy, setActivity } from "./dom.js";
 import { api } from "./api.js";
 import { clearGroundingSource, clearSuggestions } from "./ai.js";
 import { clearUndoHistory, renderWords } from "./chips.js";
-import { loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor } from "./connect.js";
+import {
+  loadTargetLayout, refreshDetectedPages, rememberFileSession, selectProvider, stopLiveMonitor,
+} from "./connect.js";
 import { clearDraft } from "./draft.js";
 import { emptyEdits, undoAvailable } from "./edits.js";
 import { clearQueue, renderBatchOutcome } from "./queue.js";
 import { forget as forgetVocabulary } from "./vocabulary.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
-import { recordError } from "./support.js";
+import { hasUnsavedWork, recordError } from "./support.js";
 import { setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
 
 /* ---------- step 3: result ---------- */
@@ -79,6 +81,7 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
   $("review-state").hidden = true;
   $("success-state").hidden = false;
   state.applied = true;
+  if (state.mode === "file") state.fileUnsaved = true;
   clearUndoHistory();
   void clearDraft();
   $("result-eyebrow").textContent = "Complete";
@@ -240,6 +243,8 @@ function renderBatchResult(data) {
 }
 
 $("file-save-btn").addEventListener("click", async (event) => {
+  // The browser download starts from the link itself; the server notes it.
+  if (state.mode === "file" && !state.native) state.fileUnsaved = false;
   if (state.mode !== "file" || !state.native || !window.pywebview?.api?.save_pageset) return;
   event.preventDefault();
   const button = $("file-save-btn");
@@ -249,6 +254,7 @@ $("file-save-btn").addEventListener("click", async (event) => {
     const result = await window.pywebview.api.save_pageset(state.sessionId);
     if (!result || result.ok === false) throw new Error(result?.error || "The file could not be saved.");
     if (!result.cancelled) {
+      state.fileUnsaved = false;
       $("live-result-note").textContent =
         `The edited copy was saved to ${result.path}. Review it before importing it into TD Snap.`;
     }
@@ -350,6 +356,21 @@ $("another-btn").addEventListener("click", async () => {
   }
 });
 
+/* Starting over throws away the word list, pending edits, queued pages, and —
+   for an exported file — an edited copy that was never saved. Ask first. */
+function confirmStartOver() {
+  if (!hasUnsavedWork()) return true;
+  const unsavedCopy = state.mode === "file" && state.fileUnsaved;
+  return window.confirm(unsavedCopy
+    ? "Start over? The edited copy of this page set hasn't been saved, and your changes " +
+      "will be lost. Choose Cancel, then Save edited copy, to keep them."
+    : "Start over? The buttons you have planned but not yet added will be lost.");
+}
+
+function startOver() {
+  if (confirmStartOver()) resetConnection();
+}
+
 function resetConnection() {
   stopLiveMonitor();
   clearUndoHistory();
@@ -373,6 +394,8 @@ function resetConnection() {
   state.mode = "live";
   state.connected = false;
   state.sessionId = null;
+  state.fileUnsaved = false;
+  rememberFileSession("");
   state.filename = "";
   state.words = [];
   state.pageEdits = emptyEdits();
@@ -413,7 +436,7 @@ function resetConnection() {
   show("load");
 }
 
-$("reset-btn").addEventListener("click", resetConnection);
-$("file-badge").addEventListener("click", resetConnection);
+$("reset-btn").addEventListener("click", startOver);
+$("file-badge").addEventListener("click", startOver);
 
 export { renderBatchResult, renderResult };

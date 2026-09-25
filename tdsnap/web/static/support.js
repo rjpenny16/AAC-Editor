@@ -34,6 +34,9 @@ function hasUnsavedWork() {
   // whatever else has already been applied this session — unlike the chip box,
   // which an applied edit legitimately empties.
   if (state.queue.length) return true;
+  // An edited exported copy that was never saved is the whole result of the
+  // session, and nothing else has a copy of it.
+  if (state.mode === "file" && state.fileUnsaved) return true;
   return !state.applied && Boolean(
     state.words.length || state.pendingEdit || countEdits(state.pageEdits)
   );

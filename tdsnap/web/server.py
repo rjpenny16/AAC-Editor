@@ -416,6 +416,32 @@ def release_session(session_id: str) -> None:
         shutil.rmtree(session["dir"], ignore_errors=True)
 
 
+def _has_unsaved_edits(session: dict) -> bool:
+    return session.get("edits", 0) > session.get("saved_edits", 0)
+
+
+def _make_room_for_a_session() -> None:
+    """Close the least recently used sessions that have nothing left to save.
+
+    Reloading the browser, or choosing a file again, starts a new session
+    without the old one ever being closed. With a hard cap and no eviction,
+    the fifth file opened in one run of the app was refused until a restart —
+    even though every earlier session was an untouched copy nobody could get
+    back to. A session holding edits that were never saved is kept.
+    """
+    with _sessions_lock:
+        spare = sorted(
+            (
+                (session.get("last_access", 0), session_id)
+                for session_id, session in _sessions.items()
+                if not _has_unsaved_edits(session)
+            ),
+        )
+        excess = len(_sessions) - MAX_ACTIVE_SESSIONS + 1
+    for _, session_id in spare[:max(excess, 0)]:
+        release_session(session_id)
+
+
 def cleanup_sessions() -> None:
     """Remove every sensitive temporary copy owned by this process."""
     with _sessions_lock:
@@ -598,10 +624,13 @@ def _free_cells(path: str, page_id: int) -> int:
 def _new_session_dir() -> tuple[str, str]:
     os.makedirs(_SESSION_ROOT, exist_ok=True)
     cleanup_stale_sessions()
+    _make_room_for_a_session()
     with _sessions_lock:
         if len(_sessions) >= MAX_ACTIVE_SESSIONS:
             raise PagesetError(
-                "Too many page sets are open. Close one or restart AAC Editor."
+                f"{MAX_ACTIVE_SESSIONS} page sets are open with edits that have not been "
+                "saved yet. Save the edited copies you want to keep, then restart AAC "
+                "Editor to open another."
             )
     session_id = secrets.token_urlsafe(16)
     session_dir = os.path.join(_SESSION_ROOT, session_id)
@@ -696,6 +725,9 @@ def save_current_as(session_id: str, dest_path: str) -> None:
     finally:
         with contextlib.suppress(OSError):
             os.remove(temporary)
+    session = _sessions.get(session_id)
+    if session is not None:
+        session["saved_edits"] = session.get("edits", 0)
 
 
 @app.errorhandler(PagesetError)
@@ -1121,6 +1153,30 @@ def upload_pageset():
         raise
 
 
+@app.get("/api/pageset/<session_id>")
+def pageset_summary(session_id):
+    """Everything the browser needs to pick an open session back up.
+
+    A reload used to strand the session: the edited copy was still here, but
+    the page had forgotten which session was its own, so the only way on was
+    to open the original file again — without the edits already made.
+    """
+    current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
+    session = _sessions[session_id]
+    with contextlib.closing(sqlite3.connect(f"file:{current}?mode=ro", uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        cols, rows = pageset.grid_dimension(conn)
+    return jsonify({
+        "ok": True,
+        "session_id": session_id,
+        "filename": session["filename"],
+        "grid": {"cols": cols, "rows": rows},
+        "pages": _list_pages(current),
+        "edits": session.get("edits", 0),
+        "unsaved": _has_unsaved_edits(session),
+    })
+
+
 @app.get("/api/pageset/<session_id>/pages")
 def pages(session_id):
     current = _current_path(session_id)
@@ -1299,6 +1355,7 @@ def download(session_id):
     if not os.path.exists(current):
         raise PagesetError("Nothing to download; re-upload the file.")
     session = _sessions[session_id]
+    session["saved_edits"] = session.get("edits", 0)
     base, ext = os.path.splitext(session["filename"])
     return send_file(
         current,

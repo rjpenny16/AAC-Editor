@@ -6,7 +6,7 @@ import { $, setBusy, setActivity } from "./dom.js";
 import { configReady, api } from "./api.js";
 import { wireRadioGroups } from "./a11y.js";
 import { renderWords } from "./chips.js";
-import { selectProvider } from "./connect.js";
+import { resumeFileSession, selectProvider } from "./connect.js";
 import { renderPreview } from "./preview.js";
 import { hasUnsavedWork } from "./support.js";
 import { getPreferences } from "./settings.js";
@@ -79,6 +79,9 @@ configReady.then(async () => {
   }
 
   selectProvider(state.provider);
+  // A reload in the middle of an exported file picks the same edited copy
+  // back up. An explicit link to another app means the user has moved on.
+  if (!linkedProvider || linkedProvider === "file") await resumeFileSession();
 });
 
 

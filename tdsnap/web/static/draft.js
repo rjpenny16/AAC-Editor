@@ -66,6 +66,7 @@ async function autosaveTick() {
     // effect — don't hold their new work hostage to an unclicked button.
     if (!draft) return;
     recoveryResolved = true;
+    $("draft-banner").hidden = true;
   }
   const signature = draft ? JSON.stringify(draft) : "";
   if (signature === lastSignature) return;
@@ -107,7 +108,19 @@ async function initDraftRecovery() {
         recoveryResolved = true;
         // Already on the items step (connected before answering the banner):
         // show() won't run again to pick it up, so land it now.
-        if (state.wizardStep === "items") applyPendingDraftResume();
+        if (state.wizardStep === "items") {
+          applyPendingDraftResume();
+          return;
+        }
+        // Otherwise the words wait for somewhere to land. Say so, or the
+        // button looks as though it did nothing.
+        const count = draft.items.length;
+        const words = `${count} word${count === 1 ? "" : "s"}`;
+        const status = $(state.wizardStep === "connect" ? "live-status" : "chip-note");
+        status.classList.remove("error");
+        status.textContent = state.wizardStep === "connect"
+          ? `Your ${words} will be put back as soon as you connect.`
+          : `Your ${words} will be put back when you reach the words step.`;
       },
       { once: true },
     );

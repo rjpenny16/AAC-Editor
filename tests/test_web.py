@@ -1176,3 +1176,66 @@ def test_native_api_exposes_nothing_pywebview_would_walk_into():
     api = desktop.NativeApi(8765)
     public = [name for name in vars(api) if not name.startswith("_")]
     assert public == ["port"]
+
+
+def _add_snacks(client, session_id, pages, title="Snacks"):
+    parent = next(p for p in pages if p["title"] == "Home Page")
+    return client.post(
+        f"/api/pageset/{session_id}/page",
+        json={"title": title, "items": ["apple"], "parent_page_id": parent["id"]},
+        headers=token_headers(),
+    ).get_json()
+
+
+def test_reopening_files_never_runs_out_of_sessions(client, seeded_source):
+    # A reload or a second "choose file" never closed the session it left
+    # behind, so the fifth file of a run used to be refused until a restart.
+    opened = [upload(client, seeded_source).get_json() for _ in range(server.MAX_ACTIVE_SESSIONS * 3)]
+    assert all(data["ok"] for data in opened)
+    assert len(server._sessions) <= server.MAX_ACTIVE_SESSIONS
+    # The newest one is always usable, and the untouched ones it replaced are gone.
+    assert opened[-1]["session_id"] in server._sessions
+    assert not os.path.exists(os.path.join(server._SESSION_ROOT, opened[0]["session_id"]))
+
+
+def test_a_session_with_unsaved_edits_is_never_closed_to_make_room(client, seeded_source):
+    first = upload(client, seeded_source).get_json()
+    assert _add_snacks(client, first["session_id"], first["pages"])["ok"]
+    for _ in range(server.MAX_ACTIVE_SESSIONS * 2):
+        assert upload(client, seeded_source).get_json()["ok"]
+    assert first["session_id"] in server._sessions
+
+
+def test_saving_the_edited_copy_makes_its_session_closable(client, seeded_source):
+    first = upload(client, seeded_source).get_json()
+    session_id = first["session_id"]
+    assert _add_snacks(client, session_id, first["pages"])["ok"]
+    summary = client.get(f"/api/pageset/{session_id}", headers=token_headers()).get_json()
+    assert summary["unsaved"] is True and summary["edits"] == 1
+
+    assert client.get(f"/api/pageset/{session_id}/download").status_code == 200
+    summary = client.get(f"/api/pageset/{session_id}", headers=token_headers()).get_json()
+    assert summary["unsaved"] is False
+
+
+def test_every_session_holding_unsaved_edits_says_what_to_do(client, seeded_source):
+    for index in range(server.MAX_ACTIVE_SESSIONS):
+        data = upload(client, seeded_source).get_json()
+        assert _add_snacks(client, data["session_id"], data["pages"], f"Snacks {index}")["ok"]
+    refused = upload(client, seeded_source)
+    assert refused.status_code == 400
+    assert "have not been saved yet" in refused.get_json()["error"]
+
+
+def test_a_reloaded_page_can_pick_its_session_back_up(client, seeded_source):
+    data = upload(client, seeded_source).get_json()
+    session_id = data["session_id"]
+    assert _add_snacks(client, session_id, data["pages"])["ok"]
+    server._sessions.clear()  # a restart, as well as a reload
+
+    summary = client.get(f"/api/pageset/{session_id}", headers=token_headers()).get_json()
+    assert summary["ok"]
+    assert summary["filename"] == "test.sps"
+    assert summary["grid"] == data["grid"]
+    assert any(page["title"] == "Snacks" for page in summary["pages"])
+    assert summary["edits"] == 1 and summary["unsaved"] is True
