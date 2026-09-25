@@ -24,9 +24,12 @@ const FUNCTIONS = {
 /* The five rows of a topic page, in the order TD Snap renders them. */
 const TOPIC_FUNCTIONS = ["question", "comment", "positive", "negative", "personal"];
 
-/* Requests that touch TD Snap or Grid 3 are given no deadline; everything
-   else gives up rather than leaving the user with a dead button. */
+/* Writes to TD Snap or Grid 3 are given no deadline. Reads from them walk the
+   app's accessibility tree, and may navigate TD Snap to another page first, so
+   on a slow or busy computer they get a minute rather than the ten seconds
+   everything else gets — a read that is merely slow is not a failure. */
 const API_TIMEOUT_MS = 10_000;
+const LIVE_READ_TIMEOUT_MS = 60_000;
 const AI_GENERATION_TIMEOUT_MS = 150_000;
 
 const requestedProvider = new URLSearchParams(window.location.search).get("provider");
@@ -106,4 +109,4 @@ const state = {
   leaving: false,
 };
 
-export { AI_GENERATION_TIMEOUT_MS, API_TIMEOUT_MS, FUNCTIONS, TOPIC_FUNCTIONS, state };
+export { AI_GENERATION_TIMEOUT_MS, API_TIMEOUT_MS, FUNCTIONS, LIVE_READ_TIMEOUT_MS, TOPIC_FUNCTIONS, state };

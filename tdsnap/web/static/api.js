@@ -5,7 +5,7 @@
  * normalized into something a clinician can act on rather than a status code.
  */
 
-import { state, API_TIMEOUT_MS } from "./state.js";
+import { state, API_TIMEOUT_MS, LIVE_READ_TIMEOUT_MS } from "./state.js";
 
 async function fetchWithDeadline(path, options = {}, timeoutMs = API_TIMEOUT_MS) {
   if (!timeoutMs) return fetch(path, options);
@@ -34,9 +34,40 @@ const configReady = (async () => {
   }
 })();
 
-async function api(path, options, timeoutMs = API_TIMEOUT_MS) {
-  await configReady;
+/* Reading a whole page from TD Snap or Grid 3 walks every control on it, and
+   a TD Snap page read may navigate to that page first; on a slow computer
+   that can take well over ten seconds without anything being wrong. The quick
+   "is it running?" checks keep the short deadline, so a hung app still says
+   so promptly. */
+const SLOW_READS = /^\/api\/(tdsnap\/(page-layout|vocabulary)|grid3\/(page-layout|probe)|diagnostics)\b/;
+
+function defaultTimeout(path) {
+  return SLOW_READS.test(path) ? LIVE_READ_TIMEOUT_MS : API_TIMEOUT_MS;
+}
+
+/* Requests the user is waiting on, as opposed to the background poll. The poll
+   stands aside while any are in flight, so it can never be what a click waits
+   behind. */
+let foregroundRequests = 0;
+
+function userRequestInFlight() {
+  return foregroundRequests > 0;
+}
+
+async function api(path, options, timeoutMs = defaultTimeout(path)) {
   options = options || {};
+  const background = Boolean(options.background);
+  delete options.background;
+  if (!background) foregroundRequests += 1;
+  try {
+    return await request(path, options, timeoutMs);
+  } finally {
+    if (!background) foregroundRequests -= 1;
+  }
+}
+
+async function request(path, options, timeoutMs) {
+  await configReady;
   options.headers = Object.assign(
     {},
     options.headers,
@@ -64,4 +95,4 @@ async function api(path, options, timeoutMs = API_TIMEOUT_MS) {
   return data;
 }
 
-export { fetchWithDeadline, configReady, api };
+export { api, configReady, fetchWithDeadline, userRequestInFlight };

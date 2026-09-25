@@ -7,7 +7,7 @@
 
 import { state } from "./state.js";
 import { $, setBusy, setActivity, setPreviewBusy } from "./dom.js";
-import { api } from "./api.js";
+import { api, userRequestInFlight } from "./api.js";
 import { renderWords } from "./chips.js";
 import { emptyEdits, reconcile } from "./edits.js";
 import { parentFilter, parentSelect, renderParents } from "./parents.js";
@@ -548,9 +548,14 @@ async function loadTargetLayout(pageName, currentOnly = false) {
   }
 }
 
+/* Every poll walks TD Snap's accessibility tree, which is not free for TD Snap
+   either; once every 1.5 s still follows a page change well within the time
+   it takes somebody to look back at this window. */
+const LIVE_MONITOR_MS = 1500;
+
 function startLiveMonitor() {
   clearInterval(liveMonitor);
-  liveMonitor = setInterval(syncLivePreview, 750);
+  liveMonitor = setInterval(syncLivePreview, LIVE_MONITOR_MS);
 }
 
 async function syncLivePreview() {
@@ -562,15 +567,19 @@ async function syncLivePreview() {
   // while nobody is looking at it.
   if (document.hidden) return;
   if (liveSyncing || state.targetLoading || state.mode !== "live" ||
-      state.operation !== "existing" || $("step-build").hidden) return;
+      state.provider !== "tdsnap" || state.operation !== "existing" ||
+      $("step-build").hidden || userRequestInFlight()) return;
   liveSyncing = true;
   try {
     const selectedPage = state.parentId;
     const status = await api("/api/tdsnap/status", {
       headers: { "X-TDSnap-Brief": "1" },
-    });
+      background: true,
+    }, 10_000);
     if (state.targetLoading || state.parentId !== selectedPage || state.operation !== "existing") return;
-    if (!status.running || !status.page || status.page === state.currentPage) return;
+    // "busy": AAC Editor is already driving TD Snap for something the user
+    // asked for. The next poll will look again.
+    if (status.busy || !status.running || !status.page || status.page === state.currentPage) return;
     const layout = await loadTargetLayout("", true);
     if (!layout) return;
     state.currentPage = layout.page;
