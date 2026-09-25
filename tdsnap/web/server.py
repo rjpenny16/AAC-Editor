@@ -31,8 +31,9 @@ import urllib.request
 from typing import Optional
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
+from werkzeug.exceptions import HTTPException
 
-from .. import __version__, builder, grid3, live, pageset, schema, validate
+from .. import __version__, builder, grid3, live, pageset, schema, uia, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import diagnostics, engines, grounding, localai, ollama, prompts, settings
@@ -59,6 +60,15 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 API_TOKEN = secrets.token_urlsafe(32)
 # ponytail: TD Snap exposes one UI; one lock prevents concurrent automation.
 _LIVE_LOCK = threading.Lock()
+# Every call that drives TD Snap or Grid 3 runs on this one thread, which owns
+# the COM setup UI Automation needs — see uia.AutomationThread.
+_AUTOMATION = uia.AutomationThread()
+
+
+def _drive(call):
+    """Run one TD Snap or Grid 3 automation call, alone, on the automation thread."""
+    with _LIVE_LOCK:
+        return _AUTOMATION.run(call)
 
 _SESSION_ROOT = os.path.join(tempfile.gettempdir(), "tdsnap-editor")
 _sessions = {}
@@ -406,6 +416,32 @@ def release_session(session_id: str) -> None:
         shutil.rmtree(session["dir"], ignore_errors=True)
 
 
+def _has_unsaved_edits(session: dict) -> bool:
+    return session.get("edits", 0) > session.get("saved_edits", 0)
+
+
+def _make_room_for_a_session() -> None:
+    """Close the least recently used sessions that have nothing left to save.
+
+    Reloading the browser, or choosing a file again, starts a new session
+    without the old one ever being closed. With a hard cap and no eviction,
+    the fifth file opened in one run of the app was refused until a restart —
+    even though every earlier session was an untouched copy nobody could get
+    back to. A session holding edits that were never saved is kept.
+    """
+    with _sessions_lock:
+        spare = sorted(
+            (
+                (session.get("last_access", 0), session_id)
+                for session_id, session in _sessions.items()
+                if not _has_unsaved_edits(session)
+            ),
+        )
+        excess = len(_sessions) - MAX_ACTIVE_SESSIONS + 1
+    for _, session_id in spare[:max(excess, 0)]:
+        release_session(session_id)
+
+
 def cleanup_sessions() -> None:
     """Remove every sensitive temporary copy owned by this process."""
     with _sessions_lock:
@@ -508,6 +544,24 @@ def _list_pages(path: str):
         conn.close()
 
 
+def _home_page_id(path: str) -> Optional[int]:
+    """The page the page set opens on, when it names one and it is a vocabulary page.
+
+    An exported file used to open on whichever page sorted first — in the
+    Motor Plan set, "Accessories" — so a new topic page was offered a link from
+    there. The home page is where somebody expects to start.
+    """
+    try:
+        with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+            row = conn.execute(
+                "SELECT p.Id FROM Page p JOIN PageSetProperties s "
+                "ON p.UniqueId = s.DefaultHomePageUniqueId WHERE p.PageType = 1 LIMIT 1"
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    return row[0] if row else None
+
+
 def _page_state(path: str, page_id: int, include_buttons: bool = True) -> dict:
     """The grid, buttons, empty cells, and fingerprint of one page in a file session.
 
@@ -588,10 +642,13 @@ def _free_cells(path: str, page_id: int) -> int:
 def _new_session_dir() -> tuple[str, str]:
     os.makedirs(_SESSION_ROOT, exist_ok=True)
     cleanup_stale_sessions()
+    _make_room_for_a_session()
     with _sessions_lock:
         if len(_sessions) >= MAX_ACTIVE_SESSIONS:
             raise PagesetError(
-                "Too many page sets are open. Close one or restart AAC Editor."
+                f"{MAX_ACTIVE_SESSIONS} page sets are open with edits that have not been "
+                "saved yet. Save the edited copies you want to keep, then restart AAC "
+                "Editor to open another."
             )
     session_id = secrets.token_urlsafe(16)
     session_dir = os.path.join(_SESSION_ROOT, session_id)
@@ -648,6 +705,7 @@ def _register_session(session_id: str, session_dir: str, filename: str) -> dict:
         "schema_version": schema_version,
         "grid": {"cols": cols, "rows": rows},
         "pages": _list_pages(os.path.join(session_dir, "current")),
+        "home_page_id": _home_page_id(os.path.join(session_dir, "current")),
         "baseline_problems": baseline["problems"],
     }
 
@@ -686,11 +744,40 @@ def save_current_as(session_id: str, dest_path: str) -> None:
     finally:
         with contextlib.suppress(OSError):
             os.remove(temporary)
+    session = _sessions.get(session_id)
+    if session is not None:
+        session["saved_edits"] = session.get("edits", 0)
 
 
 @app.errorhandler(PagesetError)
 def _pageset_error(exc):
     return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.errorhandler(HTTPException)
+def _http_error(exc):
+    if not request.path.startswith("/api/"):
+        return exc
+    return jsonify({"ok": False, "error": exc.description}), exc.code
+
+
+@app.errorhandler(Exception)
+def _unexpected_error(exc):
+    """Anything nobody anticipated — a COM error from Windows automation, say.
+
+    Flask's default is an HTML error page, which the browser can only report as
+    "Unexpected response from the app (500)". Say what kind of failure it was,
+    in a sentence the user can act on, and keep the full traceback in the log.
+    """
+    app.logger.exception("Unhandled error in %s", request.path)
+    detail = str(exc).strip() or type(exc).__name__
+    return jsonify({
+        "ok": False,
+        "error": (
+            f"Something unexpected went wrong ({detail[:200]}). Try again. If it keeps "
+            "happening, restart AAC Editor and copy a support report from the footer."
+        ),
+    }), 500
 
 
 @app.after_request
@@ -763,8 +850,7 @@ def diagnostics_report():
     Probing TD Snap and Grid 3 walks their accessibility trees, so this takes
     the same lock every other live call does.
     """
-    with _LIVE_LOCK:
-        data = diagnostics.report(_runtime["native"])
+    data = _drive(lambda: diagnostics.report(_runtime["native"]))
     return jsonify({"ok": True, "report": data, "text": diagnostics.as_text(data)})
 
 
@@ -824,15 +910,26 @@ def index():
 
 @app.get("/api/tdsnap/status")
 def live_status():
-    with _LIVE_LOCK:
-        status = live.status(False) if request.headers.get("X-TDSnap-Brief") == "1" else live.status()
+    if request.headers.get("X-TDSnap-Brief") == "1":
+        # The brief status is the browser's background poll. It must never
+        # queue behind an edit or a page read the user is waiting on: every
+        # poll that waited would hold the next user request up in turn, until
+        # one ran past the browser's deadline and the app looked broken. When
+        # TD Snap is already being driven, say so and let the next poll ask.
+        if not _LIVE_LOCK.acquire(blocking=False):
+            return jsonify({"ok": True, "busy": True})
+        try:
+            status = _AUTOMATION.run(lambda: live.status(False))
+        finally:
+            _LIVE_LOCK.release()
+        return jsonify({"ok": True, **status})
+    status = _drive(live.status)
     return jsonify({"ok": True, **status})
 
 
 @app.post("/api/tdsnap/launch")
 def live_launch():
-    with _LIVE_LOCK:
-        return jsonify({"ok": True, **live.launch()})
+    return jsonify({"ok": True, **_drive(live.launch)})
 
 
 @app.get("/api/tdsnap/page-layout")
@@ -840,8 +937,7 @@ def live_page_layout():
     page = request.args.get("page")
     if page is not None:
         page = _bounded_text(page, "page", MAX_PAGE_NAME_CHARS, required=True)
-    with _LIVE_LOCK:
-        return jsonify({"ok": True, **live.inspect_page(page)})
+    return jsonify({"ok": True, **_drive(lambda: live.inspect_page(page))})
 
 
 @app.post("/api/tdsnap/edit-plan")
@@ -862,11 +958,14 @@ def live_execute_plan():
         payload.get("page"), "page", MAX_PAGE_NAME_CHARS, required=True
     )
     fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
-    with _LIVE_LOCK:
+    def edit():
         report = live.apply_page_edits(
             page, items, changes, removals, moves, fingerprint or None
         )
         report["undo"] = live.last_edit()
+        return report
+
+    report = _drive(edit)
     return jsonify({"ok": True, **report})
 
 
@@ -902,9 +1001,12 @@ def live_execute_batch():
             "fingerprint": _bounded_text(entry.get("fingerprint"), "fingerprint", 256)
             or None,
         })
-    with _LIVE_LOCK:
+    def batch():
         report = live.apply_batch(queued)
         report["undo"] = live.last_edit()
+        return report
+
+    report = _drive(batch)
     return jsonify({"ok": True, **report})
 
 
@@ -916,8 +1018,7 @@ def live_vocabulary():
     live?" from it. Advisory only — a page set this cannot read reports
     ``available: false`` and nothing downstream is blocked by it.
     """
-    with _LIVE_LOCK:
-        return jsonify({"ok": True, **live.vocabulary()})
+    return jsonify({"ok": True, **_drive(live.vocabulary)})
 
 
 @app.get("/api/tdsnap/last-edit")
@@ -927,15 +1028,13 @@ def live_last_edit():
     The retained edit lives in the server process, so this survives a browser
     reload while — deliberately — not surviving a restart of the app itself.
     """
-    with _LIVE_LOCK:
-        return jsonify({"ok": True, "undo": live.last_edit()})
+    return jsonify({"ok": True, "undo": _drive(live.last_edit)})
 
 
 @app.delete("/api/tdsnap/last-edit")
 def live_forget_last_edit():
     """Stop offering the undo — used when a session is torn down."""
-    with _LIVE_LOCK:
-        live.forget_last_edit()
+    _drive(live.forget_last_edit)
     return jsonify({"ok": True})
 
 
@@ -945,9 +1044,12 @@ def live_undo():
     # cross-origin preflight so no other page can drive this one.
     if request.headers.get("X-TDSnap-Editor") != "1":
         raise PagesetError("Direct TD Snap edits must start in this app.")
-    with _LIVE_LOCK:
+    def undo():
         report = live.undo_last_edit()
         report["undo"] = live.last_edit()
+        return report
+
+    report = _drive(undo)
     return jsonify({"ok": True, **report})
 
 
@@ -966,8 +1068,7 @@ def live_add_page():
         payload.get("parent", live.DEFAULT_PARENT),
         "parent", MAX_PAGE_NAME_CHARS, required=True,
     )
-    with _LIVE_LOCK:
-        report = live.add_topic_page(title, items, parent)
+    report = _drive(lambda: live.add_topic_page(title, items, parent))
     report["warnings"] = [warning for warning in report["warnings"] if warning]
     return jsonify({"ok": True, **report})
 
@@ -981,15 +1082,14 @@ def grid3_status():
     The browser renders that rather than assembling its own sentence out of
     five booleans — see grid3.explain.
     """
-    with _LIVE_LOCK:
-        result = grid3.status(include_layout=request.args.get("layout") == "1")
+    include_layout = request.args.get("layout") == "1"
+    result = _drive(lambda: grid3.status(include_layout=include_layout))
     return jsonify({"ok": True, **result, "guidance": grid3.explain(result)})
 
 
 @app.get("/api/grid3/page-layout")
 def grid3_page_layout():
-    with _LIVE_LOCK:
-        result = grid3.inspect_page()
+    result = _drive(grid3.inspect_page)
     return jsonify({"ok": True, **result})
 
 
@@ -997,8 +1097,7 @@ def grid3_page_layout():
 def grid3_probe():
     if request.headers.get("X-AAC-Editor") != "grid3":
         raise PagesetError("The Grid 3 compatibility check must start in this app.")
-    with _LIVE_LOCK:
-        result = grid3.probe_accessibility()
+    result = _drive(grid3.probe_accessibility)
     return jsonify({"ok": True, **result})
 
 
@@ -1021,15 +1120,19 @@ def grid3_execute_plan():
     fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
     if operation == "create_page":
         title = _bounded_text(payload.get("title"), "title", MAX_TITLE_CHARS, required=True)
-        with _LIVE_LOCK:
-            report = grid3.add_topic_page(title, items, fingerprint=fingerprint or None)
+        report = _drive(
+            lambda: grid3.add_topic_page(title, items, fingerprint=fingerprint or None)
+        )
         return jsonify({"ok": True, **report})
     changes = _validated_changes(payload.get("changes", []))
     removals = _validated_removals(payload.get("removals", []))
     moves = _validated_moves(payload.get("moves", []))
-    with _LIVE_LOCK:
+    def edit():
         report = grid3.edit_page(items, changes, removals, moves, fingerprint or None)
         report["undo"] = grid3.last_edit()
+        return report
+
+    report = _drive(edit)
     return jsonify({"ok": True, **report})
 
 
@@ -1037,16 +1140,18 @@ def grid3_execute_plan():
 def grid3_undo():
     if request.headers.get("X-AAC-Editor") != "grid3":
         raise PagesetError("Direct Grid 3 edits must start in this app.")
-    with _LIVE_LOCK:
+    def undo():
         report = grid3.undo_last_edit()
         report["undo"] = grid3.last_edit()
+        return report
+
+    report = _drive(undo)
     return jsonify({"ok": True, **report})
 
 
 @app.delete("/api/grid3/last-edit")
 def grid3_forget_last_edit():
-    with _LIVE_LOCK:
-        grid3.forget_last_edit()
+    _drive(grid3.forget_last_edit)
     return jsonify({"ok": True})
 
 
@@ -1065,6 +1170,31 @@ def upload_pageset():
     except Exception:
         shutil.rmtree(session_dir, ignore_errors=True)
         raise
+
+
+@app.get("/api/pageset/<session_id>")
+def pageset_summary(session_id):
+    """Everything the browser needs to pick an open session back up.
+
+    A reload used to strand the session: the edited copy was still here, but
+    the page had forgotten which session was its own, so the only way on was
+    to open the original file again — without the edits already made.
+    """
+    current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
+    session = _sessions[session_id]
+    with contextlib.closing(sqlite3.connect(f"file:{current}?mode=ro", uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        cols, rows = pageset.grid_dimension(conn)
+    return jsonify({
+        "ok": True,
+        "session_id": session_id,
+        "filename": session["filename"],
+        "grid": {"cols": cols, "rows": rows},
+        "pages": _list_pages(current),
+        "home_page_id": _home_page_id(current),
+        "edits": session.get("edits", 0),
+        "unsaved": _has_unsaved_edits(session),
+    })
 
 
 @app.get("/api/pageset/<session_id>/pages")
@@ -1245,6 +1375,7 @@ def download(session_id):
     if not os.path.exists(current):
         raise PagesetError("Nothing to download; re-upload the file.")
     session = _sessions[session_id]
+    session["saved_edits"] = session.get("edits", 0)
     base, ext = os.path.splitext(session["filename"])
     return send_file(
         current,
@@ -1475,6 +1606,15 @@ def instance_running(port: int) -> bool:
 
 def pick_port(preferred: int = DEFAULT_PORT) -> int:
     with socket.socket() as probe:
+        # The server itself binds with SO_REUSEADDR, so a port whose last
+        # connections are still closing (TIME_WAIT, for a minute or so after a
+        # quit) is free to it. Without the same option this probe called that
+        # port taken, and a quick restart moved the app to a random port that
+        # nothing — a bookmark, the launcher — knew about. Windows lets a
+        # TIME_WAIT port be bound anyway, and its SO_REUSEADDR means something
+        # else entirely, so the option is only set elsewhere.
+        if os.name != "nt":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind(("127.0.0.1", preferred))
             return probe.getsockname()[1]

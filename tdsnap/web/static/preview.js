@@ -13,7 +13,7 @@ import {
   cellName, changeFor, isRemoved, moveFrom, moveInto, placeableSlots, planMove,
 } from "./edits.js";
 import { titleOf } from "./parents.js";
-import { setOperation, show } from "./wizard.js";
+import { setOperation, show, startNewPage } from "./wizard.js";
 
 /* ---------- step 2: preview ---------- */
 
@@ -310,6 +310,11 @@ function renderPreview() {
   preview.style.setProperty("--cols", state.grid.cols);
   preview.style.setProperty("--rows", state.grid.rows);
   preview.classList.toggle("topic-preview", state.pageStyle === "topic");
+  // "Locked" only tells somebody something when some buttons are not.
+  preview.classList.toggle(
+    "has-editable",
+    state.canEditExisting && state.existingButtons.some((button) => button.editable),
+  );
   preview.classList.remove("grid3-preview");
   preview.style.removeProperty("aspect-ratio");
   preview.innerHTML = "";
@@ -485,10 +490,7 @@ $("choose-page-btn").addEventListener("click", () => {
   setOperation("existing");
   show("destination");
 });
-$("create-page-btn").addEventListener("click", () => {
-  setOperation("new");
-  show("title");
-});
+$("create-page-btn").addEventListener("click", () => startNewPage("items"));
 
 /* The placement grid is the one screen that shows the page as it really is, so
    it is where an existing button is changed, moved, or removed. It is reachable

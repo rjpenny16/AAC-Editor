@@ -7,10 +7,10 @@
 
 import { state } from "./state.js";
 import { $, setBusy, setActivity, setPreviewBusy } from "./dom.js";
-import { api } from "./api.js";
+import { api, userRequestInFlight } from "./api.js";
 import { renderWords } from "./chips.js";
 import { emptyEdits, reconcile } from "./edits.js";
-import { parentFilter, parentSelect, renderParents } from "./parents.js";
+import { parentFilter, parentSelect, renderParents, titleOf } from "./parents.js";
 import { savePreference } from "./settings.js";
 import { loadVocabulary } from "./vocabulary.js";
 import { clearBuildError, setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
@@ -113,19 +113,16 @@ function selectProvider(provider) {
   $("layout-options-btn").hidden = grid3;
   $("grid3-limits").hidden = !grid3;
   if (grid3) void loadGrid3Guidance();
-  $("connect-task-title").textContent = file
-    ? "Open a TD Snap exported file"
-    : grid3 ? "Use the grid open in Grid 3" : "Use the page open in TD Snap";
   $("connect-task-copy").textContent = file
-    ? "Choose an .sps or .spb export. Your original file stays unchanged."
+    ? "Choose an .sps or .spb file exported from TD Snap. Your original file stays unchanged."
     : grid3
-      ? "Open the grid you want in Grid 3. Do not enter Edit Mode."
-      : "Open the page you want to change and keep Windows unlocked.";
+      ? "Open Grid 3 to the grid you want to change (not in Edit Mode), then connect."
+      : "Open TD Snap to the page you want to change, then connect.";
   $("live-connect-btn").querySelector(".btn-label").textContent = file
-    ? "Choose exported page set"
+    ? "Choose a file"
     : grid3
       ? (state.elevated ? "Connect to Grid 3" : "Enable Grid 3 editing")
-      : "Use the page open in TD Snap";
+      : "Connect to TD Snap";
   $("connection-help").innerHTML = file
     ? "<li>Export the page set from TD Snap as an .sps or .spb file.</li>" +
       "<li>Choose that exported file here and add the new page.</li>" +
@@ -136,7 +133,7 @@ function selectProvider(provider) {
         "<li>Return here and connect. Windows may request administrator approval.</li>"
       : "<li>Open TD Snap and choose the person and page set you want to edit.</li>" +
         "<li>Open the page you want to change.</li>" +
-        "<li>Return here and select <strong>Use the page open in TD Snap</strong>.</li>";
+        "<li>Return here and select <strong>Connect to TD Snap</strong>.</li>";
   $("connection-help-note").textContent = file
     ? "The editor works on a temporary copy and never overwrites your export."
     : "Direct editing follows the page open in the selected AAC app.";
@@ -225,6 +222,86 @@ async function refreshDetectedPages() {
   return data;
 }
 
+/* Which exported-file session this tab is working in, kept for this tab only,
+   so a reload picks the same temporary copy back up — edits included — rather
+   than stranding it. */
+const FILE_SESSION_KEY = "aac-editor-file-session";
+
+function rememberFileSession(sessionId) {
+  try {
+    if (sessionId) window.sessionStorage.setItem(FILE_SESSION_KEY, sessionId);
+    else window.sessionStorage.removeItem(FILE_SESSION_KEY);
+  } catch {
+    /* storage can be unavailable; a reload then simply starts over */
+  }
+}
+
+function rememberedFileSession() {
+  try {
+    return window.sessionStorage.getItem(FILE_SESSION_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+/* After a reload: reopen the exported copy this tab was working in, if the
+   app still has it. Quietly does nothing when it does not. */
+async function resumeFileSession() {
+  const sessionId = rememberedFileSession();
+  if (!sessionId || state.connected) return false;
+  try {
+    const data = await api(`/api/pageset/${encodeURIComponent(sessionId)}`);
+    selectProvider("file");
+    await useFileSession(data);
+    state.edits = data.edits || 0;
+    state.fileUnsaved = Boolean(data.unsaved);
+    $("live-status").textContent = "";
+    showFileResumeNote(data);
+    return true;
+  } catch {
+    rememberFileSession("");
+    return false;
+  }
+}
+
+/* The edited copy can be saved from the header at any point, not only from the
+   result screen — which a reload, or simply moving on to the next page, used
+   to leave with no way back to. */
+function syncFileSave() {
+  const link = $("header-save-btn");
+  const available = state.mode === "file" && state.connected && state.edits > 0;
+  link.hidden = !available;
+  if (!available) {
+    link.removeAttribute("href");
+    return;
+  }
+  link.href = `/api/pageset/${encodeURIComponent(state.sessionId)}/download`;
+  link.download = state.filename.replace(/(\.[^.]+)?$/, ".edited$1");
+  link.classList.toggle("btn-primary", state.fileUnsaved);
+  link.classList.toggle("btn-secondary", !state.fileUnsaved);
+  link.textContent = state.fileUnsaved ? "Save edited copy" : "Save again";
+}
+
+$("header-save-btn").addEventListener("click", (event) => {
+  if (state.native && window.pywebview?.api?.save_pageset) {
+    // The native window saves through its own dialog, as the result screen does.
+    event.preventDefault();
+    $("file-save-btn").click();
+    return;
+  }
+  state.fileUnsaved = false;
+  syncFileSave();
+});
+
+function showFileResumeNote(data) {
+  syncFileSave();
+  const note = $("destination-intro");
+  note.textContent = data.unsaved
+    ? `Picked up where you left off in ${data.filename}. Your earlier changes are ` +
+      "still here — save the edited copy when you're done."
+    : `Picked up where you left off in ${data.filename}.`;
+}
+
 async function useFileSession(data) {
   if (!data || data.ok === false) throw new Error(data?.error || "The page set could not be opened.");
   if (data.cancelled) return false;
@@ -232,6 +309,8 @@ async function useFileSession(data) {
     throw new Error("The page set does not contain any editable pages.");
   }
   clearInterval(liveMonitor);
+  rememberFileSession(data.session_id);
+  state.fileUnsaved = false;
   state.mode = "file";
   state.provider = "file";
   state.connected = true;
@@ -239,7 +318,9 @@ async function useFileSession(data) {
   state.filename = data.filename || "page-set.sps";
   state.grid = data.grid || state.grid;
   state.pages = data.pages.map((page) => ({ id: String(page.id), title: page.title }));
-  state.currentPage = state.pages[0].id;
+  // Start on the page set's own home page when it names one.
+  const home = state.pages.find((page) => page.id === String(data.home_page_id));
+  state.currentPage = (home || state.pages[0]).id;
   state.parentId = state.currentPage;
   state.parentFree = null;
   state.parentTouched = false;
@@ -254,9 +335,8 @@ async function useFileSession(data) {
   state.placementAdjusted = false;
   $("title-input").value = "";
   setPageStyle("words");
-  // Exported files can now add to a page that already exists, so they open on
-  // the same first question the live providers ask instead of assuming a new
-  // page is wanted. Adding to a familiar page is the shorter path, so it leads.
+  // Adding to a page that already exists is the shorter, more common path, so
+  // an exported file opens on the page picker; creating a page is a link there.
   setOperation("existing");
   renderParents("");
   $("file-badge").textContent = `${state.filename} · Change file`;
@@ -268,8 +348,13 @@ async function useFileSession(data) {
   $("live-result-note").textContent =
     "Save the edited copy, review it, then import it into TD Snap.";
   setProviderState("file", "Ready", "ready");
+  show("destination");
+  try {
+    await loadTargetLayout(titleOf(state.parentId));
+  } catch (error) {
+    showBuildError("Couldn’t load that page. Choose another one.", [error.message]);
+  }
   await loadVocabulary();
-  show("operation");
   return true;
 }
 
@@ -381,7 +466,7 @@ $("live-connect-btn").addEventListener("click", async () => {
       setProviderState("grid3", "Ready", "ready");
       status.textContent = data.compatibility_warning || "";
       setOperation("existing");
-      show("operation");
+      show("items");
       return;
     }
     let data = await api("/api/tdsnap/status");
@@ -466,6 +551,35 @@ $("live-connect-btn").addEventListener("click", async () => {
   }
 });
 
+/* A live app is sometimes caught between pages — TD Snap has no page grid for
+   a moment while it navigates or redraws — and a read at that instant fails
+   although nothing is wrong. Try again briefly before calling it a failure;
+   an exported file is a file, and fails the first time for real. A timeout is
+   never retried: the app has already been given a minute. */
+const LAYOUT_RETRIES = 2;
+const LAYOUT_RETRY_DELAY_MS = 700;
+
+async function readLayout(path, stillWanted) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await api(path);
+    } catch (error) {
+      const retry = state.mode === "live" && error.name !== "TimeoutError" &&
+        attempt < LAYOUT_RETRIES && stillWanted();
+      if (!retry) throw error;
+      await new Promise((resolve) => setTimeout(resolve, LAYOUT_RETRY_DELAY_MS));
+    }
+  }
+}
+
+/* Resolves once no page layout is loading, so Continue can wait for the page
+   the user just picked rather than asking them to click again. */
+async function layoutSettled() {
+  while (state.targetLoading) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
 async function loadTargetLayout(pageName, currentOnly = false) {
   if (state.operation !== "existing" || (!pageName && !currentOnly)) return null;
   const request = ++layoutRequest;
@@ -482,14 +596,15 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     ? "Refreshing the live TD Snap page…"
     : `Loading “${pageName}”…`);
   try {
-    const data = await api(state.mode === "file"
+    const path = state.mode === "file"
       ? `/api/pageset/${encodeURIComponent(state.sessionId)}` +
         `/page/${encodeURIComponent(state.parentId)}/layout`
       : state.provider === "grid3"
         ? "/api/grid3/page-layout"
         : currentOnly
           ? "/api/tdsnap/page-layout"
-          : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`);
+          : `/api/tdsnap/page-layout?page=${encodeURIComponent(pageName)}`;
+    const data = await readLayout(path, () => request === layoutRequest);
     if (request !== layoutRequest || state.operation !== "existing" ||
         state.parentId !== target || state.sessionId !== session || state.provider !== provider) {
       return null;
@@ -548,9 +663,14 @@ async function loadTargetLayout(pageName, currentOnly = false) {
   }
 }
 
+/* Every poll walks TD Snap's accessibility tree, which is not free for TD Snap
+   either; once every 1.5 s still follows a page change well within the time
+   it takes somebody to look back at this window. */
+const LIVE_MONITOR_MS = 1500;
+
 function startLiveMonitor() {
   clearInterval(liveMonitor);
-  liveMonitor = setInterval(syncLivePreview, 750);
+  liveMonitor = setInterval(syncLivePreview, LIVE_MONITOR_MS);
 }
 
 async function syncLivePreview() {
@@ -562,17 +682,31 @@ async function syncLivePreview() {
   // while nobody is looking at it.
   if (document.hidden) return;
   if (liveSyncing || state.targetLoading || state.mode !== "live" ||
-      state.operation !== "existing" || $("step-build").hidden) return;
+      state.provider !== "tdsnap" || state.operation !== "existing" ||
+      $("step-build").hidden || userRequestInFlight()) return;
   liveSyncing = true;
   try {
     const selectedPage = state.parentId;
     const status = await api("/api/tdsnap/status", {
       headers: { "X-TDSnap-Brief": "1" },
-    });
+      background: true,
+    }, 10_000);
     if (state.targetLoading || state.parentId !== selectedPage || state.operation !== "existing") return;
-    if (!status.running || !status.page || status.page === state.currentPage) return;
+    // "busy": AAC Editor is already driving TD Snap for something the user
+    // asked for. The next poll will look again.
+    if (status.busy || !status.running || !status.page || status.page === state.currentPage) return;
+    const previousPage = state.currentPage;
     const layout = await loadTargetLayout("", true);
     if (!layout) return;
+    // Planned words follow the page open in TD Snap. Say so, rather than
+    // letting words meant for one page quietly land on another.
+    if (state.words.length && layout.page !== previousPage) {
+      const count = state.words.length;
+      $("chip-note").textContent =
+        `TD Snap is now showing “${layout.page}”, so your ${count} planned ` +
+        `button${count === 1 ? "" : "s"} will go there. Go back to ` +
+        `“${previousPage}” in TD Snap to add them to that page instead.`;
+    }
     state.currentPage = layout.page;
     state.parentId = layout.page;
     state.parentTouched = false;
@@ -589,4 +723,7 @@ async function syncLivePreview() {
   }
 }
 
-export { followGrid3Page, loadTargetLayout, refreshDetectedPages, selectProvider, stopLiveMonitor };
+export {
+  followGrid3Page, layoutSettled, loadTargetLayout, refreshDetectedPages, rememberFileSession,
+  resumeFileSession, selectProvider, stopLiveMonitor, syncFileSave,
+};

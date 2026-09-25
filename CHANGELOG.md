@@ -11,6 +11,48 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Fixed — reliability
+
+- **TD Snap and Grid 3 are driven from one thread that owns its UI Automation setup.**
+  `uiautomation` is COM underneath and must be initialized on each thread that uses it; the
+  web server answered every request on a fresh, short-lived thread and never did, so an
+  automation call could fail intermittently depending on which thread created the shared
+  COM object. Every TD Snap and Grid 3 call now runs on one long-lived, initialized thread.
+- **The background page-follow poll no longer holds up what the user asked for.** It ran
+  every 750 ms and held the automation lock each time, so a page read or an edit could wait
+  behind it until the browser's ten-second deadline fired. The server now answers the poll
+  with "busy" instead of queueing it, the browser skips a poll while any user request is in
+  flight, and it polls every 1.5 s. Reading a whole page gets a minute rather than ten
+  seconds; the quick "is it running?" checks keep the short deadline.
+- A page read that fails while TD Snap is between pages is tried twice more before it is
+  reported, and Continue on the page picker waits for the page being loaded.
+- Unexpected server errors come back as a readable message rather than an HTML error page
+  the browser could only call "Unexpected response from the app (500)".
+- A quick quit and relaunch no longer moves the app to a random port.
+- **Exported files:** a reload picks the same edited copy back up; an edited copy that has
+  not been saved counts as unsaved work, so leaving, Change file, and start over all ask
+  first; and the fifth file opened in one run is no longer refused with "Too many page sets
+  are open" — sessions with nothing left to save are closed to make room.
+- Switching to topic-page rows no longer moves a new page's link back onto a page already
+  found to be full, which made the edit fail at Confirm.
+
+### Changed — fewer steps
+
+- The "What would you like to do?" screen is gone. TD Snap and Grid 3 connect straight to
+  the word list, an exported file opens on its page picker (starting on the page set's own
+  home page), and "Create a new page" is a link on whichever of those you are on. Back from
+  naming a new page returns there.
+- The first screen's buttons say what they do — Connect to TD Snap, Connect to Grid 3,
+  Choose a file — and the app cards describe what each can do today.
+- An exported file's edited copy can be saved from the header at any time, and the result
+  screen says to save it rather than that TD Snap was updated.
+- A full suggested page for a new page's link hands the suggestion to the next page with
+  room in an exported file, instead of stopping at "That page is full".
+- Passing checks collapse into one line; the review grid only marks buttons "locked" when
+  some on the page are not; topic-page rows have one Add per row and no second row picker;
+  the draft and error banners no longer float over Review and Confirm; and moving a live
+  page while words are planned says where they will now go.
+
 ### Added
 
 - **Grid 3 parity (Phase 10).** The grid open in Grid 3 can now be edited the way a TD Snap

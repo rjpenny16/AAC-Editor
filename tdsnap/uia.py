@@ -64,12 +64,97 @@ deliberate choice, not an oversight:
 """
 
 import ctypes
+import queue
 import statistics
 import sys
+import threading
 import time
 from ctypes import wintypes
 
 from .errors import PagesetError
+
+# ---------------------------------------------------------------------------
+# the one thread that drives TD Snap and Grid 3
+
+
+def _initialize_com():
+    """Set up COM for UI Automation on the calling thread.
+
+    ``uiautomation`` is COM underneath, and its documentation is explicit: a
+    thread that uses it must initialize it first, and a control found on one
+    thread must not be used from another. The web server answers each request
+    on a fresh, short-lived thread and did neither, so an automation call
+    worked or failed depending on which thread happened to create the shared
+    COM object and whether that thread still existed. Returns the initializer,
+    which must stay referenced for as long as the thread runs.
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        import uiautomation as auto
+    except ImportError:
+        return None
+    return auto.UIAutomationInitializerInThread()
+
+
+class AutomationThread:
+    """Run every TD Snap and Grid 3 automation call on one long-lived thread.
+
+    One thread means COM is initialized once, in the apartment every control
+    is then created and used in, and it means two calls can never drive the
+    same app at once. Callers block until their call finishes, and an
+    exception raised by the call is raised again in the caller.
+    """
+
+    def __init__(self, initialize=_initialize_com):
+        self._initialize = initialize
+        self._jobs = queue.SimpleQueue()
+        self._thread = None
+        self._start_lock = threading.Lock()
+
+    def _loop(self):
+        initializer = None
+        try:
+            initializer = self._initialize()
+        except Exception as exc:  # reported to every caller rather than lost
+            startup_error = exc
+        else:
+            startup_error = None
+        while True:
+            call, outcome, done = self._jobs.get()
+            try:
+                if startup_error is not None:
+                    raise PagesetError(
+                        "Windows automation could not start. Restart AAC Editor and try again."
+                    ) from startup_error
+                outcome["result"] = call()
+            except BaseException as exc:  # handed back to the waiting caller
+                outcome["error"] = exc
+            finally:
+                done.set()
+        del initializer  # pragma: no cover - the loop never exits
+
+    def _ensure_started(self):
+        with self._start_lock:
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._loop, name="aac-editor-automation", daemon=True
+                )
+                self._thread.start()
+
+    def run(self, call):
+        """Run *call* on the automation thread and return what it returns."""
+        if threading.current_thread() is self._thread:
+            return call()
+        self._ensure_started()
+        outcome = {}
+        done = threading.Event()
+        self._jobs.put((call, outcome, done))
+        done.wait()
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome.get("result")
+
 
 # ---------------------------------------------------------------------------
 # uiautomation setup

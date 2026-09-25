@@ -371,6 +371,11 @@ buildForm.addEventListener("submit", (event) => {
     showStepError("items", "Add at least one word or phrase before continuing.");
     return;
   }
+  if (state.operation === "new" && state.provider !== "grid3" && state.parentFree === 0) {
+    showStepError("items", `“${titleOf(state.parentId)}” has no empty space for the link to the new ` +
+      "page. Go back and choose another page to link it from.");
+    return;
+  }
   if (state.words.length > pageCapacity()) {
     showStepError("items", "This page is full. Remove a planned button or choose another page.");
     return;
@@ -551,7 +556,9 @@ $("confirm-update-btn").addEventListener("click", async () => {
         // Keep the original error if TD Snap cannot be inspected for recovery.
       }
     }
-    showReviewError(`${state.provider === "grid3" ? "Grid 3" : "TD Snap"} couldn't complete the edit.`, [
+    showReviewError(state.mode === "file"
+      ? "The edit couldn’t be made. Your exported copy is unchanged."
+      : `${state.provider === "grid3" ? "Grid 3" : "TD Snap"} couldn't complete the edit.`, [
       error.message,
       ...(error.problems || []),
     ]);
