@@ -301,6 +301,7 @@ test.describe('beginner word-adding regressions', () => {
     await existingItems(page);
     await page.locator('#preview .cell.existing').filter({ hasText: 'help' }).click();
     await page.locator('#edit-remove').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
     await page.locator('#choose-page-btn').click();
     await page.locator('#parent-select').selectOption('Games');
     await page.locator('#wizard-destination .wizard-next').click();
@@ -2252,6 +2253,7 @@ test.describe('changing and removing existing buttons', () => {
     await connect(page);
     await openExisting(page, 'pear');
     await page.locator('#edit-remove').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
     await page.locator('#build-btn').click();
 
     await expect(page.locator('#review-action')).toHaveText('Remove 1 button on Eating');
@@ -2291,6 +2293,8 @@ test.describe('changing and removing existing buttons', () => {
     await connect(page);
     await openExisting(page, 'pear');
     await page.locator('#edit-remove').click();
+    // The removal is recorded when the dialog closes; wait for the grid to show it.
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
 
     // A pending removal is never autosaved, so the leave prompt is the only
     // thing between the user and losing it.
@@ -2314,6 +2318,7 @@ test.describe('changing and removing existing buttons', () => {
 
     await page.locator('#preview .cell.existing').filter({ hasText: 'pear' }).click();
     await page.locator('#edit-remove').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
     await page.locator('#build-btn').click();
     await expect(page.locator('#review-removals li')).toHaveCount(1);
     expect(await blockingViolations(page)).toEqual([]);
