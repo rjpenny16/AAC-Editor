@@ -65,7 +65,9 @@ def test_index_explains_both_local_ai_setup_options(client):
     assert "TD Snap exported file" in page
     assert "Work on an exported .sps or .spb copy" in page
     assert "sends only this page title to Wikipedia" in page
-    assert "Drag buttons to the exact cells" in page
+    assert "Welcome to AAC Editor" in page
+    assert "How familiar are you with editing AAC pages?" in page
+    assert "Check changes" in page
 
 
 def test_foreign_hosts_are_rejected(client):
@@ -533,6 +535,29 @@ def test_settings_rejects_bad_preference_choices_but_keeps_valid_keys(client, mo
     assert response.status_code == 200
     data = client.get("/api/settings").get_json()
     assert data["preferences"] == {"ollama_model": "llama3.2"}
+
+
+def test_settings_remember_the_onboarding_answer(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {"experience": "expert", "tips_seen": True}},
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    data = client.get("/api/settings").get_json()
+    assert data["preferences"] == {"experience": "expert", "tips_seen": True}
+
+
+def test_settings_drop_an_unknown_experience_level(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    response = client.put(
+        "/api/settings",
+        json={"preferences": {"experience": "wizard", "tips_seen": "yes", "provider": "file"}},
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    assert client.get("/api/settings").get_json()["preferences"] == {"provider": "file"}
 
 
 def test_settings_draft_with_no_items_is_dropped(client, monkeypatch, tmp_path):

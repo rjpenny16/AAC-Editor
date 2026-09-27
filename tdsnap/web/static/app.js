@@ -11,6 +11,7 @@ import { renderPreview } from "./preview.js";
 import { hasUnsavedWork } from "./support.js";
 import { getPreferences } from "./settings.js";
 import { show } from "./wizard.js";
+import { startOnboarding } from "./onboarding.js";
 // Side-effect imports: these wire their own listeners and export nothing
 // anyone else calls, so without this they would never load.
 import "./ai.js";
@@ -79,6 +80,10 @@ configReady.then(async () => {
   }
 
   selectProvider(state.provider);
+  show("load");
+  // First run asks one question before anything else; a returning user goes
+  // straight to connecting.
+  if (await startOnboarding({ linked: Boolean(linkedProvider) })) return;
   // A reload in the middle of an exported file picks the same edited copy
   // back up. An explicit link to another app means the user has moved on.
   if (!linkedProvider || linkedProvider === "file") await resumeFileSession();
@@ -87,6 +92,5 @@ configReady.then(async () => {
 
 renderWords();
 renderPreview();
-show("load");
 
 wireRadioGroups();

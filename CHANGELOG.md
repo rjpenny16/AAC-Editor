@@ -11,6 +11,32 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Changed — one question, then three steps
+
+- **A first-run welcome (ROADMAP Phase 7).** The app opens on what it does, in three
+  steps, and one question: how familiar are you with editing AAC pages? *New to this*
+  turns on a short tips card on the Build screen and opens connection help; *I build page
+  sets often* drops the explanatory hints, opens AI suggestions, and shows keyboard
+  shortcuts; *Skip* is the middle setting. All of it lives in one `applyProfile()` in
+  `onboarding.js`. The answer is a preference in the existing local settings file
+  (`experience`, plus `tips_seen`), listed in *What AAC Editor saves* and cleared with it.
+  **Help** in the header reopens the question or brings the tips back. No level hides a
+  control, skips review, or changes what is written; a link naming an app skips the
+  question.
+- **The page is on the Build screen.** The grid used to appear only on a separate
+  placement screen, reached two ways with two different Back buttons. It now sits next to
+  the word box: words appear in their spaces as they are added, and existing buttons are
+  changed, moved, or removed by selecting or dragging them right there. The "Change, move,
+  or remove existing buttons" link, the placement screen, and "Change positions" on review
+  are gone; **Back to the page** on review returns to the grid.
+- **Layout and tools are on the same screen.** *Page layout* (standard buttons or
+  topic-page rows) is a switch above the word box instead of its own screen, *Import a word
+  list* and *Templates* are buttons instead of a "More options" drawer, and AI suggestions
+  fold to one line showing whether they are ready.
+- The progress bar names the four stages people move through: **Connect, Build, Check,
+  Done** ("Setup" was never in it). The Build screen's button is **Check changes**.
+
+
 ### Fixed — reliability
 
 - **TD Snap and Grid 3 are driven from one thread that owns its UI Automation setup.**

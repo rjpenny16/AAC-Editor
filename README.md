@@ -10,7 +10,7 @@ entire topic pages at once, review every change before it runs, and update the
 page or grid already open in TD Snap or Grid 3 so it keeps its existing sharing and sync
 identity—saving hours of repetitive work.
 
-![AAC Editor setup screen with TD Snap, Grid 3, and exported-file options](docs/screenshot.png)
+![AAC Editor welcome screen: connect, build, check, and one question about experience](docs/screenshot.png)
 
 ## Download
 
@@ -121,15 +121,31 @@ stored in plain language, and **Clear all saved data** deletes the file.
 
 ## Quick start
 
-1. Open TD Snap and the page set you want to edit.
-2. Open AAC Editor and select **Connect to TD Snap**.
-3. Add buttons, review their positions, and confirm the result-specific action.
-4. Use **Choose another page** or **Create a new page** only when needed.
-5. Review the checks before returning to TD Snap.
+The first time it opens, AAC Editor asks one question: how familiar you are with
+editing AAC pages. The answer only changes how much guidance you see (tips for
+somebody new, fewer hints for somebody who builds page sets often). Every tool is
+there whichever you pick, and **Help** in the header changes it at any time. The
+answer is kept in the same local settings file as everything else, listed in
+**What AAC Editor saves**, and cleared with it.
 
-To fix, move, or retire something already on the page, select **Change, move, or
-remove existing buttons**, then select the button itself — or drag it to another
-cell, or move it with the arrow keys. Dropping one button on another has the two
+After that, every edit is three steps:
+
+1. **Connect.** Open TD Snap to the page you want to change, then select
+   **Connect to TD Snap** (or pick Grid 3, or an exported file).
+2. **Build.** The page is on screen next to the word box. Type a word and select
+   **Add**; it appears in its space on the page, where you can drag it or move it
+   with the arrow keys. **Page layout** switches between standard buttons and
+   color-coded topic-page rows. **Import a word list**, **Templates**, and
+   **Suggest words with AI** sit on the same screen. Use **Choose another page**
+   or **Create a new page** above the grid only when needed.
+3. **Check.** Select **Check changes** to see exactly what will be added,
+   changed, moved, or removed, then confirm with the button that names the
+   change. Nothing touches your AAC app
+   before that. **Back to the page** returns to the grid to adjust anything.
+
+To fix, move, or retire something already on the page, select the button on the
+Build screen's grid, or drag it to another cell, or move it with the arrow keys.
+Dropping one button on another has the two
 trade places. AAC Editor changes only buttons whose whole job is to speak their
 own message; a button that opens a page or runs an action stays locked and says
 so on hover and on focus. Before a change, a move, or a removal runs, AAC Editor

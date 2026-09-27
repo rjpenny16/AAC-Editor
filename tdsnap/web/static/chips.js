@@ -379,21 +379,29 @@ function renderWords() {
 
    Both controls are rendered from state rather than toggled at the call sites,
    so no path through the wizard can leave a stale one on screen. */
+/* Existing buttons are changed, moved, and removed on the page grid itself,
+   so all this adds is the line under the grid: what is pending, or why the
+   buttons already there cannot be touched on this page. */
 function renderExistingEditControls() {
-  const button = $("edit-existing-btn");
   const summary = $("edit-existing-summary");
   const undo = $("undo-last-btn");
   if (undo) undo.hidden = !undoAvailable(state);
-  if (!button || !summary) return;
+  if (!summary) return;
   const anyEditable = state.existingButtons.some((item) => item.editable);
-  button.hidden = !state.canEditExisting || !anyEditable;
+  const hint = $("preview-hint");
+  if (hint && state.connected) {
+    hint.textContent = state.canEditExisting && anyEditable
+      ? "Drag a button to move it, or focus it and use the arrow keys. Select a button "
+        + "that is already on the page to change or remove it."
+      : "Drag your new buttons to move them, or focus one and use the arrow keys.";
+  }
   const line = editSummary({
     changed: state.pageEdits.changes.length,
     removed: state.pageEdits.removals.length,
     moved: state.pageEdits.moves.length,
     page: titleOf(state.parentId),
   });
-  const unavailable = button.hidden ? whyNotEditable(anyEditable) : "";
+  const unavailable = state.canEditExisting && anyEditable ? "" : whyNotEditable(anyEditable);
   const text = line ? `Pending: ${line.toLocaleLowerCase()}.` : unavailable;
   summary.hidden = !text;
   summary.classList.toggle("pending-edits", Boolean(line));

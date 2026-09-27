@@ -213,7 +213,7 @@ button { cursor: pointer; }
 .wizard-progress > strong { display: block; margin-bottom: 0.45rem; font-size: 0.875rem; }
 .stage-progress {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.4rem;
   margin: 0;
   padding: 0;
@@ -510,7 +510,6 @@ input:focus-visible, select:focus-visible {
 .fn-pill { min-height: 2.75rem; padding: 0.5rem 0.75rem; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--ink); background: var(--surface); }
 .fn-pill.selected { color: var(--on-accent); border-color: var(--accent); background: var(--accent); }
 
-.more-options,
 .help-disclosure,
 .ai-options,
 .ai-advanced {
@@ -530,7 +529,6 @@ summary {
   cursor: pointer;
 }
 
-.more-options-body,
 .ai-options-body,
 .help-disclosure ol,
 .ai-advanced > :not(summary) { margin: 0; padding: 0.25rem 1rem 1rem; }
@@ -565,14 +563,15 @@ summary {
  * one line of text. */
 .ai-panel {
   margin-top: 1.25rem;
-  padding: 1rem;
   border: 1px solid var(--line);
   border-radius: 0.65rem;
   background: var(--surface-soft);
 }
+.ai-panel[open] { padding: 0 1rem 1rem; }
+.ai-panel[open] > summary { margin-inline: -1rem; }
 
 .ai-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
-.ai-head h3 { margin: 0; font-size: 1.05rem; }
+.ai-title { font-size: 1rem; }
 .ai-summary { margin: 0.45rem 0 0; font-weight: 600; }
 .ai-panel > .field-hint { margin-top: 0.3rem; }
 
@@ -702,7 +701,6 @@ summary {
 
 .connection-error-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 0.75rem; }
 
-.placement-step { max-width: 100%; }
 .preview-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: start; margin-bottom: 0.75rem; }
 .preview-live { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--success); font-size: 0.8125rem; text-transform: uppercase; }
 .preview-live > span { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: currentcolor; }
@@ -936,6 +934,8 @@ summary {
 
 @media (max-width: 40rem) {
   .provider-list { grid-template-columns: 1fr; }
+  .welcome-steps { grid-template-columns: 1fr; }
+  .page-toolbar { flex-direction: column; align-items: stretch; }
   .topbar-inner { padding-inline: 0.85rem; }
   .brand-logo { width: 2rem; height: 2rem; }
   .topbar h1 { font-size: 1.05rem; }
@@ -1062,3 +1062,94 @@ summary {
 .batch-outcome-skipped { border-left-color: var(--warning); }
 .batch-outcome-failed { border-left-color: var(--danger); }
 .batch-outcome-why { display: block; margin-top: 0.15rem; }
+
+/* ---------- welcome and help ---------- */
+
+body[data-step="welcome"] .wizard-progress { display: none; }
+
+.welcome-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: welcome;
+}
+.welcome-steps li {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--surface-soft);
+  counter-increment: welcome;
+}
+.welcome-steps strong::before { content: counter(welcome) ". "; color: var(--accent); }
+.welcome-steps span { color: var(--ink-soft); font-size: 0.875rem; }
+.welcome-levels { margin-top: 0.5rem; }
+.label-text { display: block; font-weight: 750; }
+
+.help-menu { position: relative; }
+.help-menu > summary {
+  min-height: 2.75rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.875rem;
+}
+.help-menu-body {
+  position: absolute;
+  right: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 16rem;
+  margin-top: 0.35rem;
+  padding: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.help-menu-body .text-button { text-align: left; }
+
+.tips {
+  margin: 0 0 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--accent-line);
+  border-radius: 0.65rem;
+  background: var(--accent-soft);
+}
+.tips ol { margin: 0.5rem 0 0.85rem; padding-left: 1.25rem; }
+.tips li + li { margin-top: 0.35rem; }
+
+/* How much guidance shows follows the welcome answer. Only hints change:
+   every control is present at every level. */
+body[data-experience="expert"] .guide { display: none; }
+.expert-only { display: none; }
+body[data-experience="expert"] .expert-only { display: block; }
+
+/* ---------- the Build workspace: the page and the word list together ---------- */
+
+body[data-step="items"] .shell { width: min(100%, 76rem); }
+.workspace-grid { display: grid; gap: 1.5rem; }
+.workspace-side > .field:first-child { margin-top: 0; }
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  margin-bottom: 0.65rem;
+}
+.page-toolbar-title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.75rem; }
+.page-toolbar-title strong { font-size: 1.05rem; }
+.page-toolbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
+.tools-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
+
+@media (min-width: 64rem) {
+  .workspace-grid { grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 1fr); align-items: start; }
+  .workspace-page { position: sticky; top: 11rem; }
+}
+

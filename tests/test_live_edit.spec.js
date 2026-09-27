@@ -114,10 +114,15 @@ async function mockTD(page, options = {}) {
 
 /* Settings are backed by a real per-machine file, so tests mock the endpoint
    rather than hitting it — the same store persisting across page.goto calls
-   in one test lets a test simulate "the next launch" without a real restart. */
+   in one test lets a test simulate "the next launch" without a real restart.
+   Every store starts as a returning user who has answered the welcome
+   question, so the welcome only appears in the tests that ask for a first
+   run with `firstRun: true`. */
 async function mockSettings(page, initial = {}) {
   const store = {
-    preferences: initial.preferences || {},
+    preferences: initial.firstRun
+      ? { ...(initial.preferences || {}) }
+      : { experience: 'some', ...(initial.preferences || {}) },
     draft: initial.draft || null,
     templates: initial.templates || [],
   };
@@ -147,7 +152,7 @@ async function mockSettings(page, initial = {}) {
 async function openEditor(page) {
   await page.goto(BASE_URL);
   await expect(page.locator('#step-load')).toBeVisible();
-  await expect(page.locator('#wizard-progress-label')).toHaveText('Setup');
+  await expect(page.locator('#wizard-progress-label')).toHaveText('Connect');
 }
 
 async function connect(page) {
@@ -159,7 +164,7 @@ async function connect(page) {
 
 async function existingItems(page) {
   await connect(page);
-  await expect(page.locator('#wizard-progress-label')).toHaveText('Add');
+  await expect(page.locator('#wizard-progress-label')).toHaveText('Build');
 }
 
 async function newItems(page, title = 'Snacks') {
@@ -171,6 +176,13 @@ async function newItems(page, title = 'Snacks') {
   await expect(page.locator('#wizard-destination')).toBeVisible();
   await page.locator('#wizard-destination .wizard-next').click();
   await expect(page.locator('#wizard-items')).toBeVisible();
+}
+
+/* Suggestions sit behind one line on the Build screen until somebody opens
+   them (people who build page sets often get them open). */
+async function openSuggestions(page) {
+  const panel = page.locator('#ai-panel');
+  if (!(await panel.evaluate((node) => node.open))) await panel.locator('> summary').click();
 }
 
 async function blockingViolations(page) {
@@ -198,11 +210,8 @@ test.describe('beginner word-adding regressions', () => {
     await existingItems(page);
     await page.locator('#word-input').fill('apple, pear');
     await page.locator('#word-input').press('Enter');
-    await page.locator('.more-options > summary').click();
-    await page.locator('#layout-options-btn').click();
     await page.locator('#style-topic').click();
     await page.locator('#style-words').click();
-    await page.locator('#layout-back-btn').click();
     await expect(page.locator('#word-input')).toBeVisible();
     await page.locator('#word-input').fill('banana');
     await page.locator('#word-input').press('Enter');
@@ -267,11 +276,9 @@ test.describe('beginner word-adding regressions', () => {
       free_slots: [1, 2, 3, 4, 5],
     }) });
     await existingItems(page);
-    await page.locator('#edit-existing-btn').click();
     await page.locator('#preview .cell.existing').filter({ hasText: 'apple' }).click();
     await page.locator('#edit-label').fill('pear');
     await page.locator('#edit-save').click();
-    await page.locator('#placement-back-btn').click();
     await page.locator('#word-input').fill('apple, pear');
     await page.locator('#word-input').press('Enter');
     await expect(page.locator('.chip-body')).toHaveText(['apple']);
@@ -292,10 +299,9 @@ test.describe('beginner word-adding regressions', () => {
       },
     });
     await existingItems(page);
-    await page.locator('#edit-existing-btn').click();
     await page.locator('#preview .cell.existing').filter({ hasText: 'help' }).click();
     await page.locator('#edit-remove').click();
-    await page.locator('#placement-back-btn').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
     await page.locator('#choose-page-btn').click();
     await page.locator('#parent-select').selectOption('Games');
     await page.locator('#wizard-destination .wizard-next').click();
@@ -347,9 +353,7 @@ test.describe('accessibility past the first screen', () => {
     await existingItems(page);
     await page.locator('#word-input').fill('apple');
     await page.locator('#word-add-btn').click();
-    await page.locator('.more-options > summary').click();
-    await page.locator('#layout-options-btn').click();
-    await expect(page.locator('#wizard-layout')).toBeVisible();
+    await expect(page.locator('#layout-field')).toBeVisible();
     expect(await blockingViolations(page)).toEqual([]);
   });
 
@@ -668,8 +672,8 @@ test('Grid 3 uses the active-grid three-step flow and live styled rectangles', a
   await page.locator('#live-connect-btn').click();
   // The open grid is the page, so connecting goes straight to the word list.
   await expect(page.locator('#wizard-items')).toBeVisible();
-  await expect(page.locator('#wizard-progress-label')).toHaveText('Add');
-  await expect(page.locator('#layout-options-btn')).toBeHidden();
+  await expect(page.locator('#wizard-progress-label')).toHaveText('Build');
+  await expect(page.locator('#style-topic')).toBeHidden();
   await expect(page.locator('#capacity')).toHaveText('2 spaces available');
   await page.locator('#word-input').fill('Help');
   await page.locator('#word-add-btn').click();
@@ -682,13 +686,13 @@ test('Grid 3 uses the active-grid three-step flow and live styled rectangles', a
   await expect(page.locator('#review-preview .cell.used')).toHaveCount(2);
   await expect(page.locator('#confirm-update-label')).toHaveText('Add 2 buttons to Home');
   await page.setViewportSize({ width: 390, height: 760 });
-  await page.locator('#adjust-placement-btn').click();
+  await page.locator('#review-back-btn').click();
   await expect(page.locator('#preview')).toHaveClass(/grid3-preview/);
   await expect(page.locator('#preview .cell.used')).toHaveCount(2);
   await expect(page.locator('#preview .cell.used').first()).toHaveCSS('background-color', 'rgb(255, 242, 204)');
   await expect(page.locator('#placement-order-wrap')).toBeVisible();
   const reflow = await page.evaluate(() => {
-    const frame = document.querySelector('#wizard-placement .preview-frame');
+    const frame = document.querySelector('#wizard-items .preview-frame');
     const preview = document.querySelector('#preview');
     return {
       documentWidth: document.documentElement.scrollWidth,
@@ -701,7 +705,7 @@ test('Grid 3 uses the active-grid three-step flow and live styled rectangles', a
   expect(reflow.previewWidth).toBeLessThanOrEqual(reflow.frameWidth);
   await capture(page, 'after-grid3-placement-390.png');
   await page.getByRole('button', { name: 'Move later: Help' }).click();
-  await page.locator('#placement-back-btn').click();
+  await page.locator('#build-btn').click();
   await page.locator('#confirm-update-btn').click();
 
   await expect(page.locator('#result-heading')).toHaveText('Done — Grid 3 was updated');
@@ -714,8 +718,7 @@ test('Grid 3 uses the active-grid three-step flow and live styled rectangles', a
 test('Grid 3 changes, moves and removes speaking cells through the same review', async ({ page }) => {
   const plans = mockGrid3(page);
   await connectGrid3(page);
-  await expect(page.locator('#edit-existing-btn')).toBeVisible();
-  await page.locator('#edit-existing-btn').click();
+  await expect(page.locator('#preview .cell.existing.editable').first()).toBeVisible();
   await expect(page.locator('#preview')).toHaveClass(/grid3-preview/);
 
   // The workspace cell is locked and says why; the Write cell is editable.
@@ -730,7 +733,6 @@ test('Grid 3 changes, moves and removes speaking cells through the same review',
   await page.locator('#edit-save').click();
   await expect(page.locator('#preview .cell.marked-changed')).toHaveCount(1);
 
-  await page.locator('#placement-back-btn').click();
   await expect(page.locator('#edit-existing-summary')).toHaveText('Pending: change 1 button on home.');
   await page.locator('#build-btn').click();
   await expect(page.locator('#review-action')).toHaveText('Change 1 button on Home');
@@ -765,11 +767,11 @@ test('Grid 3 creates a linked grid the size of the open one, keeping its Back ce
   await expect(page.locator('#review-action')).toHaveText('Create Snacks with 2 buttons');
   await expect(page.locator('#review-target')).toHaveText('Snacks, found from Home');
   // The top-left square belongs to Grid 3's Back cell, so the first word lands beside it.
-  await page.locator('#adjust-placement-btn').click();
+  await page.locator('#review-back-btn').click();
   await expect(page.locator('#preview')).not.toHaveClass(/grid3-preview/);
   const back = page.locator('#preview .cell.existing').filter({ hasText: 'Back' });
   await expect(back).toHaveAttribute('title', /Back cell/);
-  await page.locator('#placement-back-btn').click();
+  await page.locator('#build-btn').click();
   await page.locator('#confirm-update-btn').click();
   await expect(page.locator('#result-heading')).toHaveText('Done — Grid 3 was updated');
   await expect(page.locator('#checks')).toContainText('created the new grid');
@@ -865,7 +867,7 @@ test('open-page path goes straight to Add and edits only after confirmation', as
   });
 
   await connect(page);
-  await expect(page.locator('#wizard-progress-label')).toHaveText('Add');
+  await expect(page.locator('#wizard-progress-label')).toHaveText('Build');
   await expect(page.locator('#parent-select')).toHaveValue('Eating');
   await expect(page.locator('#current-page-label')).toHaveText('Adding to Eating');
   await expect(page.locator('#file-badge')).toHaveText('TD Snap · Change app');
@@ -876,7 +878,7 @@ test('open-page path goes straight to Add and edits only after confirmation', as
   await expect(page.locator('#wizard-destination')).toBeVisible();
   await expect(page.locator('#parent-select')).toHaveValue('Eating');
   await page.locator('#wizard-destination .wizard-next').click();
-  await expect(page.locator('#wizard-progress-label')).toHaveText('Add');
+  await expect(page.locator('#wizard-progress-label')).toHaveText('Build');
   await page.locator('#word-input').fill('Help');
   await page.locator('#word-add-btn').click();
   await page.locator('#word-input').fill('More');
@@ -884,7 +886,7 @@ test('open-page path goes straight to Add and edits only after confirmation', as
   await capture(page, 'after-add-words.png');
   await page.locator('#build-btn').click();
 
-  await expect(page.locator('#wizard-progress-label')).toHaveText('Review');
+  await expect(page.locator('#wizard-progress-label')).toHaveText('Check');
   await expect(page.locator('#review-action')).toHaveText('Add 2 buttons to Eating');
   await expect(page.locator('#review-target')).toHaveText('Eating');
   await expect(page.locator('#review-items li')).toHaveCount(2);
@@ -896,11 +898,11 @@ test('open-page path goes straight to Add and edits only after confirmation', as
   await page.locator('#review-back-btn').click();
   await expect(page.locator('#chipbox .chip')).toHaveCount(2);
   await page.locator('#build-btn').click();
-  await page.locator('#adjust-placement-btn').click();
-  await expect(page.locator('#wizard-progress-label')).toHaveText('Review');
+  await page.locator('#review-back-btn').click();
+  await expect(page.locator('#wizard-progress-label')).toHaveText('Build');
   const help = page.locator('#preview .cell.used').filter({ hasText: 'Help' });
   await help.press('ArrowRight');
-  await page.locator('#placement-back-btn').click();
+  await page.locator('#build-btn').click();
   await expect(page.locator('#review-placement')).toHaveText('The positions you chose');
   expect(editCalls).toBe(0);
 
@@ -955,7 +957,7 @@ test('new-page secondary path validates the name and retains it', async ({ page 
 
   await page.locator('#title-input').fill('Snacks');
   await page.locator('#wizard-title .wizard-next').click();
-  await expect(page.locator('#wizard-progress-label')).toHaveText('Setup');
+  await expect(page.locator('#wizard-progress-label')).toHaveText('Build');
   await expect(page.locator('#placement-title')).toContainText('Eating');
   await expect(page.locator('#placement-copy')).toContainText(
     'The new Snacks button will be added to Eating.',
@@ -1272,10 +1274,7 @@ test('a new topic page is not changed by live page monitoring', async ({ page })
   });
 
   await newItems(page, 'Dinosaurs');
-  await page.locator('.more-options > summary').click();
-  await page.locator('#layout-options-btn').click();
   await page.locator('#style-topic').click();
-  await page.locator('#layout-back-btn').click();
   await page.locator('#word-input').fill('Roar, Stomp, Chomp, Sleep, Run, Hide');
   await page.locator('#word-input').press('Enter');
   await expect(page.locator('#preview .cell.used')).toHaveCount(6);
@@ -1307,6 +1306,7 @@ test('AI suggestions use the chosen existing page and current buttons', async ({
   });
 
   await existingItems(page);
+  await openSuggestions(page);
   await expect(page.locator('#ai-go')).toBeEnabled();
   await page.locator('#ai-go').click();
 
@@ -1353,10 +1353,8 @@ test('AI topic phrases keep meaning-matched colors and rows', async ({ page }) =
   });
 
   await newItems(page, 'Harry Potter');
-  await page.locator('.more-options > summary').click();
-  await page.locator('#layout-options-btn').click();
   await page.locator('#style-topic').click();
-  await page.locator('#layout-back-btn').click();
+  await openSuggestions(page);
   await expect(page.locator('#ai-go')).toBeEnabled();
   await page.locator('#ai-go').click();
   await expect(page.locator('#ai-tray')).toBeVisible();
@@ -1536,16 +1534,13 @@ test('radio groups, headings, and placement work with a keyboard', async ({ page
   await page.locator('#title-input').fill('Keyboard Page');
   await page.locator('#wizard-title .wizard-next').click();
   await page.locator('#wizard-destination .wizard-next').click();
-  await page.locator('.more-options > summary').click();
-  await page.locator('#layout-options-btn').click();
   await page.locator('#style-words').focus();
   await page.locator('#style-words').press('ArrowRight');
   await expect(page.locator('#style-topic')).toHaveAttribute('aria-checked', 'true');
-  await page.locator('#layout-back-btn').click();
   await page.locator('#word-input').fill('How are you?, Great');
   await page.locator('#word-input').press('Enter');
   await page.locator('#build-btn').click();
-  await page.locator('#adjust-placement-btn').click();
+  await page.locator('#review-back-btn').click();
   const first = page.locator('#preview .cell.used').filter({ hasText: 'How are you?' });
   await first.press('ArrowRight');
   await expect(page.locator('#preview .cell.used').filter({ hasText: 'How are you?' }))
@@ -1576,7 +1571,7 @@ test('a page-layout error is visible and a later selection recovers', async ({ p
   await connect(page);
   await page.locator('#choose-page-btn').click();
   await page.locator('#parent-select').selectOption('Places');
-  await expect(page.locator('#wizard-placement .preview-frame')).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('#wizard-items .preview-frame')).toHaveAttribute('aria-busy', 'true');
   releaseFirstPlaces();
   await expect(page.locator('#build-error')).toContainText(
     'Couldn’t load the selected page.',
@@ -2052,8 +2047,7 @@ test.describe('changing and removing existing buttons', () => {
   }
 
   async function openExisting(page, label) {
-    await page.locator('#edit-existing-btn').click();
-    await expect(page.locator('#wizard-placement')).toBeVisible();
+    await expect(page.locator('#preview')).toBeVisible();
     await page.locator('#preview .cell.existing').filter({ hasText: label }).click();
     await expect(page.locator('#chip-editor')).toBeVisible();
   }
@@ -2061,7 +2055,6 @@ test.describe('changing and removing existing buttons', () => {
   test('a locked button says why, and cannot be selected', async ({ page }) => {
     await editablePage(page);
     await connect(page);
-    await page.locator('#edit-existing-btn').click();
 
     const locked = page.locator('#preview .cell.existing').filter({ hasText: 'Games' });
     await expect(locked).toHaveAttribute(
@@ -2076,7 +2069,6 @@ test.describe('changing and removing existing buttons', () => {
   test('a locked button is marked as locked on its face', async ({ page }) => {
     await editablePage(page);
     await connect(page);
-    await page.locator('#edit-existing-btn').click();
 
     // Which buttons can be touched has to be readable without hovering
     // anything: locked used to differ from eligible by border style alone.
@@ -2107,7 +2099,7 @@ test.describe('changing and removing existing buttons', () => {
     });
     await connect(page);
 
-    await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#preview .cell.existing.editable')).toHaveCount(0);
     await expect(page.locator('#edit-existing-summary')).toBeVisible();
     await expect(page.locator('#edit-existing-summary')).toContainText(
       'couldn’t read this page set’s saved button content',
@@ -2127,7 +2119,7 @@ test.describe('changing and removing existing buttons', () => {
     });
     await connect(page);
 
-    await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#preview .cell.existing.editable')).toHaveCount(0);
     await expect(page.locator('#edit-existing-summary')).toContainText(
       'Every button on this page opens a page or runs an action',
     );
@@ -2139,10 +2131,9 @@ test.describe('changing and removing existing buttons', () => {
     await openExisting(page, 'pear');
     await page.locator('#edit-remove').click();
     await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
-    await page.locator('#placement-back-btn').click();
 
     await expect(page.locator('#edit-existing-summary')).toContainText('Pending:');
-    await expect(page.locator('#edit-existing-btn')).toBeVisible();
+    await expect(page.locator('#preview .cell.existing.editable').first()).toBeVisible();
   });
 
   test('a change and a removal are named in review and sent as one edit', async ({ page }) => {
@@ -2184,7 +2175,6 @@ test.describe('changing and removing existing buttons', () => {
     await page.locator('#edit-remove').click();
     await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
 
-    await page.locator('#placement-back-btn').click();
     await expect(page.locator('#wizard-items')).toBeVisible();
     await expect(page.locator('#edit-existing-summary')).toHaveText(
       'Pending: change 1 and remove 1 button on eating.',
@@ -2242,7 +2232,6 @@ test.describe('changing and removing existing buttons', () => {
     await page.locator('#edit-revert').click();
     await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(0);
 
-    await page.locator('#placement-back-btn').click();
     await expect(page.locator('#edit-existing-summary')).toBeHidden();
     await page.locator('#build-btn').click();
     await expect(page.locator('#items-error')).toHaveText(
@@ -2264,7 +2253,7 @@ test.describe('changing and removing existing buttons', () => {
     await connect(page);
     await openExisting(page, 'pear');
     await page.locator('#edit-remove').click();
-    await page.locator('#placement-back-btn').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
     await page.locator('#build-btn').click();
 
     await expect(page.locator('#review-action')).toHaveText('Remove 1 button on Eating');
@@ -2289,7 +2278,6 @@ test.describe('changing and removing existing buttons', () => {
   test('the editor works with a keyboard alone', async ({ page }) => {
     await editablePage(page);
     await connect(page);
-    await page.locator('#edit-existing-btn').click();
     const target = page.locator('#preview .cell.existing').filter({ hasText: 'aple' });
     await target.focus();
     await target.press('Enter');
@@ -2305,7 +2293,8 @@ test.describe('changing and removing existing buttons', () => {
     await connect(page);
     await openExisting(page, 'pear');
     await page.locator('#edit-remove').click();
-    await page.locator('#placement-back-btn').click();
+    // The removal is recorded when the dialog closes; wait for the grid to show it.
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
 
     // A pending removal is never autosaved, so the leave prompt is the only
     // thing between the user and losing it.
@@ -2320,7 +2309,6 @@ test.describe('changing and removing existing buttons', () => {
   test('the change editor has no serious or critical accessibility violations', async ({ page }) => {
     await editablePage(page);
     await connect(page);
-    await page.locator('#edit-existing-btn').click();
     expect(await blockingViolations(page)).toEqual([]);
 
     await page.locator('#preview .cell.existing').filter({ hasText: 'aple' }).click();
@@ -2330,7 +2318,7 @@ test.describe('changing and removing existing buttons', () => {
 
     await page.locator('#preview .cell.existing').filter({ hasText: 'pear' }).click();
     await page.locator('#edit-remove').click();
-    await page.locator('#placement-back-btn').click();
+    await expect(page.locator('#preview .cell.marked-removed')).toHaveCount(1);
     await page.locator('#build-btn').click();
     await expect(page.locator('#review-removals li')).toHaveCount(1);
     expect(await blockingViolations(page)).toEqual([]);
@@ -2432,7 +2420,6 @@ test.describe('moving buttons and undoing an applied edit', () => {
       });
     });
     await connect(page);
-    await page.locator('#edit-existing-btn').click();
 
     const apple = page.locator('#preview .cell.existing').filter({ hasText: 'aple' });
     await apple.focus();
@@ -2445,7 +2432,6 @@ test.describe('moving buttons and undoing an applied edit', () => {
     await expect(moved).toHaveAttribute('aria-label', /Moved here from row 1, column 1/);
     await expect(page.locator('#preview [data-slot="0"]')).toHaveText('');
 
-    await page.locator('#placement-back-btn').click();
     await expect(page.locator('#edit-existing-summary')).toHaveText(
       'Pending: move 1 button on eating.',
     );
@@ -2482,7 +2468,6 @@ test.describe('moving buttons and undoing an applied edit', () => {
       });
     });
     await connect(page);
-    await page.locator('#edit-existing-btn').click();
 
     // Arrow keys are the keyboard equivalent of dropping one onto the other.
     const apple = page.locator('#preview .cell.existing').filter({ hasText: 'aple' });
@@ -2492,7 +2477,6 @@ test.describe('moving buttons and undoing an applied edit', () => {
     await expect(page.locator('#preview [data-slot="1"]')).toHaveText(/aple/);
     await expect(page.locator('#preview [data-slot="0"]')).toHaveText(/pear/);
 
-    await page.locator('#placement-back-btn').click();
     await page.locator('#build-btn').click();
     await expect(page.locator('#review-action')).toHaveText('Move 2 buttons on Eating');
     await page.locator('#confirm-update-btn').click();
@@ -2503,7 +2487,6 @@ test.describe('moving buttons and undoing an applied edit', () => {
   test('a locked button is never moved and never landed on', async ({ page }) => {
     await movablePage(page);
     await connect(page);
-    await page.locator('#edit-existing-btn').click();
 
     const locked = page.locator('#preview .cell.existing').filter({ hasText: 'Games' });
     await expect(locked).not.toHaveAttribute('draggable', 'true');
@@ -2524,11 +2507,9 @@ test.describe('moving buttons and undoing an applied edit', () => {
     // and the page reports only cell 3 as safe to write to.
     await expect(page.locator('#capacity')).toHaveText('1 space available');
 
-    await page.locator('#edit-existing-btn').click();
     const apple = page.locator('#preview .cell.existing').filter({ hasText: 'aple' });
     await apple.focus();
     await apple.press('ArrowDown');
-    await page.locator('#placement-back-btn').click();
 
     // Cell 0 is now free and cell 3 is taken, so the count is unchanged — but
     // the space that is offered has moved with the button.
@@ -2617,7 +2598,7 @@ test.describe('moving buttons and undoing an applied edit', () => {
       'fresh TD Snap symbol search',
     );
     // An undo has no placement to adjust.
-    await expect(page.locator('#adjust-placement-btn')).toBeHidden();
+    await expect(page.locator('#review-placement-section')).toBeHidden();
     expect(calls.undo).toBe(0);
 
     await page.locator('#confirm-update-btn').click();
@@ -2765,7 +2746,7 @@ test.describe('exported file adds to an existing page', () => {
     await expect(page.locator('#preview .cell.existing')).toHaveAttribute(
       'title', 'AAC Editor only adds buttons in exported files.',
     );
-    await expect(page.locator('#edit-existing-btn')).toBeHidden();
+    await expect(page.locator('#preview .cell.existing.editable')).toHaveCount(0);
 
     await page.locator('#word-input').fill('Chips, Juice');
     await page.locator('#word-input').press('Enter');
@@ -2835,10 +2816,7 @@ test.describe('exported file adds to an existing page', () => {
     await expect(page.locator('#destination-error')).toBeHidden();
     await page.locator('#wizard-destination .wizard-next').click();
     // Changing the layout must not move the link back onto the full page.
-    await page.locator('.more-options summary').click();
-    await page.locator('#layout-options-btn').click();
     await page.locator('#style-topic').click();
-    await page.locator('#layout-back-btn').click();
     await page.locator('#word-input').fill('Can I have chips?');
     await page.locator('#word-input').press('Enter');
     await page.locator('#build-btn').click();
@@ -2943,7 +2921,6 @@ test('real TD Snap edit is explicit opt-in', async ({ page }) => {
 test.describe('importing a word list', () => {
   async function openImport(page) {
     await existingItems(page);
-    await page.locator('.more-options > summary').click();
     await page.locator('#import-list-btn').click();
     await expect(page.locator('#import-dialog')).toBeVisible();
   }
@@ -3157,7 +3134,6 @@ test.describe('duplicates elsewhere in the page set', () => {
   test('an import names what already exists elsewhere', async ({ page }) => {
     await withVocabulary(page, { more: ['Core Words'], help: ['Core Words'] });
     await existingItems(page);
-    await page.locator('.more-options > summary').click();
     await page.locator('#import-list-btn').click();
 
     await page.locator('#import-text').fill('more\nhelp\nkayak');
@@ -3181,13 +3157,7 @@ test.describe('duplicates elsewhere in the page set', () => {
  * words quietly.
  */
 test.describe('reusable topic templates', () => {
-  // More options may already be open from an earlier step in the same test;
-  // clicking the summary again would close it.
   async function openTemplates(page) {
-    const options = page.locator('.more-options');
-    if (!(await options.evaluate((node) => node.open))) {
-      await options.locator('> summary').click();
-    }
     await page.locator('#templates-btn').click();
     await expect(page.locator('#templates-dialog')).toBeVisible();
   }
@@ -3204,10 +3174,7 @@ test.describe('reusable topic templates', () => {
     });
 
     await newItems(page, 'Swimming');
-    await page.locator('.more-options > summary').click();
-    await page.locator('#layout-options-btn').click();
     await page.locator('#style-topic').click();
-    await page.locator('#layout-back-btn').click();
     await page.locator('#word-input').fill('Splash, Jump in, Too cold');
     await page.locator('#word-input').press('Enter');
     await expect(page.locator('#chipbox .chip')).toHaveCount(3);
@@ -3490,7 +3457,7 @@ test.describe('queueing several pages and applying them together', () => {
 
     await page.locator('#queue-review-btn').click();
     await expect(page.locator('#step-result')).toBeVisible();
-    await expect(page.locator('#result-eyebrow')).toHaveText('Review');
+    await expect(page.locator('#result-eyebrow')).toHaveText('Check');
     await expect(page.locator('#review-action')).toContainText('Apply 2 queued pages');
     await expect(page.locator('#review-queue li')).toHaveCount(2);
     await expect(page.locator('#review-queue li').first()).toContainText('Eating');
@@ -3690,6 +3657,7 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
   }
 
   async function ready(page) {
+    await openSuggestions(page);
     await expect(page.locator('#ai-go')).toBeEnabled();
   }
 
@@ -3728,6 +3696,7 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
       }),
     });
     await existingItems(page);
+    await openSuggestions(page);
 
     await expect(page.locator('#ai-state-pill')).toHaveText('Not available');
     await expect(page.locator('#ai-summary')).toContainText("aren't available");
@@ -3749,6 +3718,7 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
       }),
     });
     await existingItems(page);
+    await openSuggestions(page);
 
     await expect(page.locator('#ai-state-pill')).toHaveText('Setup needed');
     await expect(page.locator('#ai-download-btn')).toBeVisible();
@@ -3801,6 +3771,7 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
       return fulfillJson(route, { ok: true, download });
     });
     await existingItems(page);
+    await openSuggestions(page);
 
     await page.locator('#ai-download-btn').click();
     // The work is described while it runs, and the editor keeps working.
@@ -3811,6 +3782,7 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
 
     await expect(page.locator('#ai-state-pill')).toHaveText('Ready', { timeout: 5000 });
     await expect(page.locator('#ai-status')).toContainText('ready');
+    await openSuggestions(page);
     await expect(page.locator('#ai-go')).toBeEnabled();
   });
 
@@ -3831,6 +3803,7 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
       });
     });
     await existingItems(page);
+    await openSuggestions(page);
 
     await page.locator('#ai-download-btn').click();
     await expect(page.locator('#ai-download-status')).toContainText(
@@ -3846,6 +3819,7 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
       status: readyStatus({ ollama: { reachable: true, models: ['qwen2.5:7b', 'phi4'] } }),
     });
     await existingItems(page);
+    await openSuggestions(page);
     await openSettings(page);
     await page.locator('#ai-advanced-summary').click();
 
@@ -4330,6 +4304,7 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
     });
 
     await newItems(page, 'Snacks');
+    await openSuggestions(page);
 
     const row = page.locator('#ai-model-choice-row');
     await expect(row).toBeVisible();
@@ -4393,5 +4368,145 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
       .getByRole('button', { name: /^Edit Kale/ }).click();
     await expect(page.locator('#edit-ai-field')).toBeVisible();
     expect(await blockingViolations(page)).toEqual([]);
+  });
+});
+
+/* First run: one question, remembered, and every answer lands in a working
+   editor with every tool present. The answer shapes hints only. */
+test.describe('welcome and how much help to show', () => {
+  test('a first run asks one question, and the answer is remembered', async ({ page }) => {
+    const store = await mockSettings(page, { firstRun: true });
+    await mockTD(page);
+    await page.goto(BASE_URL);
+    await expect(page.locator('#step-welcome')).toBeVisible();
+    await expect(page.locator('#welcome-heading')).toBeFocused();
+    await expect(page.locator('.wizard-progress')).toBeHidden();
+    await expect(page.locator('#step-load')).toBeHidden();
+    await capture(page, 'welcome.png');
+    expect(await blockingViolations(page)).toEqual([]);
+
+    // One tab stop, arrow keys move the choice.
+    const some = page.locator('#step-welcome [data-level="some"]');
+    await some.focus();
+    await some.press('ArrowUp');
+    await expect(page.locator('#step-welcome [data-level="new"]')).toHaveAttribute('aria-checked', 'true');
+    await page.locator('#welcome-start-btn').click();
+
+    await expect(page.locator('#step-load')).toBeVisible();
+    await expect(page.locator('#wizard-progress-label')).toHaveText('Connect');
+    await expect(page.locator('#connection-help-details')).toHaveAttribute('open', '');
+    await expect.poll(() => store.preferences.experience).toBe('new');
+
+    // The next launch goes straight to connecting.
+    await page.goto(BASE_URL);
+    await expect(page.locator('#step-load')).toBeVisible();
+    await expect(page.locator('#step-welcome')).toBeHidden();
+  });
+
+  test('Skip lands in the usual editor and is remembered too', async ({ page }) => {
+    const store = await mockSettings(page, { firstRun: true });
+    await mockTD(page);
+    await page.goto(BASE_URL);
+    await page.locator('#welcome-skip-btn').click();
+    await expect(page.locator('#step-load')).toBeVisible();
+    await expect.poll(() => store.preferences.experience).toBe('some');
+    await page.locator('#live-connect-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await expect(page.locator('#workspace-tips')).toBeHidden();
+  });
+
+  test('a link that names an app is not interrupted', async ({ page }) => {
+    await mockSettings(page, { firstRun: true });
+    await mockTD(page);
+    await page.goto(`${BASE_URL}/?provider=tdsnap`);
+    await expect(page.locator('#step-load')).toBeVisible();
+    await expect(page.locator('#step-welcome')).toBeHidden();
+  });
+
+  test('somebody new gets the tips once, and can bring them back', async ({ page }) => {
+    const store = await mockSettings(page, { preferences: { experience: 'new' } });
+    await mockTD(page);
+    await connect(page);
+    await expect(page.locator('#workspace-tips')).toBeVisible();
+    await expect(page.locator('#preview-hint')).toBeVisible();
+    await page.locator('#word-input').fill('apple, pear, more');
+    await page.locator('#word-input').press('Enter');
+    await capture(page, 'build-new-user.png');
+    expect(await blockingViolations(page)).toEqual([]);
+    await page.locator('#tips-dismiss').click();
+    await expect(page.locator('#workspace-tips')).toBeHidden();
+    await expect(page.locator('#word-input')).toBeFocused();
+    await expect.poll(() => store.preferences.tips_seen).toBe(true);
+
+    await page.locator('#help-menu > summary').click();
+    await page.locator('#help-tour-btn').click();
+    await expect(page.locator('#workspace-tips')).toBeVisible();
+    await expect(page.locator('#tips-heading')).toBeFocused();
+
+    await page.goto(BASE_URL);
+    await page.locator('#live-connect-btn').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await expect(page.locator('#workspace-tips')).toBeHidden();
+  });
+
+  test('somebody who builds page sets often gets fewer hints and every tool', async ({ page }) => {
+    await mockSettings(page, { preferences: { experience: 'expert' } });
+    await mockTD(page);
+    await connect(page);
+    await expect(page.locator('#ai-panel')).toHaveAttribute('open', '');
+    await expect(page.locator('#preview-hint')).toBeHidden();
+    await expect(page.locator('#wizard-items .expert-only')).toBeVisible();
+    await expect(page.locator('#workspace-tips')).toBeHidden();
+    // Hints go; controls stay.
+    for (const id of ['#style-topic', '#import-list-btn', '#templates-btn', '#create-page-btn',
+      '#choose-page-btn', '#build-btn']) {
+      await expect(page.locator(id)).toBeVisible();
+    }
+  });
+
+  test('Help reopens the question and returns to the same place', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+    await connect(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+
+    await page.locator('#help-menu > summary').click();
+    await page.locator('#help-level-btn').click();
+    await expect(page.locator('#step-welcome')).toBeVisible();
+    await expect(page.locator('#step-welcome [data-level="some"]')).toHaveAttribute('aria-checked', 'true');
+    await page.locator('#step-welcome [data-level="expert"]').click();
+    await page.locator('#welcome-start-btn').click();
+
+    await expect(page.locator('#wizard-items')).toBeVisible();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(1);
+    await expect(page.locator('#ai-panel')).toHaveAttribute('open', '');
+    await expect.poll(() => store.preferences.experience).toBe('expert');
+  });
+
+  test('the saved answer is listed, and clearing it brings the welcome back', async ({ page }) => {
+    await mockSettings(page, { preferences: { experience: 'new' } });
+    await mockTD(page);
+    await page.goto(BASE_URL);
+    await page.locator('#settings-panel-btn').click();
+    await expect(page.locator('#settings-panel-list')).toContainText('How much help you asked for');
+    await expect(page.locator('#settings-panel-list')).toContainText('New to this');
+    await page.locator('#settings-clear-btn').click();
+    await expect(page.locator('#settings-panel-status')).toContainText('Cleared');
+    await page.goto(BASE_URL);
+    await expect(page.locator('#step-welcome')).toBeVisible();
+  });
+
+  test('the page is on the Build screen, and review goes back to it', async ({ page }) => {
+    await mockTD(page);
+    await connect(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    await expect(page.locator('#preview .cell.used')).toHaveText(/apple/);
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#wizard-progress-label')).toHaveText('Check');
+    await page.locator('#review-back-btn').click();
+    await expect(page.locator('#wizard-progress-label')).toHaveText('Build');
+    await expect(page.locator('#preview .cell.used')).toHaveText(/apple/);
   });
 });

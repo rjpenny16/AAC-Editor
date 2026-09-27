@@ -14,6 +14,18 @@ const PREFERENCE_LABELS = {
   ai_grounding: "Wikipedia lookup preference",
   ai_style: "Whether suggestions match this page set's wording",
   ai_model: "Which built-in AI model to use",
+  experience: "How much help you asked for",
+  tips_seen: "Tips for the Build screen",
+};
+
+/* Values that mean nothing on their own are described instead of printed. */
+const VALUE_LABELS = {
+  experience: {
+    new: "New to this: tips and hints",
+    some: "Edited AAC pages before: hints, no tips",
+    expert: "Builds page sets often: fewer hints",
+  },
+  tips_seen: { true: "Dismissed" },
 };
 
 function renderEntry(list, term, description) {
@@ -43,7 +55,11 @@ async function renderPanel() {
     return;
   }
   preferenceEntries.forEach(([key, value]) => {
-    renderEntry(list, PREFERENCE_LABELS[key] || key, String(value));
+    renderEntry(
+      list,
+      PREFERENCE_LABELS[key] || key,
+      VALUE_LABELS[key]?.[String(value)] || String(value),
+    );
   });
   if (draft) {
     const count = Array.isArray(draft.items) ? draft.items.length : 0;
