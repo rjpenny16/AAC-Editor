@@ -110,7 +110,6 @@ function selectProvider(provider) {
   document.querySelectorAll("[data-live-only]").forEach((element) => {
     element.hidden = file;
   });
-  $("layout-options-btn").hidden = grid3;
   $("grid3-limits").hidden = !grid3;
   if (grid3) void loadGrid3Guidance();
   $("connect-task-copy").textContent = file

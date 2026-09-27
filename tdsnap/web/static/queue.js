@@ -177,7 +177,7 @@ function prepareBatchReview() {
     knownPageTitles: Object.freeze([]),
   });
 
-  $("result-eyebrow").textContent = "Review";
+  $("result-eyebrow").textContent = "Check";
   $("result-heading").textContent = `Check all ${pages} page${pages === 1 ? "" : "s"} before they are applied`;
   $("result-sub").textContent =
     "Every page this batch touches is named below, in the order it will be applied. "
@@ -204,7 +204,6 @@ function prepareBatchReview() {
     "review-removals-wrap", "review-placement-section"].forEach((id) => {
     $(id).hidden = true;
   });
-  $("adjust-placement-btn").hidden = true;
   $("queue-add-btn").hidden = true;
   $("review-queue-wrap").hidden = false;
 

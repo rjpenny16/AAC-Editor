@@ -492,33 +492,4 @@ $("choose-page-btn").addEventListener("click", () => {
 });
 $("create-page-btn").addEventListener("click", () => startNewPage("items"));
 
-/* The placement grid is the one screen that shows the page as it really is, so
-   it is where an existing button is changed, moved, or removed. It is reachable
-   from the word list as well as from review; the Back button follows whichever
-   route the user took rather than always landing on review. */
-function showPlacement(from) {
-  state.placementReturn = from;
-  const editing = from === "items";
-  const movable = state.canEditExisting;
-  $("placement-heading").textContent = editing
-    ? "Change, move, or remove existing buttons"
-    : "Adjust button placement";
-  $("placement-lead").textContent = editing
-    ? "Select a button to change what it says or remove it, or drag it to another cell. " +
-      "Drop it on another button to have the two trade places. Buttons that open a page " +
-      "or run an action stay locked, and say why."
-    : movable
-      ? "Drag buttons to the exact cells you want, or focus one and use the arrow keys. " +
-        "Existing buttons move the same way; drop one on another to trade places."
-      : "Drag buttons to the exact cells you want, or focus one and use the arrow keys. " +
-        "Existing buttons stay locked.";
-  $("placement-back-btn").textContent = editing
-    ? "Back to words and phrases"
-    : "Back to review";
-  renderPreview();
-  show("placement");
-}
-
-$("edit-existing-btn").addEventListener("click", () => showPlacement("items"));
-
-export { openSlots, placementSlots, renderPlacementOrder, renderPreview, showPlacement };
+export { openSlots, placementSlots, renderPlacementOrder, renderPreview };

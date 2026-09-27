@@ -16,7 +16,7 @@ import {
   emptyEdits, movePayload,
 } from "./edits.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
-import { placementSlots, renderPreview, showPlacement } from "./preview.js";
+import { placementSlots, renderPreview } from "./preview.js";
 import { clearQueue, syncQueueControls } from "./queue.js";
 import { renderBatchResult, renderResult } from "./result.js";
 import { FUNCTIONS } from "./state.js";
@@ -172,7 +172,7 @@ function prepareReview() {
   const removed = edits.removals.length;
   const moved = edits.moves.length;
   const destructive = Boolean(changed || removed || moved);
-  $("result-eyebrow").textContent = "Review";
+  $("result-eyebrow").textContent = "Check";
   $("result-heading").textContent = destructive
     ? "Check every change before it is made"
     : "Check positions before adding";
@@ -222,7 +222,6 @@ function prepareReview() {
   $("review-undo-note").hidden = true;
   $("review-queue-wrap").hidden = true;
   $("review-placement-section").hidden = false;
-  $("adjust-placement-btn").hidden = false;
   syncQueueControls();
   syncReviewPlacement();
   show("review");
@@ -268,7 +267,7 @@ function prepareUndoReview() {
 
   const resultLabel = editSummary({ ...counts, page: undo.page })
     || `Undo the last change on ${undo.page}`;
-  $("result-eyebrow").textContent = "Review";
+  $("result-eyebrow").textContent = "Check";
   $("result-heading").textContent = "Check what undoing will put back";
   $("result-sub").textContent =
     "Every button this undo touches is named below. Nothing changes until you confirm.";
@@ -320,7 +319,6 @@ function prepareUndoReview() {
   // The placement grid shows the page as an *edit* will leave it; an undo is
   // described by its lists instead of re-deriving a preview of the way back.
   $("review-placement-section").hidden = true;
-  $("adjust-placement-btn").hidden = true;
   $("review-queue-wrap").hidden = true;
   $("queue-add-btn").hidden = true;
   $("queue-add-note").hidden = true;
@@ -393,19 +391,6 @@ buildForm.addEventListener("submit", (event) => {
 $("review-back-btn").addEventListener("click", () => {
   state.pendingEdit = null;
   show("items");
-});
-
-$("adjust-placement-btn").addEventListener("click", () => {
-  showPlacement("review");
-});
-
-$("placement-back-btn").addEventListener("click", () => {
-  if (state.placementReturn === "items") {
-    state.pendingEdit = null;
-    show("items");
-    return;
-  }
-  prepareReview();
 });
 
 $("confirm-update-btn").addEventListener("click", async () => {

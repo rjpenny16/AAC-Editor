@@ -23,23 +23,25 @@ import {
 
 function headingFor(step) {
   return {
+    welcome: "welcome-heading",
     connect: "load-heading",
     title: "title-heading",
     destination: "destination-heading",
     items: "items-heading",
-    layout: "layout-heading",
-    placement: "placement-heading",
     review: "result-heading",
     result: "result-heading",
   }[step];
 }
 
+/* Four stages, named for what the person is doing: connect to their app,
+   build on the page, check what will change, done. Naming a new page and
+   choosing where it goes are part of building it. */
 function updateProgress(step) {
   const stage = step === "result" ? "done"
-    : ["review", "placement"].includes(step) ? "review"
-      : ["items", "layout"].includes(step) ? "add" : "setup";
-  const labels = { setup: "Setup", add: "Add", review: "Review", done: "Done" };
-  const stages = ["add", "review", "done"];
+    : step === "review" ? "check"
+      : ["title", "destination", "items"].includes(step) ? "build" : "connect";
+  const labels = { connect: "Connect", build: "Build", check: "Check", done: "Done" };
+  const stages = ["connect", "build", "check", "done"];
   const index = stages.indexOf(stage);
   document.querySelectorAll("#wizard-progress [data-stage]").forEach((item) => {
     const itemIndex = stages.indexOf(item.dataset.stage);
@@ -78,7 +80,8 @@ function show(step, focus = true) {
   document.body.dataset.step = step;
   if (step === "items") applyPendingDraftResume();
 
-  const buildSteps = ["title", "destination", "items", "layout", "placement"];
+  const buildSteps = ["title", "destination", "items"];
+  $("step-welcome").hidden = step !== "welcome";
   $("step-load").hidden = step !== "connect";
   $("step-build").hidden = !buildSteps.includes(step);
   $("step-result").hidden = !["review", "result"].includes(step);
@@ -87,11 +90,12 @@ function show(step, focus = true) {
   });
   updateProgress(step);
 
-  const active = step === "connect"
-    ? $("step-load")
-    : ["review", "result"].includes(step)
-      ? $("step-result")
-      : $(`wizard-${step}`);
+  const active = {
+    welcome: $("step-welcome"),
+    connect: $("step-load"),
+    review: $("step-result"),
+    result: $("step-result"),
+  }[step] || $(`wizard-${step}`);
   if (active && typeof active.scrollIntoView === "function") {
     active.scrollIntoView({ behavior: "auto", block: "start" });
   }
@@ -124,7 +128,7 @@ function setOperation(operation) {
       : "The page open in TD Snap is selected. Choose another page if this vocabulary belongs elsewhere."
     : "Choose the existing page where the new page's link belongs.";
   $("preview-hint").textContent = "Drag buttons to move them, or use the arrow keys.";
-  $("build-btn-label").textContent = "Review changes";
+  $("build-btn-label").textContent = "Check changes";
   $("current-page-label").textContent = existing
     ? `Adding to ${titleOf(state.parentId)}`
     : `Creating ${$("title-input").value.trim() || "a new page"}`;
@@ -348,8 +352,6 @@ $("style-topic").addEventListener("click", () => {
   setPageStyle("topic");
   if (state.wizardStep === "items") $("word-input").focus();
 });
-$("layout-options-btn").addEventListener("click", () => show("layout"));
-$("layout-back-btn").addEventListener("click", () => show("items"));
 $("auto-topic-layout").addEventListener("click", () => {
   state.autoTopicRows = true;
   autoFormatTopicRows();

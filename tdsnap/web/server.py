@@ -244,6 +244,10 @@ _PREFERENCE_SCHEMA = {
     "ai_grounding": {"bool": True},
     "ai_style": {"bool": True},
     "ai_model": {"max_len": 20},
+    # How much guidance the person asked for on the welcome screen. It shapes
+    # hints and which optional panels start open; it never hides a control.
+    "experience": {"choices": {"new", "some", "expert"}, "max_len": 10},
+    "tips_seen": {"bool": True},
 }
 
 

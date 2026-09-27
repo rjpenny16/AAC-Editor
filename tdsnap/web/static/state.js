@@ -62,7 +62,6 @@ const state = {
   // payload its own review produced, so a queued page is reviewed material
   // rather than something re-derived from live state later. See queue.js.
   queue: [],
-  placementReturn: "review", // which step the placement editor returns to
   newPageFrom: "", // the step "Create a new page" was chosen from; Back returns there
   availableSlots: null,
   grid3Cells: [],
@@ -104,6 +103,9 @@ const state = {
   // An exported-file session holds edits that exist only in AAC Editor's
   // temporary copy until the user saves it. Losing the tab loses them.
   fileUnsaved: false,
+  // How much guidance the person asked for on the welcome screen:
+  // "new" | "some" | "expert". Shapes hints only; see onboarding.js.
+  experience: "some",
   native: false, // running inside the app's own window (pywebview)?
   elevated: false,
   apiToken: "",

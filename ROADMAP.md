@@ -477,7 +477,7 @@ what a small model gets wrong stops before it becomes a button. — *met.*
 
 ---
 
-## Phase 7 — Onboarding and experience tailoring *(~1–2 weeks)*
+## Phase 7 — Onboarding and experience tailoring *(~1–2 weeks)* — **shipped**
 
 Deliberately placed after the UI churn of Phases 4–6, so it tailors a stable interface instead of
 being built twice. Phase 0 removed the premature README claim; this phase earns it back.
@@ -501,6 +501,10 @@ IDs and CSS classes that no longer exist. Re-derive the element map from the liv
 
 **Exit:** first-run users are asked once and can skip, landing in a working editor either way ·
 guided and expert produce visibly different but equally capable UIs · the README claim is true again.
+— *met, with one simplification: the three dimensions collapsed into one question ("How familiar
+are you with editing AAC pages?"), because three questions before the first screen was itself the
+kind of friction this phase exists to remove. The same release merged the placement and layout
+screens into one Build workspace, so there was a stable interface to tailor.*
 
 ---
 
