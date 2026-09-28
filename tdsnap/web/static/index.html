@@ -329,6 +329,7 @@
               <div class="tools-row">
                 <button type="button" id="import-list-btn" class="btn btn-ghost btn-compact">Import a word list</button>
                 <button type="button" id="templates-btn" class="btn btn-ghost btn-compact">Templates</button>
+                <button type="button" id="boards-btn" class="btn btn-ghost btn-compact">Open Board files</button>
               </div>
             </div>
 
@@ -674,6 +675,52 @@
     <div class="dialog-actions">
       <button type="button" id="import-add-btn" class="btn btn-primary" disabled>Add these buttons</button>
       <button type="submit" class="btn btn-ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="boards-dialog" class="chip-dialog import-dialog" aria-labelledby="boards-dialog-title">
+  <form method="dialog" id="boards-form">
+    <h2 id="boards-dialog-title">Open Board files</h2>
+    <p class="field-hint">Open Board Format (<code>.obf</code> for one board, <code>.obz</code>
+      for a set) is how AAC apps such as CoughDrop share vocabulary. Nothing is added or
+      saved until you review it.</p>
+
+    <section aria-labelledby="boards-import-heading">
+      <h3 id="boards-import-heading">Bring boards in</h3>
+      <div class="import-file-row">
+        <button type="button" id="boards-file-btn" class="btn btn-secondary btn-compact">Choose a board file</button>
+        <span id="boards-file-name" class="field-hint"></span>
+        <input id="boards-file" class="sr-only" type="file" accept=".obf,.obz,application/json,application/zip"
+          aria-label="Choose an Open Board .obf or .obz file">
+      </div>
+      <p id="boards-error" class="step-error" role="alert" tabindex="-1" hidden></p>
+      <div id="boards-read" hidden>
+        <div class="field" id="boards-pick-row">
+          <label for="boards-pick">Board</label>
+          <select id="boards-pick"></select>
+        </div>
+        <div id="boards-summary" class="import-summary" role="status" aria-live="polite"></div>
+        <div class="dialog-actions boards-actions">
+          <button type="button" id="boards-words-btn" class="btn btn-secondary">Add these words to this page</button>
+          <button type="button" id="boards-pages-btn" class="btn btn-primary" hidden>Add every board as linked pages</button>
+        </div>
+        <p id="boards-pages-note" class="field-hint"></p>
+      </div>
+    </section>
+
+    <section aria-labelledby="boards-export-heading" id="boards-export">
+      <h3 id="boards-export-heading">Save a copy as Open Board</h3>
+      <p id="boards-export-lead" class="field-hint"></p>
+      <div class="import-file-row">
+        <button type="button" id="boards-export-check" class="btn btn-secondary btn-compact"><span class="btn-label">See what an export includes</span></button>
+        <a id="boards-export-link" class="btn btn-primary btn-compact" hidden>Save as .obz</a>
+      </div>
+      <div id="boards-export-summary" class="import-summary" role="status" aria-live="polite" hidden></div>
+    </section>
+
+    <div class="dialog-actions">
+      <button type="submit" class="btn btn-ghost" value="close">Close</button>
     </div>
   </form>
 </dialog>

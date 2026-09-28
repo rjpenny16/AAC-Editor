@@ -5,14 +5,18 @@
         --parent-name "Home Page"           build a page + nav button
     python -m tdsnap verify <file>          run all safety checks on any file
     python -m tdsnap inspect <file>         show schema version, grid, tables
+    python -m tdsnap export-obz <file>      write the page set as Open Board (.obz)
+    python -m tdsnap import-obz <file> <boards.obz> --parent-name "Home Page"
+                                            add every board as linked pages
 """
 
 import argparse
+import os
 import sqlite3
 import sys
 from typing import Optional
 
-from . import builder, schema, validate
+from . import builder, obf, schema, validate
 from .errors import PagesetError
 from .pageset import Pageset, is_sqlite_file
 from .ticks import ticks_to_datetime
@@ -163,6 +167,92 @@ def _cmd_inspect(args) -> int:
     return 0
 
 
+def _print_skipped(skipped: list) -> None:
+    for entry in skipped:
+        who = f"{entry['label']!r} on {entry['board']!r}" if entry["label"] else repr(entry["board"])
+        print(f"  - {who} {entry['reason']}")
+
+
+def _cmd_export_obz(args) -> int:
+    conn = _open_readonly(args.pageset)
+    try:
+        schema.require_tables(conn)
+        boardset = obf.export_pageset(conn)
+    finally:
+        conn.close()
+    dest = args.output or os.path.splitext(args.pageset)[0] + ".obz"
+    if os.path.exists(dest) and os.path.samefile(dest, args.pageset):
+        raise PagesetError("Refusing to overwrite the page set; choose another output path.")
+    obf.write_obz(boardset, dest)
+    summary = obf.export_summary(boardset)
+    print(
+        f"Exported {summary['boards']} page(s), {summary['buttons']} button(s) and "
+        f"{summary['links']} link(s), starting from {summary['root']!r}."
+    )
+    for note in summary["notes"]:
+        print(f"note: {note}")
+    if summary["skipped"]:
+        print(f"Not exported ({len(summary['skipped'])}):")
+        _print_skipped(summary["skipped"])
+    print(f"Wrote {dest}")
+    return 0
+
+
+def _cmd_import_obz(args) -> int:
+    boardset = obf.read(args.boards)
+    with Pageset(args.pageset, cleanup=True) as ps:
+        if args.parent_id is not None:
+            parent_id = args.parent_id
+        else:
+            parent_id = ps.find_page_id_by_name(args.parent_name)
+        plan = obf.plan_import(
+            boardset,
+            grid=ps.grid_dimension(),
+            existing_titles=[title for _, title in ps.list_pages()],
+        )
+        baseline = validate.validate_pageset(ps.conn)
+        before = validate.table_snapshot(ps.conn)
+        report = builder.add_linked_pages(ps, plan, parent_id)
+        after = validate.table_snapshot(ps.conn)
+
+        result = validate.validate_pageset(ps.conn)
+        problems = (
+            validate.check_roundtrip(before, after)
+            + validate.validate_imported_pages(ps.conn, report)
+            + result["problems"]
+            + validate.new_warnings(baseline, result)
+        )
+        if problems:
+            print("Validation FAILED — no file was written:", file=sys.stderr)
+            for problem in problems:
+                print(f"  - {problem}", file=sys.stderr)
+            return 1
+        dest = ps.save_as(args.output)
+
+    counts = plan["counts"]
+    print(
+        f"Added {counts['pages']} page(s) with {counts['buttons']} button(s) and "
+        f"{counts['links']} link(s); {report['pages'][0]['title']!r} opens from "
+        f"page Id {parent_id}."
+    )
+    for page in plan["pages"]:
+        if page["renamed"]:
+            print(f"note: {page['name']!r} is called {page['title']!r}; that name was taken.")
+        if page["rearranged"]:
+            grid = page["source_grid"]
+            print(f"note: {page['title']!r} was a {grid['cols']}x{grid['rows']} board, "
+                  "so its buttons are in reading order.")
+    for note in plan["notes"]:
+        print(f"note: {note}")
+    if plan["skipped"]:
+        print(f"Not imported ({len(plan['skipped'])}):")
+        _print_skipped(plan["skipped"])
+    print("All validation checks passed.")
+    print(f"Wrote edited page set to: {dest}")
+    print("Import it into a TEST TD Snap user first — see docs/IMPORT_SAFETY.md.")
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="tdsnap",
@@ -210,6 +300,29 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     p_inspect.add_argument("pageset")
     p_inspect.set_defaults(func=_cmd_inspect)
+
+    p_export = sub.add_parser(
+        "export-obz", help="write a page set as an Open Board Format .obz (read-only)"
+    )
+    p_export.add_argument("pageset")
+    p_export.add_argument("-o", "--output", default=None,
+                          help="where to write the .obz (default: <name>.obz)")
+    p_export.set_defaults(func=_cmd_export_obz)
+
+    p_import = sub.add_parser(
+        "import-obz", help="add the boards of an .obz/.obf as new, linked pages"
+    )
+    p_import.add_argument("pageset")
+    p_import.add_argument("boards", help="the .obz or .obf to import")
+    target = p_import.add_mutually_exclusive_group(required=True)
+    target.add_argument("--parent-id", type=int, default=None,
+                        help="Id of the page the first board opens from")
+    target.add_argument("--parent-name", default=None,
+                        help="name of the page the first board opens from")
+    p_import.add_argument("-o", "--output", default=None,
+                          help="where to write the edited file "
+                               "(default: <name>.edited<ext>)")
+    p_import.set_defaults(func=_cmd_import_obz)
 
     args = parser.parse_args(argv)
     try:

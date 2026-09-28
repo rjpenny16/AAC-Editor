@@ -16,6 +16,7 @@ state.
 
 import contextlib
 import hashlib
+import io
 import json
 import os
 import secrets
@@ -33,7 +34,7 @@ from typing import Optional
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from werkzeug.exceptions import HTTPException
 
-from .. import __version__, builder, grid3, live, pageset, schema, uia, validate
+from .. import __version__, builder, grid3, live, obf, pageset, schema, uia, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import diagnostics, engines, grounding, localai, ollama, prompts, settings
@@ -53,6 +54,9 @@ MAX_PAGE_NAME_CHARS = 120
 MAX_AI_REQUEST_CHARS = 500
 MAX_LABEL_CHARS = 60
 MAX_MESSAGE_CHARS = 200
+# An .obz carries its pictures, so it can be far larger than the boards in it;
+# obf.read only ever reads the JSON, within its own bounds.
+MAX_BOARD_FILE_BYTES = 256 * 1024 * 1024
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
@@ -1387,6 +1391,231 @@ def download(session_id):
         download_name=f"{base}.edited{ext or '.sps'}",
         mimetype="application/octet-stream",
     )
+
+
+# ---------------------------------------------------------------------------
+# Open Board Format (.obf / .obz)
+
+
+def _board_upload():
+    """The uploaded board file as a board set, read without touching disk."""
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        raise PagesetError("No file was uploaded.")
+    if request.content_length and request.content_length > MAX_BOARD_FILE_BYTES:
+        raise PagesetError("That board file is larger than AAC Editor will open.")
+    filename = os.path.basename(upload.filename.replace("\\", "/"))
+    _bounded_text(filename, "filename", 255, required=True)
+    # Copied into a real temporary file rather than read from the upload
+    # stream: werkzeug hands over a SpooledTemporaryFile, which only gained
+    # seekable() in Python 3.11, and zipfile needs it.
+    with tempfile.TemporaryFile() as stream:
+        shutil.copyfileobj(upload.stream, stream)
+        stream.seek(0)
+        return filename, obf.read(stream)
+
+
+@app.post("/api/obf/read")
+def read_boards():
+    """Read an .obf or .obz and hand back its boards, for the word-list import.
+
+    Writes nothing and remembers nothing: the browser maps a board's speaking
+    buttons into the ordinary word list, and from there they go through the same
+    review and confirm as anything typed.
+    """
+    filename, boardset = _board_upload()
+    return jsonify({"ok": True, "filename": filename, "boardset": boardset})
+
+
+def _import_stash(session_dir: str) -> str:
+    return os.path.join(session_dir, "board-import.json")
+
+
+def _import_plan(current: str, boardset: dict, parent_page_id: int) -> tuple[dict, str]:
+    """Plan *boardset* against the session's current copy, with its fingerprint.
+
+    The fingerprint covers the plan itself and the parent page it links from, so
+    an apply that would land anywhere other than where the review said — a page
+    renamed, the parent's free cell taken, a new page with a clashing title — is
+    refused rather than quietly adjusted.
+    """
+    with contextlib.closing(sqlite3.connect(f"file:{current}?mode=ro", uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        grid = pageset.grid_dimension(conn)
+    titles = [page["title"] for page in _list_pages(current)]
+    plan = obf.plan_import(boardset, grid=grid, existing_titles=titles)
+    parent = _page_state(current, parent_page_id)
+    if not parent["free_slots"]:
+        raise PagesetError(
+            f"\u201c{parent['page']}\u201d has no empty space for the link to the imported "
+            "pages. Choose another page, or free a cell on it first."
+        )
+    plan["parent"] = {"id": parent_page_id, "title": parent["page"]}
+    digest = hashlib.sha256(json.dumps(
+        [plan, parent["fingerprint"], parent["free_slots"][0]],
+        sort_keys=True, ensure_ascii=False,
+    ).encode("utf-8")).hexdigest()
+    return plan, digest
+
+
+@app.post("/api/pageset/<session_id>/boards")
+def plan_board_import(session_id):
+    """Read an .obf/.obz and plan it as new, linked pages — the review half.
+
+    The board set is kept in the session directory until it is applied or
+    replaced, so the confirm step re-plans from exactly what was reviewed rather
+    than from a second upload the user never saw.
+    """
+    current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
+    try:
+        parent_page_id = int(request.form.get("parent_page_id", ""))
+    except ValueError as exc:
+        raise PagesetError("Choose the page the imported pages should open from.") from exc
+    parent_page_id = _bounded_int(parent_page_id, "parent_page_id", 1, 2**63 - 1)
+    filename, boardset = _board_upload()
+    plan, fingerprint = _import_plan(current, boardset, parent_page_id)
+    session = _sessions[session_id]
+    stash = {"filename": filename, "parent_page_id": parent_page_id, "boardset": boardset}
+    with session["lock"]:
+        handle, temporary = tempfile.mkstemp(prefix=".import-", dir=session["dir"])
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as temp_file:
+                json.dump(stash, temp_file, ensure_ascii=False)
+            os.replace(temporary, _import_stash(session["dir"]))
+        finally:
+            with contextlib.suppress(OSError):
+                os.remove(temporary)
+    return jsonify({"ok": True, "filename": filename, "plan": plan, "fingerprint": fingerprint})
+
+
+@app.post("/api/pageset/<session_id>/boards/apply")
+def apply_board_import(session_id):
+    """Write the reviewed import: every board a page, every link a page link.
+
+    The same shape as ``add_page``: a scratch copy, whole-file validation before
+    and after, a table-snapshot diff, the import's own checks — and nothing
+    replaces the session's ``current`` copy unless every one of them passes.
+    """
+    payload = _json_payload()
+    fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
+    if not fingerprint:
+        raise PagesetError("The review fingerprint is required. Review the import again.")
+    current = _current_path(session_id)
+    session = _sessions[session_id]
+    try:
+        with open(_import_stash(session["dir"]), encoding="utf-8") as handle:
+            stash = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise PagesetError(
+            "There is no reviewed import waiting. Choose the board file again."
+        ) from exc
+    plan, expected = _import_plan(current, stash["boardset"], stash["parent_page_id"])
+    if expected != fingerprint:
+        raise PagesetError(
+            "The page set changed after the import was reviewed. Review the import again."
+        )
+    scratch = os.path.join(session["dir"], "scratch")
+    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
+        baseline = validate.validate_pageset(ps.conn)
+        before = validate.table_snapshot(ps.conn)
+        report = builder.add_linked_pages(ps, plan, stash["parent_page_id"])
+        after = validate.table_snapshot(ps.conn)
+
+        result = validate.validate_pageset(ps.conn)
+        roundtrip = validate.check_roundtrip(before, after)
+        imported = validate.validate_imported_pages(ps.conn, report)
+        problems = (
+            roundtrip + imported + result["problems"] + validate.new_warnings(baseline, result)
+        )
+        checks = {
+            "sqlite_integrity": "pass",
+            "linkage_chains": "pass" if not problems else "fail",
+            "roundtrip_diff": "pass" if not roundtrip else "fail",
+        }
+        if problems:
+            return jsonify(
+                {"ok": False, "error": "Validation failed; nothing was saved.",
+                 "problems": problems, "checks": checks}
+            ), 422
+        ps.save_as(current, allow_source_overwrite=True)
+        session["edits"] += 1
+        _write_session_meta(
+            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
+        )
+        with contextlib.suppress(OSError):
+            os.remove(_import_stash(session["dir"]))
+    checks.update({"positions": "pass", "board_links": "pass", "navigation": "pass"})
+    pages = report["pages"]
+    return jsonify({
+        "ok": True,
+        "pages": len(pages),
+        "buttons": sum(len(page["button_ids"]) for page in pages),
+        "links": sum(1 for page in pages for spec in page["buttons"]
+                     if spec["link_unique_id"]),
+        "root": {"id": pages[0]["page_id"], "title": pages[0]["title"]},
+        "parent": plan["parent"],
+        "checks": checks,
+        "edits": session["edits"],
+    })
+
+
+def _exported_boards(path: str) -> dict:
+    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+        conn.row_factory = sqlite3.Row
+        return obf.export_pageset(conn)
+
+
+def _obz_response(boardset: dict, name: str):
+    base = os.path.splitext(name)[0] or "page-set"
+    return send_file(
+        io.BytesIO(obf.to_obz_bytes(boardset)),
+        as_attachment=True,
+        download_name=f"{base}.obz",
+        mimetype="application/zip",
+    )
+
+
+def _live_pageset_path() -> str:
+    path = live._active_pageset_path(request.args.get("page") or None)
+    if not path:
+        raise PagesetError(
+            "AAC Editor could not tell which page set TD Snap has open, so there is "
+            "nothing to export. Open the page set in TD Snap and connect again."
+        )
+    return path
+
+
+@app.get("/api/pageset/<session_id>/export")
+def export_summary(session_id):
+    """What an Open Board export of this file would carry, and what it would not."""
+    current = _current_path(session_id)
+    return jsonify({"ok": True, **obf.export_summary(_exported_boards(current))})
+
+
+@app.get("/api/pageset/<session_id>/export.obz")
+def export_obz(session_id):
+    current = _current_path(session_id)
+    return _obz_response(_exported_boards(current), _sessions[session_id]["filename"])
+
+
+@app.get("/api/tdsnap/export")
+def live_export_summary():
+    """The live counterpart: read the page set TD Snap has open, read-only."""
+    try:
+        summary = obf.export_summary(_exported_boards(_live_pageset_path()))
+    except sqlite3.Error as exc:
+        raise PagesetError(f"TD Snap's page set could not be read: {exc}") from exc
+    return jsonify({"ok": True, **summary})
+
+
+@app.get("/api/tdsnap/export.obz")
+def live_export_obz():
+    path = _live_pageset_path()
+    try:
+        boardset = _exported_boards(path)
+    except sqlite3.Error as exc:
+        raise PagesetError(f"TD Snap's page set could not be read: {exc}") from exc
+    return _obz_response(boardset, "TD Snap page set")
 
 
 @app.get("/api/ai/status")

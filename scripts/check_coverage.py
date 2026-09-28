@@ -44,6 +44,10 @@ FLOORS = {
     # against Grid 3, so the floor covers the planning, verification, rollback,
     # and undo logic that the fake Edit Mode in tests/test_grid3.py exercises.
     "tdsnap/grid3.py": 55,
+    # Phase 9. Open Board import and export: pure, file in and file out, so it
+    # carries one of the highest floors in the project. It decides what an imported
+    # board becomes in someone's page set and what an export claims to carry.
+    "tdsnap/obf.py": 94,
 }
 
 

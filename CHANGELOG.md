@@ -11,6 +11,40 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Added — Open Board Format (ROADMAP Phase 9)
+
+- **Open Board files** on the Build screen reads `.obf` and `.obz`, the AAC
+  interchange format CoughDrop and several other tools write. One board's speaking
+  buttons join the word list for the open page on any connection (TD Snap, Grid 3,
+  or an exported file), in the board's own cells when the page is big enough, and
+  go through the ordinary review.
+- **A whole board set becomes linked pages** in an exported file: one new page per
+  board, buttons in their board's row and column (reading order when a board is
+  bigger than the page set's grid), links between boards kept as page links, and
+  the first board linked from the chosen page. The review names every page, every
+  rename, and everything left out; the confirm re-plans from the file it reviewed
+  and refuses if the page set changed since. Written in one transaction by
+  `builder.add_linked_pages` and checked by `validate.validate_imported_pages`:
+  every page's chain, every button's cell, every link's target, and the parent's
+  link to the first page.
+- **Export to `.obz`** from an exported file (including edits made in AAC Editor)
+  or from the page set TD Snap has open, read only. Labels, spoken messages,
+  layout, and links to the page set's own pages; **no symbols**, because TD Snap's
+  symbols are licensed content, and the dialog, the file's manifest, and the README
+  all say so. The dialog shows what an export includes, and what it leaves out, by
+  name, before saving.
+- `tdsnap export-obz` and `tdsnap import-obz` on the command line.
+- Everything that cannot come across in either direction is named with its board,
+  label, and reason: pictures, actions (`:clear`, spelling, TD Snap commands), web
+  links, links outside the file, non-function border colours, hidden and
+  picture-only buttons, over-long labels and messages, and repeated labels.
+- Reading is bounded (entries, bytes per board, total bytes, grid size, board
+  count) and never extracts to disk.
+- `tdsnap/obf.py` carries a 94% coverage floor. Round-trip property tests
+  generate board sets from a seeded source and check `.obz` bytes → board set,
+  import → export, and export → import into a fresh page set → export, each
+  losing no label, message, position, or link.
+
 ### Changed — one question, then three steps
 
 - **A first-run welcome (ROADMAP Phase 7).** The app opens on what it does, in three

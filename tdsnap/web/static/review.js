@@ -402,8 +402,11 @@ $("confirm-update-btn").addEventListener("click", async () => {
 
   const undoing = pending.kind === "undo";
   const batching = pending.kind === "batch";
+  const importing = pending.kind === "boards";
   const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
-  const busyLabel = undoing
+  const busyLabel = importing
+    ? "Creating the pages and checking…"
+    : undoing
     ? `Undoing the change in ${product} and checking…`
     : batching
       ? `Applying ${pending.displayTitle} in ${product} and checking…`
@@ -414,7 +417,9 @@ $("confirm-update-btn").addEventListener("click", async () => {
   $("review-error").hidden = true;
   setBusy(button, true, busyLabel);
   $("step-result").setAttribute("aria-busy", "true");
-  setActivity(undoing
+  setActivity(importing
+    ? `Creating the imported pages from “${pending.displayTitle}” on, and checking each…`
+    : undoing
     ? `Putting “${pending.displayTitle}” back and checking the result…`
     : batching
       ? `Applying ${pending.displayTitle}, one at a time, and checking each…`

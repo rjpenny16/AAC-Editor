@@ -15,7 +15,7 @@ import hashlib
 import sqlite3
 import uuid as uuid_module
 
-from . import schema
+from . import schema, templates
 from .errors import PagesetError
 
 
@@ -399,6 +399,93 @@ def validate_added_buttons(conn: sqlite3.Connection, report: dict) -> list[str]:
             )
 
     return problems + _check_button_content(conn, report.get("buttons", []))
+
+
+def _link_problems(
+    conn: sqlite3.Connection, button_id: int, label: str, target_uuid: str
+) -> list[str]:
+    """A page-link button is flagged, linked, and commanded to open *target_uuid*."""
+    problems = []
+    button = conn.execute(
+        "SELECT CommandFlags FROM Button WHERE Id = ?", (button_id,)
+    ).fetchone()
+    if button is None:
+        return [f"Link button {label!r} is missing."]
+    if button["CommandFlags"] != templates.COMMAND_FLAGS_NAVIGATE:
+        problems.append(f"Link button {label!r} is not flagged as a page link.")
+    links = conn.execute(
+        "SELECT PageUniqueId FROM ButtonPageLink WHERE ButtonId = ?", (button_id,)
+    ).fetchall()
+    if [row["PageUniqueId"] for row in links] != [target_uuid]:
+        problems.append(f"Link button {label!r} does not open the page it came from.")
+    commands = conn.execute(
+        "SELECT SerializedCommands FROM CommandSequence WHERE ButtonId = ?", (button_id,)
+    ).fetchone()
+    if commands is None or target_uuid not in (commands[0] or ""):
+        problems.append(f"Link button {label!r}'s command does not open its page.")
+    return problems
+
+
+def validate_imported_pages(conn: sqlite3.Connection, report: dict) -> list[str]:
+    """Check every page, button, and link an Open Board import just built.
+
+    Each page gets the full ``validate_new_page`` chain. On top of that, every
+    button must sit in the cell the review showed, every speaking button must
+    speak and link nowhere, every link button must open exactly the page its
+    board opened, and the parent page must open the first imported page.
+    """
+    problems = []
+    cols = report["grid"][0]
+    for page in report["pages"]:
+        problems += validate_new_page(conn, {
+            "page_id": page["page_id"],
+            "page_unique_id": page["page_unique_id"],
+            "button_ids": page["button_ids"],
+            "buttons": page["buttons"],
+            "nav_button_id": None,
+        })
+        for spec in page["buttons"]:
+            position = conn.execute(
+                "SELECT placement.GridPosition FROM ElementPlacement placement "
+                "JOIN Button button ON button.ElementReferenceId = placement.ElementReferenceId "
+                "WHERE button.Id = ?",
+                (spec["id"],),
+            ).fetchall()
+            expected = f"{spec['slot'] % cols},{spec['slot'] // cols}"
+            if [row[0] for row in position] != [expected]:
+                problems.append(
+                    f"{spec['label']!r} on {page['title']!r} is not in cell {expected}."
+                )
+            if spec.get("link_unique_id"):
+                problems += _link_problems(
+                    conn, spec["id"], spec["label"], spec["link_unique_id"]
+                )
+                continue
+            flags = conn.execute(
+                "SELECT CommandFlags FROM Button WHERE Id = ?", (spec["id"],)
+            ).fetchone()
+            linked = conn.execute(
+                "SELECT COUNT(*) FROM ButtonPageLink WHERE ButtonId = ?", (spec["id"],)
+            ).fetchone()[0]
+            if flags is not None and (
+                flags[0] != templates.COMMAND_FLAGS_SPEAK or linked
+            ):
+                problems.append(
+                    f"{spec['label']!r} on {page['title']!r} should speak and link nowhere."
+                )
+    root = report["pages"][0] if report["pages"] else None
+    if root is not None:
+        problems += _link_problems(
+            conn, report["nav_button_id"], root["title"], root["page_unique_id"]
+        )
+        parent = conn.execute(
+            "SELECT ref.PageId FROM Button button JOIN ElementReference ref "
+            "ON ref.Id = button.ElementReferenceId WHERE button.Id = ?",
+            (report["nav_button_id"],),
+        ).fetchone()
+        if parent is None or parent[0] != report["parent_page_id"]:
+            problems.append("The link to the first imported page is not on the chosen page.")
+    return problems
 
 
 # Tables add_category_page is allowed to touch. Anything else changing is a bug.

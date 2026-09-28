@@ -290,6 +290,91 @@ def _insert_cell(
     return button_id, ref_id
 
 
+def _create_page(
+    conn: sqlite3.Connection,
+    template_page: sqlite3.Row,
+    title: str,
+    grid: tuple[int, int],
+    now: int,
+) -> tuple[int, str, int]:
+    """Clone a vocabulary Page with its own layout and SyncData ledger row.
+
+    Returns ``(page_id, page_unique_id, layout_id)``. Shared by every path that
+    creates a page, so a page made by an Open Board import is built exactly
+    like one made by "Create a new page".
+    """
+    page_uuid = str(uuid.uuid4())
+    sync_hash = _random_sync_hash()
+    page_overrides = {
+        "UniqueId": page_uuid,
+        "Title": title,
+        "PageType": 1,
+        "Timestamp": now,
+        "SyncHash": sync_hash,
+        "ContentTag": None,
+    }
+    page_overrides.update(
+        templates.filtered_overrides(
+            conn,
+            "Page",
+            {
+                "SerializedMetadata": None,
+                "LibrarySymbolId": 0,
+                "PageSetImageId": 0,
+                "GridDimension": None,
+                "SymbolColorDataId": 0,
+                "VocabPlannerForcedVisible": 0,
+                "SerializedSymbolPersonColors": None,
+            },
+        )
+    )
+    page_id = templates.clone_row(conn, "Page", template_page, page_overrides)
+    layout_id = conn.execute(
+        "INSERT INTO PageLayout (PageLayoutSetting, PageId) VALUES (?, ?)",
+        (f"{grid[0]},{grid[1]},True,0", page_id),
+    ).lastrowid
+    conn.execute(
+        "INSERT INTO SyncData (UniqueId, Type, Timestamp, SyncHash, Deleted, "
+        "Description) VALUES (?, 1, ?, ?, 0, ?)",
+        (page_uuid, now, sync_hash, title),
+    )
+    return page_id, page_uuid, layout_id
+
+
+def _link_from_parent(
+    conn: sqlite3.Connection,
+    nav_chain: dict[str, sqlite3.Row],
+    parent_page: sqlite3.Row,
+    grid: tuple[int, int],
+    label: str,
+    target_uuid: str,
+    now: int,
+) -> int:
+    """Put a button opening *target_uuid* in the parent page's first empty cell."""
+    layout = layout_for_page(conn, parent_page["Id"], grid)
+    slot = _free_slot(conn, layout)
+    nav_button_id, _ = _insert_cell(
+        conn,
+        nav_chain,
+        page_id=parent_page["Id"],
+        layout_id=layout["Id"],
+        slot=slot,
+        label=label,
+        command_flags=templates.COMMAND_FLAGS_NAVIGATE,
+        serialized_commands=templates.navigate_commands(target_uuid),
+    )
+    conn.execute(
+        "INSERT INTO ButtonPageLink (ButtonId, PageUniqueId) VALUES (?, ?)",
+        (nav_button_id, target_uuid),
+    )
+    conn.execute("UPDATE Page SET Timestamp = ? WHERE Id = ?", (now, parent_page["Id"]))
+    conn.execute(
+        "UPDATE SyncData SET Timestamp = ? WHERE UniqueId = ?",
+        (now, parent_page["UniqueId"]),
+    )
+    return nav_button_id
+
+
 def add_category_page(
     pageset: Pageset,
     title: str,
@@ -344,38 +429,7 @@ def add_category_page(
         speak_chain = templates.find_speak_chain(conn)
         nav_chain = templates.find_nav_chain(conn) if parent_page is not None else None
         now = net_ticks_now()
-        page_uuid = str(uuid.uuid4())
-        sync_hash = _random_sync_hash()
-
-        page_overrides = {
-            "UniqueId": page_uuid,
-            "Title": title,
-            "PageType": 1,
-            "Timestamp": now,
-            "SyncHash": sync_hash,
-            "ContentTag": None,
-        }
-        page_overrides.update(
-            templates.filtered_overrides(
-                conn,
-                "Page",
-                {
-                    "SerializedMetadata": None,
-                    "LibrarySymbolId": 0,
-                    "PageSetImageId": 0,
-                    "GridDimension": None,
-                    "SymbolColorDataId": 0,
-                    "VocabPlannerForcedVisible": 0,
-                    "SerializedSymbolPersonColors": None,
-                },
-            )
-        )
-        page_id = templates.clone_row(conn, "Page", template_page, page_overrides)
-
-        layout_id = conn.execute(
-            "INSERT INTO PageLayout (PageLayoutSetting, PageId) VALUES (?, ?)",
-            (f"{cols},{rows},True,0", page_id),
-        ).lastrowid
+        page_id, page_uuid, layout_id = _create_page(conn, template_page, title, (cols, rows), now)
 
         button_ids = []
         button_specs = []
@@ -405,36 +459,10 @@ def add_category_page(
             button_ids.append(button_id)
             button_specs.append({"id": button_id, **item})
 
-        conn.execute(
-            "INSERT INTO SyncData (UniqueId, Type, Timestamp, SyncHash, Deleted, "
-            "Description) VALUES (?, 1, ?, ?, 0, ?)",
-            (page_uuid, now, sync_hash, title),
-        )
-
         nav_button_id = None
         if parent_page is not None:
-            layout = layout_for_page(conn, parent_page_id, (cols, rows))
-            slot = _free_slot(conn, layout)
-            nav_button_id, _ = _insert_cell(
-                conn,
-                nav_chain,
-                page_id=parent_page_id,
-                layout_id=layout["Id"],
-                slot=slot,
-                label=title,
-                command_flags=templates.COMMAND_FLAGS_NAVIGATE,
-                serialized_commands=templates.navigate_commands(page_uuid),
-            )
-            conn.execute(
-                "INSERT INTO ButtonPageLink (ButtonId, PageUniqueId) VALUES (?, ?)",
-                (nav_button_id, page_uuid),
-            )
-            conn.execute(
-                "UPDATE Page SET Timestamp = ? WHERE Id = ?", (now, parent_page_id)
-            )
-            conn.execute(
-                "UPDATE SyncData SET Timestamp = ? WHERE UniqueId = ?",
-                (now, parent_page["UniqueId"]),
+            nav_button_id = _link_from_parent(
+                conn, nav_chain, parent_page, (cols, rows), title, page_uuid, now
             )
 
         conn.execute("UPDATE Synchronization SET PageSetTimestamp = ?", (now,))
@@ -580,5 +608,190 @@ def add_buttons_to_page(
         "layout_id": layout["Id"],
         "button_ids": button_ids,
         "buttons": button_specs,
+        "grid": (cols, rows),
+    }
+
+
+MAX_IMPORT_PAGES = 100
+
+
+def _planned_pages(plan: dict, capacity: int) -> list[dict]:
+    """Check an import plan's shape and content before any row is written.
+
+    The plan was produced by ``obf.plan_import`` and reviewed, but it reaches
+    this function through a file on disk and a second request, so it is held to
+    the same standard as anything else arriving at the write path: every label,
+    message, colour, and cell goes through ``_normalize_items``, and every link
+    must name a page in the same plan.
+    """
+    pages = plan.get("pages") if isinstance(plan, dict) else None
+    if not isinstance(pages, list) or not pages:
+        raise PagesetError("There are no boards to import.")
+    if len(pages) > MAX_IMPORT_PAGES:
+        raise PagesetError(f"AAC Editor imports at most {MAX_IMPORT_PAGES} pages at a time.")
+    board_ids = [page.get("board_id") if isinstance(page, dict) else None for page in pages]
+    if any(not isinstance(board_id, str) or not board_id for board_id in board_ids):
+        raise PagesetError("Every imported board needs an id.")
+    if len(set(board_ids)) != len(board_ids):
+        raise PagesetError("Two imported boards share an id.")
+    titles = set()
+    checked = []
+    for page in pages:
+        title = _normalize_title(page.get("title"))
+        if title.casefold() in titles:
+            raise PagesetError(f"Two imported pages would both be called {title!r}.")
+        titles.add(title.casefold())
+        cells = page.get("cells")
+        if not isinstance(cells, list):
+            raise PagesetError(f"The buttons for {title!r} must be a list.")
+        links = {}
+        for cell in cells:
+            if not isinstance(cell, dict):
+                raise PagesetError(f"A button on {title!r} is not readable.")
+            link = cell.get("link")
+            if link is None:
+                continue
+            if link not in board_ids or link == page["board_id"]:
+                raise PagesetError(
+                    f"{cell.get('label')!r} on {title!r} links to a board that is not "
+                    "being imported."
+                )
+            if cell.get("message") or cell.get("border_color"):
+                raise PagesetError(
+                    f"{cell.get('label')!r} on {title!r} opens a page, so it cannot also "
+                    "speak a message or carry a function colour."
+                )
+            links[str(cell.get("label", "")).strip().casefold()] = link
+        items = _normalize_items([
+            {key: cell.get(key) for key in ("label", "message", "border_color", "slot")}
+            for cell in cells
+        ])
+        for item in items:
+            if item["slot"] is None or item["slot"] >= capacity:
+                raise PagesetError(
+                    f"{item['label']!r} on {title!r} has no cell on this page set's grid."
+                )
+        if len({item["slot"] for item in items}) != len(items):
+            raise PagesetError(f"Two buttons on {title!r} were planned into the same cell.")
+        for item in items:
+            item["link"] = links.get(item["label"].casefold())
+        checked.append({"board_id": page["board_id"], "title": title, "items": items})
+    return checked
+
+
+def add_linked_pages(
+    pageset: Pageset, plan: dict, parent_page_id: int
+) -> dict[str, object]:
+    """Create one page per planned board, link them as the boards were, and
+    link the first from *parent_page_id*.
+
+    The Open Board import's write path. Every page is built by the same
+    ``_create_page`` and ``_insert_cell`` as "Create a new page", every link
+    button is cloned from a real TD Snap page-link button with its
+    ButtonPageLink row, and the whole import is one transaction: if any page,
+    button, or link cannot be written, nothing is. Returns a report for
+    ``validate.validate_imported_pages``.
+    """
+    conn = pageset.conn
+    cols, rows = pageset.grid_dimension()
+    planned_grid = plan.get("grid") if isinstance(plan, dict) else None
+    if planned_grid != {"cols": cols, "rows": rows}:
+        raise PagesetError(
+            "The import was planned for a different grid. Review the import again."
+        )
+    pages = _planned_pages(plan, cols * rows)
+
+    owns_transaction = not conn.in_transaction
+    savepoint = f"tdsnap_import_{uuid.uuid4().hex}"
+    if owns_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    else:
+        conn.execute(f"SAVEPOINT {savepoint}")
+    try:
+        parent_page = conn.execute(
+            "SELECT * FROM Page WHERE Id = ? AND PageType = 1", (parent_page_id,)
+        ).fetchone()
+        if parent_page is None:
+            raise PagesetError(f"Vocabulary parent page Id {parent_page_id} not found.")
+        for page in pages:
+            if conn.execute(
+                "SELECT 1 FROM Page WHERE PageType = 1 AND Title = ? COLLATE NOCASE LIMIT 1",
+                (page["title"],),
+            ).fetchone():
+                raise PagesetError(f"A vocabulary page named {page['title']!r} already exists.")
+
+        template_page = templates.find_template_page(conn)
+        speak_chain = templates.find_speak_chain(conn)
+        nav_chain = templates.find_nav_chain(conn)
+        now = net_ticks_now()
+
+        created = {}
+        for page in pages:
+            page_id, page_uuid, layout_id = _create_page(
+                conn, template_page, page["title"], (cols, rows), now
+            )
+            created[page["board_id"]] = (page_id, page_uuid, layout_id)
+
+        reports = []
+        for page in pages:
+            page_id, page_uuid, layout_id = created[page["board_id"]]
+            button_ids, specs = [], []
+            for item in page["items"]:
+                slot = (item["slot"] % cols, item["slot"] // cols)
+                target = created[item["link"]][1] if item["link"] else None
+                button_id, _ = _insert_cell(
+                    conn,
+                    nav_chain if target else speak_chain,
+                    page_id=page_id,
+                    layout_id=layout_id,
+                    slot=slot,
+                    label=item["label"],
+                    command_flags=(templates.COMMAND_FLAGS_NAVIGATE if target
+                                   else templates.COMMAND_FLAGS_SPEAK),
+                    serialized_commands=(templates.navigate_commands(target) if target
+                                         else templates.SPEAK_COMMANDS),
+                    message=item["message"],
+                    border_color=item["border_color"],
+                )
+                if target:
+                    conn.execute(
+                        "INSERT INTO ButtonPageLink (ButtonId, PageUniqueId) VALUES (?, ?)",
+                        (button_id, target),
+                    )
+                button_ids.append(button_id)
+                specs.append({
+                    "id": button_id, "label": item["label"], "message": item["message"],
+                    "border_color": item["border_color"], "slot": item["slot"],
+                    "link_unique_id": target,
+                })
+            reports.append({
+                "board_id": page["board_id"], "title": page["title"],
+                "page_id": page_id, "page_unique_id": page_uuid, "layout_id": layout_id,
+                "button_ids": button_ids, "buttons": specs,
+            })
+
+        root = reports[0]
+        nav_button_id = _link_from_parent(
+            conn, nav_chain, parent_page, (cols, rows), root["title"],
+            root["page_unique_id"], now,
+        )
+        conn.execute("UPDATE Synchronization SET PageSetTimestamp = ?", (now,))
+        conn.execute("UPDATE PageSetProperties SET Timestamp = ?", (now,))
+        if owns_transaction:
+            conn.commit()
+        else:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+    except BaseException:
+        if owns_transaction:
+            conn.rollback()
+        else:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        raise
+
+    return {
+        "pages": reports,
+        "parent_page_id": parent_page_id,
+        "nav_button_id": nav_button_id,
         "grid": (cols, rows),
     }

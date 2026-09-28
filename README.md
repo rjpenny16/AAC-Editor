@@ -57,6 +57,13 @@ so on the Grid 3 screen rather than leaving you to work it out.
   everything that will not fit named before anything is added.
 - Saves a page you have built as a named template and reuses it for the next
   person — one topic page built once, used across a caseload.
+- Reads and writes **Open Board Format** (`.obf`/`.obz`), the AAC interchange
+  standard CoughDrop and several other tools use. One board's words can join the
+  page open in TD Snap, Grid 3, or an exported file; on an exported file a whole
+  board set becomes new pages linked the way the boards were, through the same
+  review. A page set exports to `.obz` with its labels, spoken messages, layout,
+  and links. See [Open Board Format](#open-board-format) for what does not come
+  across.
 - Queues several pages, reviews them as one list, and applies them in one go,
   reporting what happened to every page including any it did not attempt.
 - Rejects duplicates, checks capacity, and never touches a button the review
@@ -235,6 +242,8 @@ Common commands:
 python -m tdsnap list "My Page Set.sps"
 python -m tdsnap verify "My Page Set.edited.sps"
 python -m tdsnap inspect "My Page Set.sps"
+python -m tdsnap export-obz "My Page Set.sps" -o "My Page Set.obz"
+python -m tdsnap import-obz "My Page Set.sps" "Quick Core.obz" --parent-name "Home Page"
 python -m tdsnap.live status
 python -m tdsnap.live add --yes --title Snacks --item Chips --item Apple
 ```
@@ -247,6 +256,48 @@ is preferred when page-set sync matters. Exported files can add buttons to a pag
 that already exists as well as create one; existing buttons are shown but locked,
 because changing and removing them there would need their own prior-content
 snapshot and rollback.
+
+## Open Board Format
+
+[Open Board Format](https://www.openboardformat.org) is how AAC apps share
+vocabulary: an `.obf` is one board, an `.obz` is a set of boards with links
+between them. **Open Board files** on the Build screen does both directions.
+
+**Bringing boards in.** One board's speaking buttons can join the word list for
+the page you have open, on any connection, in the board's own cells when the
+page is big enough. On an exported file, every board in an `.obz` can become its
+own new page instead: buttons in their board's row and column (or in reading
+order when a board is bigger than the page set's grid), buttons that opened
+another board now opening that page, and the first board linked from the page
+you chose. The review screen names every page and everything left out before
+anything is written, and the import is one validated transaction — if any page,
+button, or link fails a check, none of it is saved.
+
+**Taking a page set out.** An exported file, or the page set TD Snap has open
+(read only, never changed), saves as `.obz`. The export carries each page's
+labels, what each button says, where it sits, and which of the page set's own
+pages it opens. **Symbols are not exported.** TD Snap's symbols are licensed
+content, so the `.obz` has no images at all; the app that opens it will show
+words without pictures until symbols are added there.
+
+What does not come across, in either direction, is named rather than dropped
+silently:
+
+- pictures in an imported board (TD Snap looks up its own symbols for words
+  added while it is open; an exported file gets no symbols);
+- buttons that run an action rather than speaking or opening a board — OBF's
+  `:clear`, `:home`, spelling, and TD Snap's own commands;
+- links to pages outside the file, such as TD Snap's shipped Back and Home
+  buttons, and web links;
+- border colours other than the five topic-page function colours, which are the
+  only ones AAC Editor writes;
+- hidden buttons, picture-only buttons, labels over 60 characters, messages
+  over 200, and a second button with the same label on one board.
+
+Adding a whole set as linked pages is for exported files only. Doing it live
+would mean creating and linking many pages through TD Snap's editing screens one
+at a time; the file path does it in one transaction the app can check completely.
+Grid 3 can take one board's words, and does not export.
 
 ## Development
 
