@@ -1406,12 +1406,13 @@ def _board_upload():
         raise PagesetError("That board file is larger than AAC Editor will open.")
     filename = os.path.basename(upload.filename.replace("\\", "/"))
     _bounded_text(filename, "filename", 255, required=True)
-    stream = upload.stream
-    if not (hasattr(stream, "seekable") and stream.seekable()):
-        stream = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)  # noqa: SIM115
+    # Copied into a real temporary file rather than read from the upload
+    # stream: werkzeug hands over a SpooledTemporaryFile, which only gained
+    # seekable() in Python 3.11, and zipfile needs it.
+    with tempfile.TemporaryFile() as stream:
         shutil.copyfileobj(upload.stream, stream)
         stream.seek(0)
-    return filename, obf.read(stream)
+        return filename, obf.read(stream)
 
 
 @app.post("/api/obf/read")

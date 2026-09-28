@@ -740,6 +740,25 @@ def test_reading_a_board_file_writes_nothing(client):
     assert client.post("/api/obf/read").status_code == 403
 
 
+class _UnseekableUpload(io.BytesIO):
+    """An upload stream the way Python 3.9 gives it: SpooledTemporaryFile had
+    no seekable() before 3.11, and zipfile needs one."""
+
+    @property
+    def seekable(self):
+        raise AttributeError("seekable")
+
+
+def test_a_board_upload_does_not_need_a_seekable_stream(client, monkeypatch):
+    monkeypatch.setattr(server.app.request_class, "_get_file_stream",
+                        lambda self, *args, **kwargs: _UnseekableUpload())
+    monkeypatch.setattr(server.tempfile, "SpooledTemporaryFile",
+                        lambda *args, **kwargs: _UnseekableUpload())
+    data = post_boards(client, "/api/obf/read", coughdrop_set()).get_json()
+    assert data["ok"], data
+    assert len(data["boardset"]["boards"]) == 3
+
+
 def test_the_import_is_reviewed_then_applied_through_the_session(client, seeded_source):
     session = open_session(client, seeded_source)
     review = post_boards(client, f"/api/pageset/{session}/boards", coughdrop_set(),
