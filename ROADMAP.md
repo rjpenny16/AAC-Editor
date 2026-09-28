@@ -535,7 +535,7 @@ honestly labelled English-only · duplicate detection and phrase classification 
 
 ---
 
-## Phase 9 — Interchange: OBF / OBZ *(~3–4 weeks)*
+## Phase 9 — Interchange: OBF / OBZ *(~3–4 weeks)* — **shipped**
 
 The highest-leverage reach work, and the only major feature in this roadmap that is pure Python,
 cross-platform, and fully testable without a Windows VM.
@@ -554,6 +554,38 @@ cross-platform, and fully testable without a Windows VM.
 
 **Exit:** a CoughDrop `.obz` imports into a TD Snap page set through the normal review flow · a page
 set exports to `.obz` and re-imports without losing labels, messages, layout, or links.
+
+**Shipped.** `tdsnap/obf.py` reads and writes the format into one canonical model (boards of
+cells: label, message, border, link), exports a page set, and plans an import;
+`builder.add_linked_pages` is the write path and `validate.validate_imported_pages` its checks.
+The *Open Board files* dialog on the Build screen, `tdsnap export-obz`, and `tdsnap import-obz`
+sit on top.
+
+- **Import, two ways.** One board's speaking buttons join the word list on any connection — TD
+  Snap live, Grid 3, or an exported file — and from there it is the ordinary review. A whole
+  `.obz` becomes a set of linked pages on an **exported file**: reviewed on the ordinary review
+  screen as a new `boards` kind, confirmed with a fingerprint over the plan and the parent page,
+  and written in one transaction that the table-snapshot diff, the whole-file validation, and the
+  import's own checks (every cell, every link target, the parent's link) must all pass.
+- **Where it stops, and why.** A multi-board import is not offered on TD Snap live. It would mean
+  creating and linking many pages through TD Snap's editing screens, one automation run each, with
+  rollback only per page — exactly the partial state the file path's single transaction avoids —
+  and it could not be tested without a Windows VM, which is what this phase was meant not to need.
+  Grid 3 takes one board's words and does not export: its grid-set files are not read for that.
+- **Export** runs on an exported file or, read only, on the page set TD Snap has open. It writes
+  no images at all, says so in the dialog, the `.obz` manifest, and the README, and names every
+  button it could not describe.
+- **Grid mapping.** A board that fits the page set's grid keeps each button's row and column; a
+  larger one is laid out in reading order, and what still does not fit is named. Only the five
+  clinical function colours are written; any other border is counted and left off.
+- **Tests.** No new dependency: the round-trip property tests draw from a seeded `random.Random`
+  rather than Hypothesis, and cover `.obz` → model, import → export, and export → import into a
+  fresh page set → export. `obf.py` sits at 95% against a 94% floor.
+
+What the exit criterion could not be measured against: a real CoughDrop download. The fixture is a
+CoughDrop-shaped `.obz` built in the test (integer button ids, images, licences, `ext_coughdrop_*`
+fields, `load_board` by id and by path), and the quarantine-user import in
+[docs/IMPORT_SAFETY.md](docs/IMPORT_SAFETY.md) has not yet been run on an imported set.
 
 ---
 

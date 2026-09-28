@@ -4510,3 +4510,160 @@ test.describe('welcome and how much help to show', () => {
     await expect(page.locator('#preview .cell.used')).toHaveText(/apple/);
   });
 });
+
+/* ROADMAP Phase 9: Open Board Format. One board joins the word list on any
+   connection; on an exported file a whole set becomes linked pages through the
+   ordinary review. The single-board test goes through the real server's
+   reader, so what the dialog shows is what tdsnap/obf.py actually made of the
+   file. */
+test.describe('Open Board files', () => {
+  const SNACKS_BOARD = {
+    format: 'open-board-0.1',
+    id: 'snacks',
+    name: 'Snacks',
+    buttons: [
+      { id: 1, label: 'more', vocalization: 'I want more' },
+      { id: 2, label: 'drinks', load_board: { id: 'drinks', path: 'drinks.obf' } },
+      { id: 3, label: 'all done', image_id: 'pic' },
+      { id: 4, label: 'clear', action: ':clear' },
+    ],
+    grid: { rows: 2, columns: 2, order: [[1, 2], [3, 4]] },
+    images: [{ id: 'pic', url: 'https://example.org/pic.png' }],
+  };
+
+  test('one board joins the word list in its own layout, and what it leaves out is named', async ({ page }) => {
+    await mockTD(page);
+    await page.route('**/api/tdsnap/export*', (route) => fulfillJson(route, {
+      ok: true, boards: 12, buttons: 240, links: 11, root: 'Home',
+      skipped: [{ board: 'Home', label: 'Back', reason: 'opens a page that is not one of this page set’s own pages' }],
+      notes: ['Symbols are not included.'],
+    }));
+    await existingItems(page);
+    await page.locator('#boards-btn').click();
+    await expect(page.locator('#boards-dialog')).toBeVisible();
+    await page.locator('#boards-file').setInputFiles({
+      name: 'snacks.obf',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(SNACKS_BOARD)),
+    });
+
+    const summary = page.locator('#boards-summary');
+    await expect(summary).toContainText('snacks.obf has one board, “Snacks”.');
+    await expect(summary).toContainText('2 words from “Snacks” can go on Eating, in the same places as on the board.');
+    await expect(summary).toContainText('drinks');
+    await expect(summary).toContainText('“clear” on Snacks — performs an action (:clear)');
+    await expect(summary).toContainText('Pictures on 1 button are not brought across.');
+    // A whole set as linked pages needs an exported file; live TD Snap says so.
+    await expect(page.locator('#boards-pages-btn')).toBeHidden();
+    expect(await blockingViolations(page)).toEqual([]);
+
+    await page.locator('#boards-export-check').click();
+    await expect(page.locator('#boards-export-summary')).toContainText('12 pages, 240 buttons, and 11 links');
+    await expect(page.locator('#boards-export-summary')).toContainText('“Back” on Home');
+    await expect(page.locator('#boards-export-link')).toHaveAttribute('href', '/api/tdsnap/export.obz?page=Eating');
+
+    await page.locator('#boards-words-btn').click();
+    await expect(page.locator('#boards-dialog')).toBeHidden();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    // The board's own cells: "more" top left, "all done" at the start of row two.
+    await expect(page.locator('#preview .cell').nth(0)).toContainText('more');
+    await expect(page.locator('#preview .cell').nth(3)).toContainText('all done');
+
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-items')).toContainText('Speaks: I want more');
+    await expect(page.locator('#review-action')).toHaveText('Add 2 buttons to Eating');
+  });
+
+  test('an exported file takes a whole set as linked pages through the review', async ({ page }) => {
+    let applied = null;
+    const plan = {
+      grid: { cols: 3, rows: 2 },
+      root: 'core',
+      parent: { id: 1, title: 'Home' },
+      pages: [
+        { board_id: 'core', title: 'Quick Core', name: 'Quick Core', renamed: false,
+          rearranged: false, source_grid: { rows: 2, cols: 3 },
+          cells: [{ slot: 0, label: 'want', message: null, border_color: null, link: null },
+            { slot: 1, label: 'food', message: null, border_color: null, link: 'food' }] },
+        { board_id: 'food', title: 'Food (2)', name: 'Food', renamed: true,
+          rearranged: true, source_grid: { rows: 4, cols: 6 },
+          cells: [{ slot: 0, label: 'apple', message: null, border_color: null, link: null }] },
+      ],
+      skipped: [{ board: 'Quick Core', label: 'clear', reason: 'performs an action (:clear) rather than speaking or opening a board' }],
+      notes: ['Pictures on 3 buttons are not brought across.'],
+      counts: { pages: 2, buttons: 3, links: 1 },
+    };
+    await page.route('**/api/pageset', (route) => fulfillJson(route, {
+      ok: true, session_id: 'file-session', filename: 'sample.sps', schema_version: '4.13',
+      grid: { cols: 3, rows: 2 }, pages: [{ id: 1, title: 'Home' }], baseline_problems: [],
+    }));
+    await page.route('**/api/pageset/file-session/pages', (route) =>
+      fulfillJson(route, { ok: true, pages: [{ id: 1, title: 'Home' }] }));
+    await page.route('**/api/pageset/file-session/page/*/layout', (route) => fulfillJson(route, {
+      ok: true, page: 'Home', grid: { cols: 3, rows: 2 }, buttons: [],
+      free_slots: [0, 1, 2, 3, 4, 5], content_readable: false, fingerprint: 'home-v1',
+    }));
+    await page.route('**/api/obf/read', (route) => fulfillJson(route, {
+      ok: true, filename: 'core.obz',
+      boardset: {
+        format: 'open-board-0.1', root: 'core', skipped: plan.skipped, notes: plan.notes,
+        boards: [
+          { id: 'core', name: 'Quick Core', rows: 2, columns: 3, cells: [
+            { row: 0, col: 0, label: 'want', message: null, border: null, link: null },
+            { row: 0, col: 1, label: 'food', message: null, border: null, link: 'food' }] },
+          { id: 'food', name: 'Food', rows: 4, columns: 6, cells: [
+            { row: 0, col: 0, label: 'apple', message: null, border: null, link: null }] },
+        ],
+      },
+    }));
+    await page.route('**/api/pageset/file-session/boards', (route) =>
+      fulfillJson(route, { ok: true, filename: 'core.obz', plan, fingerprint: 'plan-v1' }));
+    await page.route('**/api/pageset/file-session/boards/apply', (route) => {
+      applied = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true, pages: 2, buttons: 3, links: 1, edits: 1,
+        root: { id: 7, title: 'Quick Core' }, parent: { id: 1, title: 'Home' },
+        checks: { sqlite_integrity: 'pass', linkage_chains: 'pass', roundtrip_diff: 'pass',
+          positions: 'pass', board_links: 'pass', navigation: 'pass' },
+      });
+    });
+
+    await openEditor(page);
+    await page.locator('#provider-file').click();
+    await page.locator('#file-input').setInputFiles({
+      name: 'sample.sps', mimeType: 'application/octet-stream', buffer: Buffer.from('x'),
+    });
+    await page.locator('#wizard-destination .wizard-next').click();
+    await expect(page.locator('#wizard-items')).toBeVisible();
+
+    await page.locator('#boards-btn').click();
+    await expect(page.locator('#boards-export-lead')).toContainText('including the changes made here');
+    await page.locator('#boards-file').setInputFiles({
+      name: 'core.obz', mimeType: 'application/zip', buffer: Buffer.from('PK'),
+    });
+    await expect(page.locator('#boards-pick-row')).toBeVisible();
+    await expect(page.locator('#boards-pages-btn')).toHaveText('Add all 2 boards as linked pages');
+    await expect(page.locator('#boards-pages-note')).toContainText('The first board opens from Home.');
+    await page.locator('#boards-pages-btn').click();
+
+    await expect(page.locator('#step-result')).toBeVisible();
+    await expect(page.locator('#review-action')).toHaveText('Create 2 linked pages from core.obz');
+    await expect(page.locator('#review-target')).toHaveText('Quick Core, found from Home');
+    await expect(page.locator('#review-count')).toHaveText('2 pages · 3 buttons · 1 link');
+    await expect(page.locator('#review-items li')).toHaveCount(2);
+    await expect(page.locator('#review-items')).toContainText('renamed from “Food”, which is already taken');
+    await expect(page.locator('#review-undo-note')).toContainText('“clear” on Quick Core');
+    await expect(page.locator('#review-undo-note')).toContainText('Pictures on 3 buttons');
+    await expect(page.locator('#review-placement-section')).toBeHidden();
+    await expect(page.locator('#queue-add-btn')).toBeHidden();
+    expect(await blockingViolations(page)).toEqual([]);
+
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-heading')).toHaveText('Done — save the edited copy to keep it');
+    await expect(page.locator('#result-sub')).toHaveText(
+      '2 pages with 3 buttons were added, linked the way the boards were, and “Home” now opens “Quick Core”.',
+    );
+    await expect(page.locator('#checks')).toContainText('Every imported link opens the page its board opened');
+    expect(applied).toEqual({ fingerprint: 'plan-v1' });
+  });
+});

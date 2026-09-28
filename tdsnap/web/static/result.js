@@ -33,6 +33,7 @@ const CHECK_LABELS = {
   target_page: "The chosen page was updated",
   content: "Every requested speaking button is present",
   positions: "Every new button is in the reviewed space",
+  board_links: "Every imported link opens the page its board opened",
   changed_content: "Every changed button says what you asked for",
   moved_buttons: "Every moved button is in its new cell",
   removed_buttons: "Every removed button is gone",
@@ -121,7 +122,11 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
     saveButton.removeAttribute("download");
   }
   const touched = (data.changed || 0) + (data.removed || 0) + (data.moved || 0);
-  $("result-sub").textContent = data.undone
+  $("result-sub").textContent = data.pages
+    ? `${data.pages} page${data.pages === 1 ? "" : "s"} with ${data.buttons} button`
+      + `${data.buttons === 1 ? "" : "s"} ${data.pages === 1 ? "was" : "were"} added, linked `
+      + `the way the boards were, and “${parentTitle}” now opens “${title}”.`
+    : data.undone
     ? `“${title}” is back the way it was: ${editedCounts(data)}. There is nothing ` +
       "left to undo from this session."
     : operation !== "existing"
