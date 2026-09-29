@@ -213,6 +213,7 @@ $("use-placement").addEventListener("click", () => {
 });
 
 function renderParents(filter) {
+  if (parentFilter.value !== filter) parentFilter.value = filter;
   const query = filter.trim().toLowerCase();
   parentSelect.innerHTML = "";
   const matches = state.pages.filter(

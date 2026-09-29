@@ -634,7 +634,11 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     $("parent-capacity").textContent = data.free_slots.length
       ? `${data.free_slots.length} empty space${data.free_slots.length === 1 ? "" : "s"} ` +
         `AAC Editor can update safely on “${data.page}”.`
-      : `“${data.page}” is full. Choose another page or remove existing vocabulary in ${state.provider === "grid3" ? "Grid 3" : "TD Snap"}.`;
+      : state.mode === "file"
+        ? `“${data.page}” is full. Choose another page or create a new page.`
+        : state.provider === "grid3"
+          ? `“${data.page}” is full. Remove an existing cell before adding.`
+          : `“${data.page}” is full. Choose another page or remove existing vocabulary in TD Snap.`;
     state.currentPage = state.mode === "file" ? state.parentId : data.page;
     $("current-page-label").textContent = `Adding to ${data.page}`;
     renderWords();

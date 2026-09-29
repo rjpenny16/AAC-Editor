@@ -94,7 +94,7 @@ async function checkAi() {
   if (checking) return;
   checking = true;
   try {
-    const data = await api(`/api/ai/status?${statusQuery()}`);
+    const data = await api(`/api/ai/status?${statusQuery()}`, { background: true });
     readiness = data.ai || null;
     renderLocalModel(data.local || {});
     renderOllamaModels(data.ollama || {});
@@ -257,7 +257,7 @@ function trackDownload() {
 
   downloadTimer = setInterval(async () => {
     try {
-      const data = await api("/api/ai/download");
+      const data = await api("/api/ai/download", { background: true });
       const download = data.download;
       if (download.status === "downloading") {
         if (download.total > 0) {

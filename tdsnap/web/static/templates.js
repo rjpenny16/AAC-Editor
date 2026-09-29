@@ -128,7 +128,10 @@ async function renderTemplateList() {
       remove.textContent = "Delete";
       remove.setAttribute("aria-label", `Delete template ${template.name}`);
       remove.addEventListener("click", async () => {
-        await deleteTemplate(template.name);
+        if (!await deleteTemplate(template.name)) {
+          setHint(`“${template.name}” could not be deleted on this computer.`, true);
+          return;
+        }
         setHint(`Deleted “${template.name}”.`);
         await renderTemplateList();
       });
