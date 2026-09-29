@@ -86,6 +86,21 @@ def test_oversized_file_is_quarantined_without_reading(isolated_data_dir, monkey
     assert not os.path.exists(path)
 
 
+def test_unreadable_settings_are_not_mistaken_for_empty(isolated_data_dir, monkeypatch):
+    settings.save({"provider": "tdsnap"}, {"items": [{"label": "apple"}]})
+    path = settings.settings_path()
+
+    def deny_read(target):
+        if target == path:
+            raise PermissionError("settings file is in use")
+        raise AssertionError(f"unexpected size check: {target}")
+
+    monkeypatch.setattr(settings.os.path, "getsize", deny_read)
+    with pytest.raises(PermissionError):
+        settings.load()
+    assert os.path.exists(path)
+
+
 def test_clear_removes_the_file(isolated_data_dir):
     settings.save({"provider": "file"}, {"items": []})
     assert os.path.exists(settings.settings_path())
@@ -95,6 +110,21 @@ def test_clear_removes_the_file(isolated_data_dir):
 
 def test_clear_on_a_fresh_install_does_not_raise(isolated_data_dir):
     settings.clear()  # no file exists yet; must be a no-op, not an error
+
+
+def test_clear_reports_a_failed_delete(isolated_data_dir, monkeypatch):
+    settings.save({"provider": "tdsnap"}, None)
+    path = settings.settings_path()
+
+    def deny_delete(target):
+        if target == path:
+            raise PermissionError("settings file is in use")
+        raise AssertionError(f"unexpected delete: {target}")
+
+    monkeypatch.setattr(settings.os, "remove", deny_delete)
+    with pytest.raises(PermissionError):
+        settings.clear()
+    assert os.path.exists(path)
 
 
 def test_draft_can_be_cleared_while_keeping_preferences(isolated_data_dir):

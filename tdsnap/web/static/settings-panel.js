@@ -4,7 +4,9 @@
  */
 
 import { $ } from "./dom.js";
-import { clearAll, getDraft, getPreferences, getTemplates } from "./settings.js";
+import {
+  clearAll, getDraft, getPreferences, getTemplates, settingsReadSucceeded,
+} from "./settings.js";
 
 const PREFERENCE_LABELS = {
   provider: "Last AAC app used",
@@ -42,6 +44,14 @@ async function renderPanel() {
   const [preferences, draft, templates] = await Promise.all([
     getPreferences(), getDraft(), getTemplates(),
   ]);
+  if (!settingsReadSucceeded()) {
+    renderEntry(
+      list,
+      "Couldn’t read saved data",
+      "Try again. Saved information may still be on this computer.",
+    );
+    return;
+  }
   const preferenceEntries = Object.entries(preferences).filter(
     ([, value]) => value !== "" && value !== null,
   );

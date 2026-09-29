@@ -69,8 +69,8 @@ def _quarantine(path: str) -> None:
 def load() -> dict:
     """Return the stored settings, or the empty default if none exist yet.
 
-    Never raises: a missing, corrupt, oversized, or malformed file is treated
-    as "no settings yet" rather than surfaced to the caller.
+    A missing, corrupt, oversized, or malformed file is treated as empty.
+    Filesystem errors must surface so saved work is not overwritten as empty.
     """
     path = settings_path()
     with _lock:
@@ -82,7 +82,7 @@ def load() -> dict:
                 data = json.load(handle)
         except FileNotFoundError:
             return _empty()
-        except (OSError, ValueError):
+        except ValueError:
             _quarantine(path)
             return _empty()
     if not isinstance(data, dict) or not isinstance(data.get("preferences"), dict):
@@ -138,5 +138,5 @@ def save(preferences: dict, draft: Optional[dict], templates: Optional[list] = N
 
 def clear() -> None:
     """Delete the settings file — the "Clear all saved data" action."""
-    with _lock, contextlib.suppress(OSError):
+    with _lock, contextlib.suppress(FileNotFoundError):
         os.remove(settings_path())

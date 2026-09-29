@@ -2054,6 +2054,48 @@ test.describe('never lose work: settings, drafts, and undo', () => {
     expect(store.preferences.provider).toBe('tdsnap');
   });
 
+  test('a failed settings read cannot overwrite a stored draft', async ({ page }) => {
+    const draft = { items: [{ label: 'Apple' }] };
+    const store = { preferences: { experience: 'some', provider: 'tdsnap' }, draft, templates: [] };
+    let readable = false;
+    let writes = 0;
+    await page.route('**/api/settings', (route) => {
+      if (route.request().method() === 'GET') {
+        return readable
+          ? fulfillJson(route, { ok: true, ...store })
+          : fulfillJson(route, { ok: false, error: 'Settings unreadable.' }, 500);
+      }
+      if (route.request().method() === 'PUT') {
+        writes += 1;
+        const body = route.request().postDataJSON();
+        store.preferences = body.preferences;
+        store.draft = body.draft;
+        return fulfillJson(route, { ok: true });
+      }
+      return route.continue();
+    });
+    await page.goto(BASE_URL);
+    await expect(page.locator('#step-welcome')).toBeVisible();
+    await page.locator('#settings-panel-btn').click();
+    await expect(page.locator('#settings-panel-list')).toContainText('Couldn’t read saved data');
+    const failed = await page.evaluate(async () => {
+      const settings = await import('/static/settings.js');
+      return settings.savePreference('provider', 'file');
+    });
+    expect(failed).toBe(false);
+    expect(writes).toBe(0);
+    expect(store.draft).toEqual(draft);
+
+    readable = true;
+    const saved = await page.evaluate(async () => {
+      const settings = await import('/static/settings.js');
+      return settings.savePreference('provider', 'file');
+    });
+    expect(saved).toBe(true);
+    expect(store.preferences.provider).toBe('file');
+    expect(store.draft).toEqual(draft);
+  });
+
   test('the last chosen AAC app is remembered, and falls back once nothing is stored', async ({ page }) => {
     const store = await mockSettings(page, { preferences: { provider: 'grid3' } });
     await mockTD(page);
@@ -3355,6 +3397,30 @@ test.describe('reusable topic templates', () => {
 
     await openTemplates(page);
     await expect(page.locator('#template-list li')).toContainText('Snacks');
+  });
+
+  test('a failed template save stays absent when draft autosave overlaps it', async ({ page }) => {
+    const store = await mockSettings(page);
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() === 'PUT' && 'templates' in route.request().postDataJSON()) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return fulfillJson(route, { ok: false, error: 'Could not save settings.' }, 500);
+      }
+      return route.fallback();
+    });
+    await page.goto(BASE_URL);
+    const result = await page.evaluate(async () => {
+      const settings = await import('/static/settings.js');
+      await settings.getTemplates();
+      const saved = await Promise.all([
+        settings.saveTemplate({ name: 'Swimming', page_style: 'words', items: [] }),
+        settings.saveDraft({ items: [{ label: 'Splash' }] }),
+      ]);
+      return { saved, templates: (await settings.getTemplates()).map((item) => item.name) };
+    });
+    expect(result.saved).toEqual([false, true]);
+    expect(result.templates).toEqual([]);
+    expect(store.templates).toEqual([]);
   });
 
   test('a template too big for the page names what would not fit', async ({ page }) => {
