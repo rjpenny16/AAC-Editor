@@ -29,7 +29,7 @@ def main() -> int:
         return 0
     DEST.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading {URL} ...")
-    with urllib.request.urlopen(URL, timeout=60) as response:
+    with urllib.request.urlopen(URL, timeout=60) as response:  # noqa: S310 - fixed HTTPS URL
         data = response.read()
     digest = hashlib.sha256(data).hexdigest()
     if not data.startswith(SQLITE_MAGIC) or digest != EXPECTED_SHA256:

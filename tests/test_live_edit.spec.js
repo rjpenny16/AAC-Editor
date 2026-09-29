@@ -604,6 +604,29 @@ test('the explanation does not follow the user to another AAC app', async ({ pag
   await expect(page.locator('#connection-detail')).toBeHidden();
 });
 
+test('a full Grid 3 grid offers an action available on the open grid', async ({ page }) => {
+  await page.route('**/api/grid3/status', (route) => fulfillJson(route, {
+    ok: true, available: true, installed: true, running: true,
+    elevated: true, needs_elevation: false, unlocked: true, dirty: false,
+    grid_set: 'Test grid set', page: 'Home', grid: { cols: 2, rows: 2 },
+  }));
+  await page.route('**/api/grid3/page-layout', (route) => fulfillJson(route, {
+    ok: true, page: 'Home', grid: { cols: 2, rows: 2 },
+    buttons: Array.from({ length: 4 }, (_, slot) => ({ slot, label: `Word ${slot}` })),
+    cells: [], free_slots: [], fingerprint: 'full-grid',
+  }));
+  await page.route('**/api/grid3/probe', (route) => fulfillJson(route, {
+    ok: true, checks: { edit_mode: 'pass' },
+  }));
+  await openEditor(page);
+  await page.locator('#provider-grid3').click();
+  await page.locator('#live-connect-btn').click();
+  await expect(page.locator('#wizard-items')).toBeVisible();
+  await expect(page.locator('#parent-capacity')).toHaveText(
+    '“Home” is full. Remove an existing cell before adding.',
+  );
+});
+
 test('Grid 3 uses the active-grid three-step flow and live styled rectangles', async ({ page }) => {
   let submitted = null;
   let mutationHeaders = null;
@@ -1213,6 +1236,10 @@ test('a partial create resumes on the created page without duplicate buttons', a
 
 test('live monitoring follows an existing TD Snap page and keeps the full list', async ({ page }) => {
   let statusCalls = 0;
+  await page.route('**/api/ai/status*', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 6000));
+    return fulfillJson(route, readyStatus());
+  });
   await mockTD(page, {
     status: () => {
       statusCalls += 1;
@@ -1890,6 +1917,58 @@ test.describe('never lose work: settings, drafts, and undo', () => {
     saved_at: 1700000000,
   };
 
+  test('a slow autosave cannot restore a draft after it is cleared', async ({ page }) => {
+    const store = { preferences: { experience: 'some' }, draft: null, templates: [] };
+    await page.route('**/api/settings', async (route) => {
+      const method = route.request().method();
+      if (method === 'GET') return fulfillJson(route, { ok: true, ...store });
+      if (method === 'PUT') {
+        const body = route.request().postDataJSON();
+        if (body.draft) await new Promise((resolve) => setTimeout(resolve, 300));
+        store.preferences = body.preferences;
+        store.draft = body.draft;
+        return fulfillJson(route, { ok: true });
+      }
+      return route.continue();
+    });
+    await page.goto(BASE_URL);
+    await expect(page.locator('#step-load')).toBeVisible();
+    await page.evaluate(async (item) => {
+      const settings = await import('/static/settings.js');
+      await Promise.all([settings.saveDraft(item), settings.clearDraft()]);
+    }, draft);
+    expect(store.draft).toBeNull();
+  });
+
+  test('a slow autosave cannot recreate settings after Clear all', async ({ page }) => {
+    const store = { preferences: { experience: 'some' }, draft: null, templates: [] };
+    await page.route('**/api/settings', async (route) => {
+      const method = route.request().method();
+      if (method === 'GET') return fulfillJson(route, { ok: true, ...store });
+      if (method === 'PUT') {
+        const body = route.request().postDataJSON();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        store.preferences = body.preferences;
+        store.draft = body.draft;
+        return fulfillJson(route, { ok: true });
+      }
+      if (method === 'DELETE') {
+        store.preferences = {};
+        store.draft = null;
+        store.templates = [];
+        return fulfillJson(route, { ok: true });
+      }
+      return route.continue();
+    });
+    await page.goto(BASE_URL);
+    await expect(page.locator('#step-load')).toBeVisible();
+    await page.evaluate(async (item) => {
+      const settings = await import('/static/settings.js');
+      await Promise.all([settings.saveDraft(item), settings.clearAll()]);
+    }, draft);
+    expect(store).toEqual({ preferences: {}, draft: null, templates: [] });
+  });
+
   test('the recovery banner offers an unfinished page, and resuming restores its buttons', async ({ page }) => {
     await mockSettings(page, { draft });
     await mockTD(page);
@@ -1958,6 +2037,21 @@ test.describe('never lose work: settings, drafts, and undo', () => {
     await page.locator('#settings-clear-btn').click();
     await expect(page.locator('#settings-panel-status')).toContainText('Cleared');
     await expect(page.locator('#settings-panel-list')).toContainText('Nothing saved yet');
+  });
+
+  test('a failed clear does not claim saved data was removed', async ({ page }) => {
+    const store = await mockSettings(page, {
+      preferences: { provider: 'tdsnap', experience: 'some' },
+    });
+    await page.route('**/api/settings', (route) => route.request().method() === 'DELETE'
+      ? fulfillJson(route, { ok: false, error: 'Could not delete settings.' }, 500)
+      : route.fallback());
+    await openEditor(page);
+    await page.locator('#settings-panel-btn').click();
+    await page.locator('#settings-clear-btn').click();
+    await expect(page.locator('#settings-panel-status')).toContainText('Couldn’t clear saved data');
+    await expect(page.locator('#settings-panel-list')).toContainText('tdsnap');
+    expect(store.preferences.provider).toBe('tdsnap');
   });
 
   test('the last chosen AAC app is remembered, and falls back once nothing is stored', async ({ page }) => {
@@ -2722,6 +2816,28 @@ test.describe('exported file adds to an existing page', () => {
     await expect(page.locator('#wizard-destination')).toBeVisible();
   }
 
+  test('switching from live search to a full exported page clears search and gives file guidance', async ({ page }) => {
+    await mockTD(page);
+    await page.route('**/api/pageset', (route) => fulfillJson(route, SESSION));
+    await page.route('**/api/pageset/file-session/page/1/layout', (route) =>
+      fulfillJson(route, { ...LAYOUT, free_slots: [] }));
+    await connect(page);
+    await page.locator('#choose-page-btn').click();
+    await page.locator('#parent-filter').fill('Game');
+    await page.locator('#file-badge').click();
+    await page.locator('#provider-file').click();
+    await page.locator('#file-input').setInputFiles({
+      name: 'sample.sps',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('synthetic pageset'),
+    });
+    await expect(page.locator('#wizard-destination')).toBeVisible();
+    await expect(page.locator('#parent-filter')).toHaveValue('');
+    await expect(page.locator('#parent-capacity')).toHaveText(
+      '“Home” is full. Choose another page or create a new page.',
+    );
+  });
+
   test('buttons are added to a chosen page and the review names it', async ({ page }) => {
     let submitted = null;
     await openFile(page, {
@@ -3330,6 +3446,25 @@ test.describe('reusable topic templates', () => {
     await expect(page.locator('#template-list li strong')).toHaveText(['Zoo']);
     await expect(page.locator('#template-save-hint')).toContainText('Deleted “Swimming”');
     expect(store.templates.map((template) => template.name)).toEqual(['Zoo']);
+  });
+
+  test('a failed template deletion keeps the saved template visible', async ({ page }) => {
+    const store = await mockSettings(page, {
+      templates: [
+        { name: 'Swimming', page_style: 'words', saved_at: 1, items: [{ label: 'Splash', message: null, fn: '', slot: null, symbol: true, symbol_query: null }] },
+      ],
+    });
+    await mockTD(page);
+    await existingItems(page);
+    await openTemplates(page);
+    await page.route('**/api/settings', (route) => route.request().method() === 'PUT'
+      ? fulfillJson(route, { ok: false, error: 'Could not save settings.' }, 500)
+      : route.fallback());
+
+    await page.locator('#template-list button[aria-label="Delete template Swimming"]').click();
+    await expect(page.locator('#template-save-hint')).toContainText('could not be deleted');
+    await expect(page.locator('#template-list li strong')).toHaveText(['Swimming']);
+    expect(store.templates.map((template) => template.name)).toEqual(['Swimming']);
   });
 
   test('the settings panel names the templates Clear all would throw away', async ({ page }) => {
