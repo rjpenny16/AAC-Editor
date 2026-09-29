@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 
 import pytest
 
@@ -162,6 +163,36 @@ def test_the_draft_autosave_cannot_wipe_saved_templates(isolated_data_dir):
     data = settings.load()
     assert data["templates"] == [_template()]
     assert data["draft"] == {"items": [{"label": "pear"}]}
+
+
+def test_overlapping_draft_save_cannot_wipe_a_new_template(isolated_data_dir, monkeypatch):
+    """A draft request may read templates just before another request saves one."""
+    started = threading.Event()
+    template_saved = threading.Event()
+    original_load = settings.load
+
+    def paused_load():
+        data = original_load()
+        if threading.current_thread() is threading.main_thread():
+            started.set()
+            template_saved.wait(timeout=0.2)
+        return data
+
+    monkeypatch.setattr(settings, "load", paused_load)
+
+    def save_template():
+        started.wait(timeout=2)
+        settings.save({}, None, [_template()])
+        template_saved.set()
+
+    worker = threading.Thread(target=save_template)
+    worker.start()
+    settings.save({}, None)  # draft-style save omits templates
+    worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    assert template_saved.is_set()
+    assert original_load()["templates"] == [_template()]
 
 
 def test_templates_are_cleared_by_an_explicit_empty_list(isolated_data_dir):

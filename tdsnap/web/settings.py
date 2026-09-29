@@ -28,7 +28,7 @@ SETTINGS_VERSION = 1
 # headroom while still catching a runaway or hand-edited file early.
 MAX_SETTINGS_BYTES = 2 * 1024 * 1024
 
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 
 def _data_dir() -> str:
@@ -85,20 +85,20 @@ def load() -> dict:
         except ValueError:
             _quarantine(path)
             return _empty()
-    if not isinstance(data, dict) or not isinstance(data.get("preferences"), dict):
-        _quarantine(path)
-        return _empty()
-    draft = data.get("draft")
-    templates = data.get("templates")
-    return {
-        "version": SETTINGS_VERSION,
-        "preferences": data["preferences"],
-        "draft": draft if isinstance(draft, dict) else None,
-        # A file written before templates existed simply has none, rather than
-        # being treated as corrupt — the whole point of quarantining a bad file
-        # is that a merely *older* one is not bad.
-        "templates": templates if isinstance(templates, list) else [],
-    }
+        if not isinstance(data, dict) or not isinstance(data.get("preferences"), dict):
+            _quarantine(path)
+            return _empty()
+        draft = data.get("draft")
+        templates = data.get("templates")
+        return {
+            "version": SETTINGS_VERSION,
+            "preferences": data["preferences"],
+            "draft": draft if isinstance(draft, dict) else None,
+            # A file written before templates existed simply has none, rather than
+            # being treated as corrupt — the whole point of quarantining a bad file
+            # is that a merely *older* one is not bad.
+            "templates": templates if isinstance(templates, list) else [],
+        }
 
 
 def save(preferences: dict, draft: Optional[dict], templates: Optional[list] = None) -> None:
@@ -114,18 +114,18 @@ def save(preferences: dict, draft: Optional[dict], templates: Optional[list] = N
     does not mention templates — the draft autosave, every few seconds — must
     not be able to erase them. Passing ``[]`` is how they are actually cleared.
     """
-    if templates is None:
-        templates = load()["templates"]
-    payload = {
-        "version": SETTINGS_VERSION,
-        "preferences": preferences,
-        "draft": draft,
-        "templates": templates,
-    }
-    encoded = json.dumps(payload, indent=2)
-    directory = _data_dir()
-    os.makedirs(directory, exist_ok=True)
     with _lock:
+        if templates is None:
+            templates = load()["templates"]
+        payload = {
+            "version": SETTINGS_VERSION,
+            "preferences": preferences,
+            "draft": draft,
+            "templates": templates,
+        }
+        encoded = json.dumps(payload, indent=2)
+        directory = _data_dir()
+        os.makedirs(directory, exist_ok=True)
         handle, temp_path = tempfile.mkstemp(prefix=".settings-", dir=directory)
         try:
             with os.fdopen(handle, "w", encoding="utf-8") as temp_file:
