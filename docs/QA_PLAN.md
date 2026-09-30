@@ -41,9 +41,13 @@ real TD Snap fixture tests (`scripts/fetch_fixture.py`), packaged exe and Authen
 Priority order.
 
 1. [ ] `live.py` (68%) and `grid3.py` (59%): the click, type, and verify paths.
-   - [ ] Diff the 12 helper functions duplicated between the two files and fix behaviour
-         differences without merging the files.
-2. [ ] Rollback and undo: fault-injection tests that interrupt an edit midway and assert the page
+   - [x] Duplicated helpers: checked. The shared UIA layer already lives in `tdsnap/uia.py`; what
+         remains in each file (`_automation`, `_activate`, `_window`, `_verify_process`) differs
+         only in app-specific messages and process checks. The ROADMAP's "12 diverging helpers"
+         note is stale. No fix needed.
+   - [ ] Write tests for the uncovered click, type, and verify paths (Windows-only code, so mocked
+         at the `uiautomation` boundary).
+2. [ ] Rollback and undo (exported files done, live paths still open): fault-injection tests that interrupt an edit midway and assert the page
       returns to its exact prior content, for add, change, move, remove, and undo, on TD Snap,
       Grid 3, and exported files.
 3. [ ] `web/ollama.py` (46%) and `web/desktop.py` (31%): timeouts, missing engine, junk responses,
@@ -72,5 +76,10 @@ message, then polish.
 - [ ] Quarantine-user import procedure in `docs/IMPORT_SAFETY.md` for any file-format change.
 
 ## Findings log
+
+- Exported-file writes (`add_category_page`, `add_buttons_to_page`, `add_linked_pages`): every
+  write statement was failed in turn; each rolled back cleanly. No defect.
+  `tests/test_fault_injection.py` keeps it that way. Mutation-checked: removing the rollback in
+  `add_buttons_to_page` makes it fail.
 
 Add one line per defect: where, what, test that reproduces it, PR.
