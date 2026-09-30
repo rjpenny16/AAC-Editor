@@ -27,10 +27,14 @@ real TD Snap fixture tests (`scripts/fetch_fixture.py`), packaged exe and Authen
 
 ## Phase 1: Close the verification gaps
 
-- [ ] Run the browser suite against the installed Chromium and record results.
-- [ ] Fetch the real fixture and run the integration tests.
-- [ ] Run the real-model AI smoke test and eval set if the `ai` extra installs.
-- [ ] Record the real baseline here.
+- [x] Browser suite against the installed Chromium: 171 passed, 1 skipped. (The sandbox Chromium
+      build differs from the one Playwright pins, so a local config with `executablePath` was used
+      and not committed.)
+- [x] Real fixture fetched; integration tests: 7 passed. Full Python suite with the fixture:
+      723 passed, 9 skipped.
+- [ ] Real-model AI smoke and eval: blocked in the sandbox (model download returns 403 from the
+      proxy). Needs a machine that can reach the model CDN. `llama-cpp-python` installs fine.
+- [x] Baseline recorded: no failing test anywhere we can run.
 
 ## Phase 2: Defects where coverage is thinnest
 
