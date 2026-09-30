@@ -18,6 +18,11 @@ from tdsnap.errors import PagesetError
 WRITES = {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
 
 
+def allow_all(*_):
+    # set_authorizer(None) only clears the hook from Python 3.11; this works on 3.9.
+    return sqlite3.SQLITE_OK
+
+
 def count_writes(conn, operation):
     seen = []
 
@@ -30,7 +35,7 @@ def count_writes(conn, operation):
     try:
         operation()
     finally:
-        conn.set_authorizer(None)
+        conn.set_authorizer(allow_all)
     return len(seen)
 
 
@@ -60,7 +65,7 @@ def assert_every_failure_rolls_back(make_pageset, operation):
             with pytest.raises((sqlite3.DatabaseError, PagesetError)):
                 operation(ps)
         finally:
-            ps.conn.set_authorizer(None)
+            ps.conn.set_authorizer(allow_all)
         assert not ps.conn.in_transaction, f"write {n} of {total} left a transaction open"
         after = validate.table_snapshot(ps.conn)
         assert validate.diff_snapshots(before, after) == [], f"write {n} of {total} leaked"
