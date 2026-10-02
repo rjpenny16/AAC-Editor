@@ -27,7 +27,7 @@ from ctypes import wintypes
 from typing import Optional
 
 from ..errors import PagesetError
-from . import server
+from . import localhttp, server
 
 WINDOW_TITLE = "AAC Editor"
 FILE_TYPES = ("TD Snap page sets (*.sps;*.spb)", "All files (*.*)")
@@ -123,8 +123,7 @@ def _focus_running(port: int) -> None:
     """A copy is already running: raise its window, or open a tab to it."""
     url = f"http://127.0.0.1:{port}"
     try:
-        with urllib.request.urlopen(  # noqa: S310 - fixed http://127.0.0.1:<port> instance check
-            # fixed http://127.0.0.1:<port> instance check
+        with localhttp.open_loopback(
             urllib.request.Request(f"{url}/api/focus", method="POST"), timeout=2  # noqa: S310
         ) as response:
             focused = json.load(response).get("focused", False)
@@ -133,6 +132,19 @@ def _focus_running(port: int) -> None:
     if not focused:
         # The running copy is in browser mode; point a tab at it.
         server._open_browser(url)
+
+
+def _lock_down_webview(webview) -> None:
+    """Keep every external link out of the app's own window.
+
+    This window carries the native bridge (file dialogs, the administrator
+    restart), which a web page must never be able to reach. With this on, a link
+    that leaves the app opens in the system browser instead of loading here. It is
+    pywebview's default; stating it keeps a future change of that default from
+    quietly putting somebody else's page in this window.
+    """
+    with contextlib.suppress(Exception):
+        webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
 
 
 def _bring_to_front(window) -> None:
@@ -192,7 +204,12 @@ def run_desktop(
         )
         api._window = window
         server.set_focus_handler(lambda: _bring_to_front(window))
-        webview.start()
+        _lock_down_webview(webview)
+        # private_mode keeps the embedded browser from leaving anything behind: no
+        # cookies, no local storage, no cache. Its profile is deleted when the window
+        # closes. It is pywebview's default; stating it keeps a future change of that
+        # default from quietly turning persistence on.
+        webview.start(private_mode=True)
     except Exception:
         # No usable webview runtime — behave like browser mode with the
         # already-running server; the Quit button in the UI stops it.

@@ -59,7 +59,7 @@
 
 <div id="draft-banner" class="alert app-error" role="status" tabindex="-1" hidden>
   <strong id="draft-banner-text"></strong>
-  <p class="field-hint">This was saved on this computer only, and nothing has been sent anywhere.</p>
+  <p class="field-hint">This was saved on this computer only, and nothing has been sent anywhere. Once you answer, AAC Editor stops keeping it unless you turn on &ldquo;Keep an unfinished page&rdquo; under What AAC Editor saves.</p>
   <div class="app-error-actions">
     <button type="button" id="draft-resume-btn" class="btn btn-secondary btn-compact">Resume</button>
     <button type="button" id="draft-discard-btn" class="btn btn-ghost btn-compact">Discard</button>
@@ -361,6 +361,7 @@
                   <p id="ai-model-choice-note" class="field-hint"></p>
                 </div>
                 <p class="field-hint ai-model-line"><span id="ai-model-name"></span> · <span id="ai-model-size"></span> · <span id="ai-model-license"></span></p>
+                <p class="field-hint">Setup downloads the model once from huggingface.co. Nothing from your pages is sent; Hugging Face only sees that this computer asked for the file.</p>
                 <div class="ai-actions">
                   <button type="button" id="ai-download-btn" class="btn btn-primary"><span class="btn-label">Set up suggestions</span></button>
                   <button type="button" id="ai-ollama-btn" class="text-button">I already use Ollama</button>
@@ -444,7 +445,7 @@
                     <input id="ai-grounding" type="checkbox">
                     Look up public reference facts on Wikipedia
                   </label>
-                  <p class="field-hint">Off by default. When enabled, AAC Editor sends only this page title to Wikipedia for this request — never your button labels.</p>
+                  <p class="field-hint">Off by default, and off again each time you open AAC Editor. When enabled, AAC Editor sends only this page title to Wikipedia for this request, never your button labels.</p>
                   <div id="ai-upgrade-row" class="field" hidden>
                     <label for="ai-upgrade-model">Built-in suggestion model</label>
                     <select id="ai-upgrade-model"></select>
@@ -640,7 +641,7 @@
 </dialog>
 
 <footer class="foot">
-  <p>Page-set content stays on this computer.</p>
+  <p>Your page sets and words stay on this computer. No account, no tracking.</p>
   <div class="foot-actions">
     <button type="button" id="settings-panel-btn" class="text-button">What AAC Editor saves</button>
     <button type="button" id="support-report-btn" class="text-button">Copy a support report</button>
@@ -762,13 +763,57 @@
   </form>
 </dialog>
 
-<dialog id="settings-panel" class="chip-dialog support-dialog" aria-labelledby="settings-panel-title">
+<dialog id="settings-panel" class="chip-dialog support-dialog settings-dialog" aria-labelledby="settings-panel-title">
   <form method="dialog">
     <h2 id="settings-panel-title">What AAC Editor saves</h2>
-    <p class="field-hint">Nothing is stored until you save a preference or start composing a
-      page. Everything below lives in one file on this computer only — never uploaded, never
-      synced.</p>
-    <dl id="settings-panel-list" class="settings-list"></dl>
+    <p class="field-hint">What you type, open, or build is never sent to anyone. This is everything
+      AAC Editor keeps on this computer, and the only two times it uses the internet.</p>
+
+    <section class="privacy-section" aria-labelledby="saved-settings-heading">
+      <h3 id="saved-settings-heading">Settings and templates</h3>
+      <p class="field-hint">Kept in one file on this computer. Never uploaded, never synced.</p>
+      <dl id="settings-panel-list" class="settings-list"></dl>
+      <p id="settings-folder-line" class="field-hint" hidden>Folder: <code></code></p>
+      <label class="inline-option" for="draft-autosave-toggle">
+        <input id="draft-autosave-toggle" type="checkbox">
+        Keep an unfinished page so I can resume it after a crash
+      </label>
+      <p class="field-hint">Off unless you turn it on. When it is on, the buttons you are planning
+        are saved to that file every few seconds. Turning it off deletes them.</p>
+    </section>
+
+    <section class="privacy-section" aria-labelledby="also-on-disk-heading">
+      <h3 id="also-on-disk-heading">Also on this computer</h3>
+      <ul class="privacy-list">
+        <li><strong>A working copy of an exported file</strong>, only while you edit one. It sits in
+          your temporary folder, only your account and this computer&rsquo;s administrators can open
+          it, and it is deleted when you close the file or quit. If AAC Editor is shut down
+          abruptly a copy can be left behind. The next time AAC Editor starts after a day it
+          deletes any it finds, and Clear all saved data deletes them straight away.
+          <span id="working-copies-folder-line" hidden>Folder: <code></code></span></li>
+        <li><strong>The suggestion model</strong>, only if you set up suggestions. It is one file of
+          about 1 to 5 GB in the &ldquo;models&rdquo; folder next to the settings file. It is a public
+          model with nothing about you in it, and nothing you type is ever added to it.</li>
+      </ul>
+    </section>
+
+    <section class="privacy-section" aria-labelledby="leaves-heading">
+      <h3 id="leaves-heading">What can leave this computer</h3>
+      <ul class="privacy-list">
+        <li><strong>Setting up suggestions</strong> downloads the model once from huggingface.co, and
+          only when you choose Set up. Hugging Face can see your internet address and which model
+          file you asked for. Nothing from your pages is sent.</li>
+        <li><strong>The Wikipedia lookup</strong>, only if you tick it or give a Wikipedia link. It
+          sends the page title, or the article you named, to en.wikipedia.org and nothing else.
+          Wikipedia can see your internet address, as any site you visit can. It starts off each
+          time you open AAC Editor.</li>
+      </ul>
+      <p class="field-hint">Ollama, if you use it, runs on this computer and AAC Editor only talks to
+        it there. There are no accounts, no analytics, no crash reports, and no update checks.
+        Your words, button labels, and page sets are never sent anywhere. An administrator can switch
+        the Wikipedia lookup off completely.</p>
+    </section>
+
     <p id="settings-panel-status" class="status-line" role="status" aria-live="polite"></p>
     <div class="dialog-actions">
       <button type="button" id="settings-clear-btn" class="btn btn-danger">Clear all saved data</button>

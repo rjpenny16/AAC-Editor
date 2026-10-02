@@ -11,7 +11,7 @@
 
 import { api } from "./api.js";
 
-let cache = null; // { preferences, draft, templates } once the first load resolves
+let cache = null; // { preferences, draft, templates, folders } once the first load resolves
 let loading = null; // in-flight GET, so concurrent first callers issue only one
 let loaded = false; // a failed GET is not proof that nothing was saved
 let lastWrite = Promise.resolve(); // preserve the order of autosaves and clears
@@ -32,12 +32,14 @@ function loadSettings() {
           preferences: data.preferences || {},
           draft: data.draft || null,
           templates: data.templates || [],
+          // Where the files are, so the panel can say so and a person can look.
+          folders: { settings: data.folder || "", workingCopies: data.working_copies_folder || "" },
         };
         return cache;
       })
       .catch(() => {
         loading = null;
-        if (!cache) cache = { preferences: {}, draft: null, templates: [] };
+        if (!cache) cache = { preferences: {}, draft: null, templates: [], folders: {} };
         return cache;
       });
   }
@@ -56,6 +58,16 @@ async function getTemplates() {
   return (await loadSettings()).templates;
 }
 
+async function getFolders() {
+  return (await loadSettings()).folders || {};
+}
+
+/* An unfinished page is somebody's own vocabulary, so it is kept on disk only if
+   they asked for that. Anything but an explicit true means no. */
+async function draftAutosaveOn() {
+  return (await getPreferences()).draft_autosave === true;
+}
+
 /* Draft and preference writes omit templates so an autosave cannot erase a
    saved word list. */
 async function writeSettings(update, includeTemplates = false, background = false) {
@@ -69,7 +81,7 @@ async function writeSettings(update, includeTemplates = false, background = fals
         headers: { "Content-Type": "application/json" },
         background,
         body: JSON.stringify(includeTemplates
-          ? next
+          ? { preferences: next.preferences, draft: next.draft, templates: next.templates }
           : { preferences: next.preferences, draft: next.draft }),
       });
       cache = next;
@@ -116,13 +128,18 @@ async function clearDraft() {
   return saveDraft(null);
 }
 
+/* Resolves with what the server removed beyond the settings file: leftover
+   working copies of page sets, and how many are still in use by an open one. */
 async function clearAll() {
   await loadSettings();
   return orderedWrite(async () => {
-    await api("/api/settings", { method: "DELETE" });
-    cache = { preferences: {}, draft: null, templates: [] };
+    const reply = await api("/api/settings", { method: "DELETE" });
+    cache = { preferences: {}, draft: null, templates: [], folders: cache ? cache.folders : {} };
     loaded = true;
-    return true;
+    return {
+      workingCopiesRemoved: Number(reply.working_copies_removed) || 0,
+      workingCopiesOpen: Number(reply.working_copies_open) || 0,
+    };
   });
 }
 
@@ -131,6 +148,7 @@ function settingsReadSucceeded() {
 }
 
 export {
-  clearAll, clearDraft, deleteTemplate, getDraft, getPreferences, getTemplates,
-  saveDraft, savePreference, saveTemplate, settingsReadSucceeded,
+  clearAll, clearDraft, deleteTemplate, draftAutosaveOn, getDraft, getFolders,
+  getPreferences, getTemplates, saveDraft, savePreference, saveTemplate,
+  settingsReadSucceeded,
 };

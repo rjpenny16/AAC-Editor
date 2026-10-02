@@ -881,6 +881,15 @@ summary {
 .settings-list dt { font-weight: 600; margin-top: 0.75rem; }
 .settings-list dt:first-child { margin-top: 0; }
 .settings-list dd { margin: 0.15rem 0 0; color: var(--ink-soft); font-size: 0.875rem; }
+.settings-dialog form { max-height: 88vh; overflow-y: auto; }
+.privacy-section { margin-top: 1.25rem; }
+.privacy-section h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+.privacy-section .inline-option { margin-top: 0.85rem; }
+.privacy-section code { overflow-wrap: anywhere; }
+.privacy-list { margin: 0.5rem 0 0; padding-left: 1.25rem; color: var(--ink-soft); font-size: 0.875rem; }
+.privacy-list li + li { margin-top: 0.6rem; }
+.privacy-list strong { color: var(--ink); }
+.privacy-list + .field-hint { margin-top: 0.85rem; }
 .support-report {
   margin: 0.85rem 0 0;
   max-height: 22rem;

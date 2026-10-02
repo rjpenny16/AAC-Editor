@@ -21,7 +21,9 @@ The gaps are elsewhere. Three were serious; one still is:
 
 1. ~~**A browser refresh silently destroys unsaved work.**~~ *Closed in Phase 2. A `beforeunload`
    guard covers anything composed but not applied, and the in-progress item list is autosaved to the
-   opt-in settings file and offered back on the next launch.* One thing is deliberately excluded: the
+   settings file and offered back on the next launch, once the person turns on **Keep an unfinished
+   page**. That option is off by default, since the list is their own vocabulary.* One thing is
+   deliberately excluded: the
    Phase 5 multi-page queue is guarded but not autosaved, because its entries hold live TD Snap
    fingerprints that a relaunch invalidates — see Phase 5.
 2. ~~**The app is add-only.**~~ *Closed across Phase 4. TD Snap live can change, move, swap, and
@@ -158,7 +160,8 @@ that Phases 5 and 7 depend on.
   and custom-header guards as every other mutation. Atomic temp-then-`os.replace`, mirroring
   `Pageset.save_as`. A corrupt file is renamed aside and the app starts clean.
 - **Draft autosave and recovery.** Persist the in-progress item list, layout, and placements; on
-  launch offer *"You have an unfinished page for Snacks — resume or discard?"*
+  launch offer *"You have an unfinished page for Snacks — resume or discard?"* Opt-in: nothing is
+  written unless the person turns on **Keep an unfinished page**.
 - **Remember preferences.** Provider choice, Ollama host and model, AI preference — currently
   re-entered every launch.
 - **In-composition undo.** Removing a chip has no restore path, and "Arrange automatically" re-flows

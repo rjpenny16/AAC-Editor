@@ -141,8 +141,13 @@ def test_grid3_read_apis_and_elevated_mutation_security(client, monkeypatch):
         lambda: calls.append("undo") or {"page": "Home", "checks": {"undone": "pass"}},
     )
 
-    assert client.get("/api/grid3/status?layout=1").get_json()["layout_requested"] is True
-    assert client.get("/api/grid3/page-layout").get_json()["fingerprint"] == "grid-fingerprint"
+    # Reads of another app's window need the token as well (see _AUTOMATION_PREFIXES).
+    assert client.get("/api/grid3/status?layout=1").status_code == 403
+    assert client.get("/api/grid3/page-layout").status_code == 403
+    status = client.get("/api/grid3/status?layout=1", headers=token_headers())
+    assert status.get_json()["layout_requested"] is True
+    layout = client.get("/api/grid3/page-layout", headers=token_headers())
+    assert layout.get_json()["fingerprint"] == "grid-fingerprint"
     assert client.post("/api/grid3/probe").status_code == 403
     probe = client.post(
         "/api/grid3/probe",
@@ -488,7 +493,11 @@ def test_settings_start_empty_and_read_needs_no_token(client, monkeypatch, tmp_p
     response = client.get("/api/settings")
     assert response.status_code == 200
     data = response.get_json()
-    assert data == {"ok": True, "preferences": {}, "draft": None, "templates": []}
+    # Empty, plus where the files would live, so the saved-data panel can name the folders.
+    assert data == {
+        "ok": True, "preferences": {}, "draft": None, "templates": [],
+        "folder": str(tmp_path), "working_copies_folder": server._SESSION_ROOT,
+    }
 
 
 def test_settings_write_requires_token(client):
@@ -514,10 +523,12 @@ def test_settings_roundtrip_and_clear(client, monkeypatch, tmp_path):
     )
     assert put.status_code == 200
 
+    # The Wikipedia lookup is the one setting that sends anything off this
+    # computer, so it is never remembered: it is dropped like any unknown key.
     data = client.get("/api/settings").get_json()
     assert data["preferences"] == {
         "provider": "grid3", "ai_engine": "ollama",
-        "ollama_host": "http://localhost:11434", "ai_grounding": True,
+        "ollama_host": "http://localhost:11434",
     }
     assert data["draft"] is None
 
@@ -587,7 +598,9 @@ def test_settings_draft_roundtrips_composition_state(client, monkeypatch, tmp_pa
         ],
     }
     response = client.put(
-        "/api/settings", json={"preferences": {}, "draft": draft}, headers=token_headers()
+        "/api/settings",
+        json={"preferences": {"draft_autosave": True}, "draft": draft},
+        headers=token_headers(),
     )
     assert response.status_code == 200
     stored = client.get("/api/settings").get_json()["draft"]
@@ -601,6 +614,110 @@ def test_settings_draft_roundtrips_composition_state(client, monkeypatch, tmp_pa
          "symbol": False, "symbol_query": None},
     ]
     assert "saved_at" in stored
+
+
+def _draft_of(label="pear"):
+    return {"items": [{"label": label}]}
+
+
+def test_an_unfinished_page_is_not_kept_unless_the_person_turned_that_on(
+    client, monkeypatch, tmp_path
+):
+    """The draft is somebody's own vocabulary: off by default, enforced by the server.
+
+    The page sends it every two seconds while composing. Whatever it sends, nothing
+    reaches the disk unless the saved preference says the person asked for that, so
+    a bug in the page can never quietly start keeping it.
+    """
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    for preferences in ({}, {"provider": "tdsnap"}, {"draft_autosave": False}):
+        client.put(
+            "/api/settings",
+            json={"preferences": preferences, "draft": _draft_of("private word")},
+            headers=token_headers(),
+        )
+        assert client.get("/api/settings").get_json()["draft"] is None
+        assert "private word" not in (tmp_path / "settings.json").read_text(encoding="utf-8")
+
+
+def test_turning_the_draft_off_removes_the_stored_draft(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    client.put(
+        "/api/settings",
+        json={"preferences": {"draft_autosave": True}, "draft": _draft_of("kept")},
+        headers=token_headers(),
+    )
+    assert client.get("/api/settings").get_json()["draft"]["items"][0]["label"] == "kept"
+
+    # The page turns it off and clears the draft in the same breath; even if it only
+    # changed the preference, the server holds the line.
+    client.put(
+        "/api/settings",
+        json={"preferences": {"draft_autosave": False}, "draft": _draft_of("kept")},
+        headers=token_headers(),
+    )
+    assert client.get("/api/settings").get_json()["draft"] is None
+    assert "kept" not in (tmp_path / "settings.json").read_text(encoding="utf-8")
+
+
+def test_a_draft_an_older_version_saved_is_offered_once_not_hidden(
+    client, monkeypatch, tmp_path
+):
+    """Older versions saved a draft by default. Upgrading must not lose it unseen."""
+    monkeypatch.setattr(server.settings, "_data_dir", lambda: str(tmp_path))
+    (tmp_path / "settings.json").write_text(json.dumps({
+        "version": 1,
+        "preferences": {"provider": "tdsnap", "ai_grounding": True},
+        "draft": {"provider": "tdsnap", "items": [{"label": "old draft", "message": None,
+                                                    "fn": "", "slot": None, "symbol": True,
+                                                    "symbol_query": None}]},
+        "templates": [],
+    }), encoding="utf-8")
+
+    data = client.get("/api/settings").get_json()
+    assert data["draft"]["items"][0]["label"] == "old draft"
+    # The Wikipedia choice an older version remembered is not handed back either.
+    assert data["preferences"] == {"provider": "tdsnap"}
+
+    # Answering the offer clears it, and nothing new is kept while the option is off.
+    client.put(
+        "/api/settings",
+        json={"preferences": {"provider": "tdsnap"}, "draft": None},
+        headers=token_headers(),
+    )
+    assert client.get("/api/settings").get_json()["draft"] is None
+
+
+def test_clear_all_also_removes_working_copies_nothing_is_using(client, tmp_path):
+    """A killed or crashed app leaves a working copy of a page set behind."""
+    leftover = os.path.join(server._SESSION_ROOT, "A" * 22)
+    os.makedirs(leftover)
+    with open(os.path.join(leftover, "original"), "wb") as handle:
+        handle.write(b"somebody's whole vocabulary")
+
+    reply = client.delete("/api/settings", headers=token_headers()).get_json()
+
+    assert reply["ok"] is True
+    assert reply["working_copies_removed"] == 1
+    assert reply["working_copies_open"] == 0
+    assert not os.path.exists(leftover)
+
+
+def test_clear_all_leaves_the_page_set_that_is_open_right_now(client, seeded_source):
+    with open(seeded_source, "rb") as handle:
+        opened = client.post(
+            "/api/pageset", data={"file": (io.BytesIO(handle.read()), "t.sps")},
+            headers=token_headers(),
+        ).get_json()
+    leftover = os.path.join(server._SESSION_ROOT, "B" * 22)
+    os.makedirs(leftover)
+
+    reply = client.delete("/api/settings", headers=token_headers()).get_json()
+
+    assert reply["working_copies_removed"] == 1
+    assert reply["working_copies_open"] == 1
+    assert os.path.isdir(os.path.join(server._SESSION_ROOT, opened["session_id"]))
+    assert not os.path.exists(leftover)
 
 
 def test_settings_rejects_malformed_draft_items(client, monkeypatch, tmp_path):
@@ -653,7 +770,10 @@ def test_a_draft_autosave_cannot_wipe_saved_templates(client, monkeypatch, tmp_p
     )
     client.put(
         "/api/settings",
-        json={"preferences": {"provider": "tdsnap"}, "draft": {"items": [{"label": "pear"}]}},
+        json={
+            "preferences": {"provider": "tdsnap", "draft_autosave": True},
+            "draft": {"items": [{"label": "pear"}]},
+        },
         headers=token_headers(),
     )
     data = client.get("/api/settings").get_json()
@@ -1057,7 +1177,9 @@ def test_the_undo_endpoints_report_and_replay_the_retained_edit(client, monkeypa
         "undone": True, "checks": {"undone": "pass"}, "warnings": [],
     })
 
-    assert client.get("/api/tdsnap/last-edit").get_json()["undo"] == described
+    assert client.get("/api/tdsnap/last-edit").status_code == 403
+    last = client.get("/api/tdsnap/last-edit", headers=token_headers())
+    assert last.get_json()["undo"] == described
 
     # The same custom header every other TD Snap mutation needs.
     refused = client.post("/api/tdsnap/undo", headers=token_headers())
@@ -1080,7 +1202,8 @@ def test_the_retained_edit_can_be_forgotten(client, monkeypatch):
 
     assert client.delete("/api/tdsnap/last-edit", headers=token_headers()).get_json()["ok"]
     assert forgotten == [1]
-    assert client.get("/api/tdsnap/last-edit").get_json()["undo"] is None
+    last = client.get("/api/tdsnap/last-edit", headers=token_headers())
+    assert last.get_json()["undo"] is None
 
 
 def test_moves_are_bounded_at_the_edge_of_the_web_api():

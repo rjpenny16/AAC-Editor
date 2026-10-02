@@ -838,7 +838,10 @@ def test_a_file_session_exports_to_obz(client, seeded_source):
 
 def test_live_export_reads_the_page_set_td_snap_has_open(client, seeded_source, monkeypatch):
     monkeypatch.setattr(server.live, "_active_pageset_path", lambda page=None: seeded_source)
-    summary = client.get("/api/tdsnap/export").get_json()
+    # The summary is fetched by the page, so it carries the token. The .obz is a
+    # plain browser download, which cannot, and only ever reads.
+    assert client.get("/api/tdsnap/export").status_code == 403
+    summary = client.get("/api/tdsnap/export", headers=HEADERS).get_json()
     assert summary["ok"] and summary["boards"] == 2
     response = client.get("/api/tdsnap/export.obz")
     assert "TD Snap page set.obz" in response.headers["Content-Disposition"]
@@ -846,7 +849,8 @@ def test_live_export_reads_the_page_set_td_snap_has_open(client, seeded_source, 
 
     monkeypatch.setattr(server.live, "_active_pageset_path", lambda page=None: None)
     for path in ("/api/tdsnap/export", "/api/tdsnap/export.obz"):
-        assert "could not tell which page set" in client.get(path).get_json()["error"]
+        error = client.get(path, headers=HEADERS).get_json()["error"]
+        assert "could not tell which page set" in error
 
 
 def test_live_export_reports_an_unreadable_page_set(client, tmp_path, monkeypatch):
@@ -854,7 +858,7 @@ def test_live_export_reports_an_unreadable_page_set(client, tmp_path, monkeypatc
     broken.write_bytes(b"SQLite format 3\x00" + b"\x00" * 100)
     monkeypatch.setattr(server.live, "_active_pageset_path", lambda page=None: str(broken))
     for path in ("/api/tdsnap/export", "/api/tdsnap/export.obz"):
-        assert "could not be read" in client.get(path).get_json()["error"]
+        assert "could not be read" in client.get(path, headers=HEADERS).get_json()["error"]
 
 
 # ---------------------------------------------------------------------------

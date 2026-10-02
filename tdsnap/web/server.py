@@ -14,15 +14,18 @@ session corrupted, and the download endpoint always serves the last good
 state.
 """
 
+import atexit
 import contextlib
 import hashlib
 import io
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
 import sqlite3
+import stat
 import sys
 import tempfile
 import threading
@@ -37,7 +40,16 @@ from werkzeug.exceptions import HTTPException
 from .. import __version__, builder, grid3, live, obf, pageset, schema, uia, validate
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
-from . import diagnostics, engines, grounding, localai, ollama, prompts, settings
+from . import (
+    diagnostics,
+    engines,
+    grounding,
+    localai,
+    localhttp,
+    ollama,
+    prompts,
+    settings,
+)
 
 APP_ID = "aac-editor"
 DEFAULT_PORT = 8765
@@ -74,9 +86,50 @@ def _drive(call):
     with _LIVE_LOCK:
         return _AUTOMATION.run(call)
 
-_SESSION_ROOT = os.path.join(tempfile.gettempdir(), "tdsnap-editor")
+def _session_root_name() -> str:
+    """One folder per user, so two people on one computer never share a folder.
+
+    Windows already gives each user a private temp directory, so the name stays
+    what it always was there.
+    """
+    getuid = getattr(os, "getuid", None)
+    return f"tdsnap-editor-{getuid()}" if getuid else "tdsnap-editor"
+
+
+_SESSION_ROOT = os.path.join(tempfile.gettempdir(), _session_root_name())
 _sessions = {}
 _sessions_lock = threading.Lock()
+# A session id is made by secrets.token_urlsafe, so it is a single path component
+# with no dots. Anything else came from somebody typing a URL by hand.
+_SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def _checked_session_id(session_id) -> str:
+    if not isinstance(session_id, str) or not _SESSION_ID.fullmatch(session_id):
+        raise PagesetError("Unknown or expired session; re-upload the file.")
+    return session_id
+
+
+def _private_dir(path: str) -> None:
+    """Create *path* so that only this user can read it, or refuse to use it.
+
+    Working copies of a page set hold a person's whole vocabulary. On a shared
+    POSIX temp directory the default permissions would let other accounts list
+    and read them, and a folder somebody else created first (or a symlink) could
+    point them anywhere. Windows keeps %TEMP% private to the user already.
+    """
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    if os.name == "nt":
+        return
+    # lstat does not follow a symlink, so a link in this place is not a directory here.
+    info = os.lstat(path)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise PagesetError(
+            "AAC Editor's temporary folder is not safe to use because it is not owned by "
+            "this account. Remove it and try again."
+        )
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        os.chmod(path, 0o700)
 
 # Set by the host process so endpoints can stop the server or raise the
 # native window.
@@ -245,8 +298,12 @@ _PREFERENCE_SCHEMA = {
     "ai_engine": {"choices": {"auto", "ollama", "local"}, "max_len": 20},
     "ollama_host": {"max_len": 200},
     "ollama_model": {"max_len": 120},
-    "ai_grounding": {"bool": True},
+    # The Wikipedia lookup is deliberately not remembered: it is the one setting
+    # that sends anything off this computer, so it starts unticked every launch.
     "ai_style": {"bool": True},
+    # Off until the person turns it on: the unfinished page is their own vocabulary,
+    # and it is only ever written to disk if they asked for that.
+    "draft_autosave": {"bool": True},
     "ai_model": {"max_len": 20},
     # How much guidance the person asked for on the welcome screen. It shapes
     # hints and which optional panels start open; it never hides a control.
@@ -459,6 +516,35 @@ def cleanup_sessions() -> None:
         shutil.rmtree(session["dir"], ignore_errors=True)
 
 
+def clear_leftover_sessions() -> tuple[int, int]:
+    """Delete working copies no open page set is using; return ``(removed, in_use)``.
+
+    A closed page set removes its own copy, and so does quitting the app. What is
+    left is whatever an app that was killed, or that crashed, could not clean up.
+    This is what "Clear all saved data" reaches for. A copy that an open page set
+    is editing right now is left alone, and counted, so the person can be told.
+    """
+    with _sessions_lock:
+        in_use = {os.path.realpath(session["dir"]) for session in _sessions.values()}
+    try:
+        names = os.listdir(_SESSION_ROOT)
+    except OSError:
+        return 0, len(in_use)
+    removed = 0
+    for name in names:
+        path = os.path.join(_SESSION_ROOT, name)
+        if (
+            not _SESSION_ID.fullmatch(name)
+            or os.path.islink(path)
+            or not os.path.isdir(path)
+            or os.path.realpath(path) in in_use
+        ):
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        removed += 1
+    return removed, len(in_use)
+
+
 def _write_session_meta(session_dir: str, filename: str, baseline_warnings: list, edits: int) -> None:
     """Persist the bit of session state that isn't already in the sqlite copy.
 
@@ -491,7 +577,13 @@ def _rehydrate_session(session_id: str):
     (and lets the caller raise the usual error) when the directory, the
     edited copy, or its metadata is missing.
     """
+    if not isinstance(session_id, str) or not _SESSION_ID.fullmatch(session_id):
+        return None
     session_dir = os.path.join(_SESSION_ROOT, session_id)
+    # Belt and braces behind the pattern above: the folder must be a direct child
+    # of the session root, whatever a symlink or an odd platform path says.
+    if os.path.dirname(os.path.realpath(session_dir)) != os.path.realpath(_SESSION_ROOT):
+        return None
     current = os.path.join(session_dir, "current")
     meta_path = os.path.join(session_dir, "meta.json")
     if not os.path.isfile(current) or not os.path.isfile(meta_path):
@@ -517,6 +609,7 @@ def _rehydrate_session(session_id: str):
 
 
 def _session_dir(session_id: str) -> str:
+    _checked_session_id(session_id)
     with _sessions_lock:
         session = _sessions.get(session_id)
     if session is None:
@@ -648,7 +741,7 @@ def _free_cells(path: str, page_id: int) -> int:
 
 
 def _new_session_dir() -> tuple[str, str]:
-    os.makedirs(_SESSION_ROOT, exist_ok=True)
+    _private_dir(_SESSION_ROOT)
     cleanup_stale_sessions()
     _make_room_for_a_session()
     with _sessions_lock:
@@ -660,7 +753,7 @@ def _new_session_dir() -> tuple[str, str]:
             )
     session_id = secrets.token_urlsafe(16)
     session_dir = os.path.join(_SESSION_ROOT, session_id)
-    os.makedirs(session_dir, exist_ok=True)
+    os.makedirs(session_dir, mode=0o700, exist_ok=True)
     return session_id, session_dir
 
 
@@ -788,6 +881,14 @@ def _unexpected_error(exc):
     }), 500
 
 
+# Browser features this app never uses, switched off so nothing on the page can
+# ask for them.
+_DENIED_FEATURES = (
+    "camera", "microphone", "geolocation", "payment", "usb", "serial", "bluetooth",
+    "hid", "midi", "magnetometer", "gyroscope", "accelerometer", "display-capture",
+)
+
+
 @app.after_request
 def _security_headers(response):
     response.headers["Content-Security-Policy"] = (
@@ -798,6 +899,15 @@ def _security_headers(response):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    response.headers["Permissions-Policy"] = ", ".join(f"{name}=()" for name in _DENIED_FEATURES)
+    if request.path.startswith("/api/"):
+        # Everything the API returns is somebody's vocabulary, a draft or a saved
+        # template. no-store keeps the browser, or the embedded browser, from
+        # writing any of it to its own cache on disk.
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -822,16 +932,40 @@ def _require_loopback_host():
     return None
 
 
+# Everything under these prefixes talks to another app's window, so every request
+# to it needs the per-run token, reads included. Reading a TD Snap page can
+# navigate TD Snap to it, so a web page that only makes the browser fetch one of
+# these URLs (an <img>, a no-cors fetch) could otherwise move somebody's AAC app
+# to another page. A request that must carry the token cannot be forged that
+# way: a page on another origin can neither read the token nor send the header.
+_AUTOMATION_PREFIXES = ("/api/tdsnap/", "/api/grid3/")
+
+# Requests that cannot carry the token, and why that is safe:
+# * /api/focus is how a second launch asks the running copy to raise its window.
+#   It has no input and no effect beyond bringing a window forward.
+# * the live .obz export is a plain browser download, which cannot carry a header.
+#   It only reads, and the page that triggers a download cannot read what arrives.
+# * /api/diagnostics (a GET, so not listed here) only reads, and returns nothing
+#   about a page set; it has to keep working when things are broken, including
+#   when the token never loaded.
+_TOKEN_FREE = {"/api/focus", "/api/tdsnap/export.obz"}
+
+
+def _needs_token() -> bool:
+    path = request.path
+    if request.method == "OPTIONS" or path in _TOKEN_FREE:
+        return False
+    if request.method in ("POST", "PUT", "DELETE") or path.startswith("/api/ai/"):
+        return True
+    return path.startswith(_AUTOMATION_PREFIXES)
+
+
 @app.before_request
 def _require_api_token():
-    protected = (
-        request.method in ("POST", "PUT", "DELETE") or request.path.startswith("/api/ai/")
-    )
-    if request.method == "OPTIONS" or not protected or request.path in {
-        "/api/focus", "/api/tdsnap/page", "/api/tdsnap/edit-plan"
-    }:
+    if not _needs_token():
         return None
-    if request.headers.get("X-TDSnap-Token") != API_TOKEN:
+    supplied = request.headers.get("X-TDSnap-Token", "")
+    if not secrets.compare_digest(supplied.encode("utf-8"), API_TOKEN.encode("utf-8")):
         return jsonify(
             {"ok": False, "error": "Missing or invalid API token; reload the page."}
         ), 403
@@ -864,13 +998,23 @@ def diagnostics_report():
 
 @app.get("/api/settings")
 def get_settings():
-    """Remembered preferences and any recoverable draft — never page-set content."""
+    """Remembered preferences and any recoverable draft, never page-set content.
+
+    Preferences go back through the same filter they are saved with, so a key
+    this version does not know (one an older version wrote, say) is never shown.
+    A draft left by an older version is still returned once, so the person can
+    resume or discard it rather than losing it unseen.
+    """
     data = settings.load()
     return jsonify({
         "ok": True,
-        "preferences": data["preferences"],
+        "preferences": _validated_preferences(data["preferences"]),
         "draft": data["draft"],
         "templates": data["templates"],
+        # Where the files are, so the "What AAC Editor saves" panel can say so and
+        # a person can open the folder and look for themselves.
+        "folder": os.path.dirname(settings.settings_path()),
+        "working_copies_folder": _SESSION_ROOT,
     })
 
 
@@ -883,15 +1027,26 @@ def put_settings():
     preferences = _validated_preferences(payload.get("preferences"))
     draft = _validated_draft(payload.get("draft"))
     templates = _validated_templates(payload.get("templates"))
+    if not preferences.get("draft_autosave", False):
+        # An unfinished page is the person's own vocabulary. It is written to disk
+        # only when they have turned that on, whatever the browser sends, so a
+        # bug in the page can never quietly start keeping it.
+        draft = None
     settings.save(preferences, draft, templates)
     return jsonify({"ok": True})
 
 
 @app.delete("/api/settings")
 def delete_settings():
-    """Clear all saved data — the disclosure panel's "Clear all" control."""
+    """Clear all saved data: the disclosure panel's "Clear all" control.
+
+    That is the settings file *and* any temporary working copy of a page set that
+    a closed or crashed session left behind. A page set that is open right now is
+    in use, so it stays until it is closed; the reply says how many.
+    """
     settings.clear()
-    return jsonify({"ok": True})
+    removed, in_use = clear_leftover_sessions()
+    return jsonify({"ok": True, "working_copies_removed": removed, "working_copies_open": in_use})
 
 
 @app.post("/api/quit")
@@ -1862,8 +2017,8 @@ def ai_words():
 
 def instance_running(port: int) -> bool:
     try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/api/health", timeout=1
+        with localhttp.open_loopback(
+            urllib.request.Request(f"http://127.0.0.1:{port}/api/health"), timeout=1
         ) as response:
             return json.load(response).get("app") == APP_ID
     except Exception:
@@ -1913,11 +2068,22 @@ def cleanup_stale_sessions(max_age: int = SESSION_MAX_AGE) -> None:
             pass
 
 
+_cleanup_registered = False
+
+
 def make_server(port: int):
+    global _cleanup_registered
     from werkzeug.serving import make_server as _make_server
 
-    os.makedirs(_SESSION_ROOT, exist_ok=True)
+    _private_dir(_SESSION_ROOT)
     cleanup_stale_sessions()
+    if not _cleanup_registered:
+        # Ctrl+C and closing the window already clean up. This also covers the
+        # other ways a Python process ends in an orderly fashion, such as an
+        # unhandled error or sys.exit, so a working copy of somebody's page set
+        # is not left in the temp folder just because the app stopped oddly.
+        atexit.register(cleanup_sessions)
+        _cleanup_registered = True
     server = _make_server("127.0.0.1", port, app, threaded=True)
     _runtime["shutdown"] = server.shutdown
     return server
@@ -1942,13 +2108,34 @@ def _open_browser(url: str) -> bool:
         kernel32.SetDllDirectoryW(getattr(sys, "_MEIPASS", None))
 
 
+def _exit_cleanly_on_signals() -> None:
+    """Make "the terminal was closed" and "the process was told to stop" a normal exit.
+
+    Python's default for those signals is to die on the spot, without running any
+    cleanup, which would leave a working copy of somebody's page set in the temp
+    folder. Raising SystemExit instead lets the ``finally`` in :func:`run` remove
+    the copies first. A forced kill cannot be caught by any program; that case is
+    what the sweep at the next start, and Clear all saved data, are for.
+    """
+    import signal
+
+    def stop(_signum, _frame):
+        raise SystemExit(0)
+
+    for name in ("SIGTERM", "SIGHUP", "SIGBREAK"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        # Only the main thread may set a handler, and not every platform has every one.
+        with contextlib.suppress(ValueError, OSError):
+            signal.signal(number, stop)
+
+
 def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
     if instance_running(port):
         url = f"http://127.0.0.1:{port}"
         try:
-            # fixed http://127.0.0.1:<port> instance check
-            with urllib.request.urlopen(  # noqa: S310
-                # fixed http://127.0.0.1:<port> instance check
+            with localhttp.open_loopback(
                 urllib.request.Request(f"{url}/api/focus", method="POST"),  # noqa: S310
                 timeout=2,
             ) as response:
@@ -1970,6 +2157,7 @@ def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
     if open_browser:
         threading.Timer(1.0, lambda: _open_browser(url)).start()
     print(f"AAC Editor running at {url} (press Ctrl+C to stop)")
+    _exit_cleanly_on_signals()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

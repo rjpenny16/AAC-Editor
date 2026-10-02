@@ -66,9 +66,7 @@ configReady.then(async () => {
     $("ai-model").value = preferences.ollama_model;
     $("ai-model").dataset.userEdited = "1";
   }
-  if (typeof preferences.ai_grounding === "boolean") {
-    $("ai-grounding").checked = preferences.ai_grounding;
-  }
+  // Not restored: the Wikipedia lookup starts off every launch. See ai.js.
   // Style matching is on unless the user turned it off: it costs nothing, goes
   // no further than the local model, and a suggestion that reads like the rest
   // of the page set is the better default.

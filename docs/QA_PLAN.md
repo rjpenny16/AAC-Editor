@@ -59,7 +59,9 @@ Priority order.
 
 ## Phase 3: Frontend correctness and accessibility
 
-- [ ] Unsaved-work guard and autosave recovery: reload mid-compose, kill the server, relaunch.
+- [ ] Unsaved-work guard, and autosave recovery with **Keep an unfinished page** turned on (it is off
+  by default): reload mid-compose, kill the server, relaunch. With it off, confirm that nothing about
+  the page being composed is written to `settings.json`.
 - [ ] Error messages and empty states on every wizard step: accurate and actionable.
 - [ ] Keyboard-only pass through each screen, focus handling when dialogs close, labels, contrast.
 - [ ] The review screen names exactly what is written.

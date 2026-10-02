@@ -50,6 +50,16 @@ REQUIRED_PRIMARY_KEYS = {
 }
 
 
+def quote_identifier(name: str) -> str:
+    """*name* as a quoted SQL identifier, with any embedded quote doubled.
+
+    Table names are read out of the file being inspected, so a hostile file
+    can name a table anything. Quoting them properly is what keeps that name
+    from becoming part of the statement.
+    """
+    return '"' + str(name).replace('"', '""') + '"'
+
+
 def tables(conn: sqlite3.Connection) -> list[str]:
     """Return all table names in the database."""
     rows = conn.execute(
@@ -62,12 +72,13 @@ def columns(conn: sqlite3.Connection, table: str) -> list[str]:
     """Return the column names of *table* in declaration order."""
     if not table.replace("_", "").isalnum():
         raise PagesetError(f"Suspicious table name: {table!r}")
-    return [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+    return [row[1] for row in conn.execute(f"PRAGMA table_info({quote_identifier(table)})")]
 
 
 def primary_key(conn: sqlite3.Connection, table: str) -> str:
     """Return the name of *table*'s single-column primary key."""
-    pks = [row[1] for row in conn.execute(f"PRAGMA table_info({table})") if row[5]]
+    info = conn.execute(f"PRAGMA table_info({quote_identifier(table)})")
+    pks = [row[1] for row in info if row[5]]
     if len(pks) != 1:
         raise PagesetError(
             f"Table {table} has {len(pks)} primary-key columns; expected exactly 1."
@@ -112,8 +123,10 @@ def require_supported_schema(conn: sqlite3.Connection) -> None:
                 f"Table {table} has primary key {actual!r}; expected {expected!r}."
             )
     for table in ("PageSetProperties", "Synchronization"):
-        # identifiers come from PRAGMA table_info, never user input
-        count = conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]  # noqa: S608
+        # fixed table names, quoted all the same
+        count = conn.execute(
+            f"SELECT COUNT(*) FROM {quote_identifier(table)}"  # noqa: S608
+        ).fetchone()[0]
         if count != 1:
             raise PagesetError(f"Table {table} has {count} rows; expected exactly 1.")
 
@@ -132,8 +145,10 @@ def schema_version(conn: sqlite3.Connection) -> str:
 def table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     """Return ``{table: row count}`` for every table (used by ``inspect``)."""
     return {
-        # identifiers come from PRAGMA table_info, never user input
-        t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]  # noqa: S608
+        # Table names come from the file's own schema, so they are quoted.
+        t: conn.execute(
+            f"SELECT COUNT(*) FROM {quote_identifier(t)}"  # noqa: S608
+        ).fetchone()[0]
         for t in tables(conn)
     }
 

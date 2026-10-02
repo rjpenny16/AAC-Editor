@@ -733,34 +733,43 @@ def test_live_web_endpoints(monkeypatch):
     )
     monkeypatch.setattr(live, "last_edit", lambda: None)
     client = app.test_client()
+    token = {"X-TDSnap-Token": API_TOKEN}
+    editor = {**token, "X-TDSnap-Editor": "1"}
 
-    assert client.get("/api/tdsnap/status").get_json()["running"] is True
-    launched = client.post(
-        "/api/tdsnap/launch", headers={"X-TDSnap-Token": API_TOKEN}
-    ).get_json()
+    # Reading another app's window needs the token too: a page can navigate TD
+    # Snap, so a stranger's web page must not be able to cause that with a GET.
+    assert client.get("/api/tdsnap/status").status_code == 403
+    assert client.get("/api/tdsnap/page-layout?page=Eating").status_code == 403
+    assert client.get("/api/tdsnap/status", headers=token).get_json()["running"] is True
+    launched = client.post("/api/tdsnap/launch", headers=token).get_json()
     assert launched["launched"] is True
-    rejected = client.post(
-        "/api/tdsnap/page", json={"title": "Snacks", "items": ["chips"]}
-    ).get_json()
-    assert rejected["ok"] is False
+    # No token: refused before anything runs. Token alone is not enough either; the
+    # editor header is what says the request began in this app.
+    page_body = {"title": "Snacks", "items": ["chips"]}
+    assert client.post("/api/tdsnap/page", json=page_body).status_code == 403
+    assert client.post(
+        "/api/tdsnap/page", json=page_body, headers={"X-TDSnap-Editor": "1"}
+    ).status_code == 403
+    rejected = client.post("/api/tdsnap/page", json=page_body, headers=token)
+    assert rejected.status_code == 400 and rejected.get_json()["ok"] is False
     result = client.post(
         "/api/tdsnap/page",
         json={"title": "Snacks", "items": ["chips", "apple"]},
-        headers={"X-TDSnap-Editor": "1"},
+        headers=editor,
     ).get_json()
     assert result["ok"] is True
     assert result["page"] == "Snacks"
     assert result["buttons"] == 2
-    layout = client.get("/api/tdsnap/page-layout?page=Eating").get_json()
+    layout = client.get("/api/tdsnap/page-layout?page=Eating", headers=token).get_json()
     assert layout["buttons"][0]["label"] == "Apple"
-    existing = client.post(
-        "/api/tdsnap/edit-plan",
-        json={
-            "operation": "add_to_existing_page", "page": "Eating",
-            "fingerprint": "abc", "items": [{"label": "Pizza", "slot": 1}],
-        },
-        headers={"X-TDSnap-Editor": "1"},
-    ).get_json()
+    plan = {
+        "operation": "add_to_existing_page", "page": "Eating",
+        "fingerprint": "abc", "items": [{"label": "Pizza", "slot": 1}],
+    }
+    assert client.post(
+        "/api/tdsnap/edit-plan", json=plan, headers={"X-TDSnap-Editor": "1"}
+    ).status_code == 403
+    existing = client.post("/api/tdsnap/edit-plan", json=plan, headers=editor).get_json()
     assert existing["ok"] is True
     assert existing["buttons"] == 1
     edited = client.post(
@@ -772,7 +781,7 @@ def test_live_web_endpoints(monkeypatch):
             "removals": [2],
             "moves": [{"slot": 3, "to": 5}],
         },
-        headers={"X-TDSnap-Editor": "1"},
+        headers=editor,
     ).get_json()
     assert edited["ok"] is True
     assert (edited["buttons"], edited["changed"], edited["removed"]) == (1, 1, 1)
