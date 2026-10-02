@@ -1,0 +1,149 @@
+{
+  "model": "Qwen2.5 7B Instruct",
+  "pin": {
+    "key": "qwen25-7b",
+    "name": "Qwen2.5 7B Instruct",
+    "license": "Apache-2.0",
+    "file": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+    "repo": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+    "revision": "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031",
+    "sha256": "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
+    "size": 4683074240,
+    "min_memory_bytes": 16106127360,
+    "size_hint": "about 4.7 GB",
+    "summary": "Larger model for detailed topics. Needs 16 GB of memory; slower on CPU.",
+    "url_override": ""
+  },
+  "seed": 42,
+  "n_ctx": 8192,
+  "n_threads": 6,
+  "n_threads_batch": 6,
+  "logical_cpus": 12,
+  "system_memory_bytes": 16357158912,
+  "thinking": false,
+  "baseline_memory": {
+    "working_set": 25743360,
+    "private_bytes": 16502784,
+    "peak_working_set": 27754496
+  },
+  "results": [
+    {
+      "id": "harry-potter-characters",
+      "passed": false,
+      "failures": [
+        "forbids: 'Hogwarts' contains the forbidden word 'hogwarts'"
+      ],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": false,
+      "items": [
+        "Harry Potter",
+        "Ron Weasley",
+        "Hermione Granger",
+        "Sirius Black",
+        "Snape",
+        "Dumbledore",
+        "Gryffindor",
+        "Hogwarts"
+      ],
+      "raw_items": [
+        "Harry Potter",
+        "Ron Weasley",
+        "Hermione Granger",
+        "Sirius Black",
+        "Snape",
+        "Dumbledore",
+        "Gryffindor",
+        "Hogwarts",
+        "Quidditch",
+        "Sorting Hat",
+        "Dementor",
+        "Voldemort"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 27.109,
+      "cpu_seconds": 149.922,
+      "usage": {
+        "prompt_tokens": 462,
+        "completion_tokens": 62,
+        "total_tokens": 524
+      },
+      "memory": {
+        "working_set": 6814810112,
+        "private_bytes": 5003956224,
+        "peak_working_set": 6968246272
+      },
+      "raw_content": "{\"items\": [\"Harry Potter\", \"Ron Weasley\", \"Hermione Granger\", \"Sirius Black\", \"Snape\", \"Dumbledore\", \"Gryffindor\", \"Hogwarts\", \"Quidditch\", \"Sorting Hat\", \"Dementor\", \"Voldemort\"]}",
+      "finish_reason": "stop"
+    }
+  ],
+  "load_seconds": 8.211,
+  "loaded_memory": {
+    "working_set": 6533033984,
+    "private_bytes": 4981919744,
+    "peak_working_set": 6727249920
+  },
+  "architecture": "qwen2",
+  "chat_format": "chat_template.default",
+  "cases": [
+    {
+      "id": "harry-potter-characters",
+      "category": "Harry Potter characters",
+      "kind": "words",
+      "count": 8,
+      "why": "The named example in the prompt. Related vocabulary is not an example of a type.",
+      "checks": {
+        "forbids": [
+          "magic",
+          "wand",
+          "hogwarts",
+          "broom",
+          "spell",
+          "wizard",
+          "quidditch",
+          "potion"
+        ],
+        "expects_any": [
+          "harry",
+          "hermione",
+          "ron",
+          "dumbledore",
+          "hagrid",
+          "snape",
+          "malfoy",
+          "voldemort",
+          "neville",
+          "ginny",
+          "luna",
+          "sirius",
+          "weasley",
+          "potter",
+          "granger"
+        ],
+        "looks_like_names": true,
+        "min_items": 4,
+        "no_duplicates": true,
+        "max_words": 3
+      }
+    }
+  ],
+  "peak_memory": {
+    "working_set": 6964510720,
+    "private_bytes": 5088456704
+  },
+  "final_memory": {
+    "working_set": 6815281152,
+    "private_bytes": 5003939840,
+    "peak_working_set": 6968246272
+  },
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "pass_rate": 0.0,
+    "complete_first_replies": 0
+  },
+  "median_seconds": 27.109,
+  "total_cpu_seconds": 149.922
+}

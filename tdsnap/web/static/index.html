@@ -16,6 +16,16 @@
   <div class="topbar-inner">
     <img class="brand-logo" src="/static/assets/aac-editor-logo.png" alt="">
     <h1>AAC Editor</h1>
+  <section class="wizard-progress" aria-label="Task progress">
+    <strong id="wizard-progress-label">Connect</strong>
+    <ol id="wizard-progress" class="stage-progress" aria-label="Connect, Build, Check, Done">
+      <li data-stage="connect">Connect</li>
+      <li data-stage="build">Build</li>
+      <li data-stage="check">Check</li>
+      <li data-stage="done">Done</li>
+    </ol>
+    <p id="wizard-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+  </section>
     <div class="connection-area">
       <span class="local-status"><span aria-hidden="true"></span>Local by default</span>
       <a id="header-save-btn" class="btn btn-primary btn-compact header-save" hidden>Save edited copy</a>
@@ -57,16 +67,7 @@
 </div>
 
 <main class="shell">
-  <section class="wizard-progress" aria-label="Task progress">
-    <strong id="wizard-progress-label">Connect</strong>
-    <ol id="wizard-progress" class="stage-progress" aria-label="Connect, Build, Check, Done">
-      <li data-stage="connect">Connect</li>
-      <li data-stage="build">Build</li>
-      <li data-stage="check">Check</li>
-      <li data-stage="done">Done</li>
-    </ol>
-    <p id="wizard-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
-  </section>
+
 
   <section id="step-welcome" class="wizard-card" aria-labelledby="welcome-heading" hidden>
     <h2 id="welcome-heading" tabindex="-1">Welcome to AAC Editor</h2>
@@ -215,7 +216,7 @@
 
       <section id="wizard-items" class="wizard-step workspace" data-wizard-step="items" aria-labelledby="items-heading" hidden>
         <p class="step-eyebrow">Build</p>
-        <h2 id="items-heading" tabindex="-1">What words or phrases would you like to add?</h2>
+        <h2 id="items-heading" tabindex="-1">Build your page</h2>
         <p class="lead guide">Type a word and select Add. It appears on the page, where you can drag it to another space.</p>
 
         <section id="workspace-tips" class="tips" aria-labelledby="tips-heading" hidden>
@@ -235,12 +236,16 @@
             <div class="page-toolbar">
               <div class="page-toolbar-title">
                 <strong id="current-page-label"></strong>
+                <span id="preview-grid-size" class="grid-size"></span>
                 <span class="preview-live"><span aria-hidden="true"></span><b id="preview-live-text">Live</b></span>
               </div>
+              <div class="page-toolbar-end">
+              <p id="preview-lock-note" class="field-hint" hidden></p>
               <div class="page-toolbar-actions" data-live-only>
                 <button type="button" id="choose-page-btn" class="text-button" data-tdsnap-only>Choose another page</button>
                 <button type="button" id="create-page-btn" class="text-button">Create a new page</button>
                 <button type="button" id="undo-last-btn" class="btn btn-ghost btn-compact" hidden>Undo my last change</button>
+              </div>
               </div>
             </div>
             <p id="preview-page-title" class="sr-only">AAC page preview</p>
@@ -254,7 +259,7 @@
             <div id="preview-legend" class="preview-legend" aria-label="Topic-page row colors" hidden>
               <span>Question</span><span>Comment</span><span>Positive</span><span>Negative</span><span>Personal</span>
             </div>
-            <p id="preview-hint" class="field-hint guide">This is an approximate layout preview.</p>
+            <p id="preview-hint" class="sr-only">This is an approximate layout preview.</p>
             <p class="field-hint expert-only">Keyboard: focus a button and use the arrow keys to move it.
               Enter or Space opens an existing button to change or remove it.</p>
             <p id="edit-existing-summary" class="status-line pending-edits" role="status" aria-live="polite" hidden></p>
@@ -266,21 +271,22 @@
           </section>
 
           <div class="workspace-side">
-            <div class="field" id="layout-field" data-tdsnap-only>
-              <span id="layout-label" class="label-text">Page layout</span>
-              <div class="segmented" role="radiogroup" aria-labelledby="layout-label">
-                <button type="button" id="style-words" class="seg-btn selected" role="radio" aria-checked="true">Standard buttons</button>
-                <button type="button" id="style-topic" class="seg-btn" role="radio" aria-checked="false">Topic-page rows</button>
+            <section class="workspace-words" aria-labelledby="word-entry-label">
+              <label id="word-entry-label" for="word-input">Words or phrases</label>
+              <p class="field-hint buttons-hint guide">Add one word per button.</p>
+              <div class="word-entry-row" id="word-entry-row">
+                  <input id="word-input" type="text" autocomplete="off" spellcheck="false" placeholder="For example, help" maxlength="60" aria-label="Word or phrase to add" aria-describedby="word-entry-hint chip-note items-error">
+                <button type="button" id="word-add-btn" class="btn btn-primary" aria-disabled="true" aria-describedby="word-entry-hint">Add</button>
               </div>
-              <p id="style-hint" class="field-hint guide">Each button speaks its label.</p>
-            </div>
+              <p id="word-entry-hint" class="field-hint">Type a word to enable Add.</p>
+            </section>
 
-            <div class="field">
+            <section class="workspace-pending" aria-labelledby="pending-heading">
               <div class="label-row">
-                <label for="word-input">Words or phrases</label>
+                <h3 id="pending-heading" class="sr-only">Pending buttons</h3>
                 <span id="capacity" class="capacity" aria-live="polite"></span>
               </div>
-              <p class="field-hint buttons-hint guide">Each item becomes one speaking button. You can paste a comma-separated list.</p>
+              <p id="pending-empty" class="field-hint">Your new buttons will appear here.</p>
 
               <div id="fn-palette" class="fn-palette" hidden>
                 <div class="fn-heading-row">
@@ -298,7 +304,6 @@
                 </div>
               </div>
 
-              <div class="word-entry-row">
                 <div id="chipbox" class="chipbox">
                   <div class="topic-row-control topic-row-label" data-row-fn="question"><strong>Question</strong></div>
                   <div class="topic-row-control topic-row-phrases" data-row-phrases="question"></div>
@@ -315,13 +320,21 @@
                   <div class="topic-row-control topic-row-label" data-row-fn="personal"><strong>Personal</strong></div>
                   <div class="topic-row-control topic-row-phrases" data-row-phrases="personal"></div>
                   <button type="button" class="topic-row-control topic-row-add" data-add-fn="personal" aria-label="Add a personal phrase">Add</button>
-                  <input id="word-input" type="text" autocomplete="off" spellcheck="false" placeholder="For example, help" maxlength="60" aria-label="Word or phrase to add" aria-describedby="chip-note items-error">
+
                 </div>
-                <button type="button" id="word-add-btn" class="btn btn-secondary">Add</button>
-                <button type="button" id="undo-remove-btn" class="btn btn-ghost btn-compact" hidden>Undo</button>
-              </div>
+              <button type="button" id="undo-remove-btn" class="btn btn-ghost btn-compact" hidden>Undo</button>
               <div id="chip-note" class="status-line" role="status" aria-live="polite" aria-atomic="true"></div>
               <p id="items-error" class="step-error" data-error-for="items" role="alert" tabindex="-1" hidden></p>
+
+            </section>
+            <div class="workspace-options">
+            <div class="field" id="layout-field" data-tdsnap-only>
+              <span id="layout-label" class="label-text">Page layout</span>
+              <div class="segmented" role="radiogroup" aria-labelledby="layout-label" aria-describedby="style-hint">
+                <button type="button" id="style-words" class="seg-btn selected" role="radio" aria-checked="true">Standard buttons</button>
+                <button type="button" id="style-topic" class="seg-btn" role="radio" aria-checked="false">Topic-page rows</button>
+              </div>
+              <p id="style-hint" class="sr-only">Each button speaks its label.</p>
             </div>
 
             <div class="field tools">
@@ -366,6 +379,21 @@
                   <textarea id="ai-request" rows="2" maxlength="500" placeholder="e.g. Only the Death Eaters from the books, full names" aria-describedby="ai-request-hint"></textarea>
                   <p id="ai-request-hint" class="field-hint">A sentence or two about the words to find. Only the model on this computer sees it.</p>
                 </div>
+                <details class="ai-options">
+                  <summary>Use a specific reference page <span class="optional-tag">optional</span></summary>
+                  <div class="ai-options-body">
+                    <div class="field">
+                      <label for="ai-reference-page">Wikipedia article link or title</label>
+                      <input id="ai-reference-page" type="text" maxlength="2048" placeholder="https://en.wikipedia.org/wiki/Bluey" aria-describedby="ai-reference-page-hint">
+                      <p id="ai-reference-page-hint" class="field-hint">Uses this exact English Wikipedia article. Providing a link allows a lookup of that article.</p>
+                    </div>
+                    <div class="field">
+                      <label for="ai-reference-text">Or paste text from any reference page</label>
+                      <textarea id="ai-reference-text" rows="4" maxlength="30000" placeholder="Paste the relevant section, character list, or article text here." aria-describedby="ai-reference-text-hint"></textarea>
+                      <p id="ai-reference-text-hint" class="field-hint">Pasted text takes priority over article lookup and stays on this computer. Suggestions use words found in this reference.</p>
+                    </div>
+                  </div>
+                </details>
                 <div class="ai-ask">
                   <label for="ai-count">How many</label>
                   <input id="ai-count" type="number" min="1" max="40" value="10" inputmode="numeric">
@@ -396,7 +424,7 @@
               </section>
 
               <div id="ai-grounding-source" class="ai-grounding-source" hidden>
-                <p>Reference article used: <a id="ai-grounding-link" href="https://en.wikipedia.org" target="_blank" rel="noopener noreferrer"></a></p>
+                <p>Reference used: <a id="ai-grounding-link" href="https://en.wikipedia.org" target="_blank" rel="noopener noreferrer"></a></p>
                 <div class="ai-grounding-pick">
                   <label for="ai-grounding-pick">Wrong article?</label>
                   <select id="ai-grounding-pick"></select>
@@ -417,6 +445,13 @@
                     Look up public reference facts on Wikipedia
                   </label>
                   <p class="field-hint">Off by default. When enabled, AAC Editor sends only this page title to Wikipedia for this request — never your button labels.</p>
+                  <div id="ai-upgrade-row" class="field" hidden>
+                    <label for="ai-upgrade-model">Built-in suggestion model</label>
+                    <select id="ai-upgrade-model"></select>
+                    <p id="ai-upgrade-note" class="field-hint"></p>
+                    <button type="button" id="ai-upgrade-download" class="btn btn-secondary"><span class="btn-label">Download selected model</span></button>
+                    <p id="ai-upgrade-status" class="status-line" role="status" aria-live="polite"></p>
+                  </div>
                   <div class="field">
                     <label for="ai-engine">Where suggestions come from</label>
                     <select id="ai-engine">
@@ -455,10 +490,12 @@
               </div>
             </section>
           </div>
+          </div>
         </div>
 
-        <div class="wizard-actions">
+        <div class="wizard-actions workspace-actions">
           <button type="button" class="btn btn-ghost wizard-back">Back</button>
+          <div class="workspace-action-copy"><strong id="workspace-action-summary"></strong><span id="workspace-action-hint">Nothing changes until you confirm.</span></div>
           <button type="submit" id="build-btn" class="btn btn-primary"><span id="build-btn-label" class="btn-label">Check changes</span></button>
         </div>
       </section>

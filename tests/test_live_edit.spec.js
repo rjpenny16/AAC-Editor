@@ -4375,6 +4375,70 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
 
   /* ---------- the reference lookup ---------- */
 
+  test('exact article and pasted reference reach suggestions and clear stale candidates', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }), layout: defaultLayout('Eating'),
+    });
+    const asked = await mockAi(page, [{ words: ['Bluey', 'Bingo'], grounding: {
+      used: true, title: 'Pasted reference text', url: '', alternatives: [],
+    } }]);
+    await newItems(page, 'Bluey characters');
+    await ready(page);
+    await page.getByText('Use a specific reference page', { exact: false }).click();
+    await page.locator('#ai-reference-page').fill('https://en.wikipedia.org/wiki/List_of_Bluey_characters');
+    await page.locator('#ai-reference-text').fill('Bluey and Bingo are sisters.');
+    await page.locator('#ai-go').click();
+    await expect(page.locator('#ai-tray .chip')).toHaveCount(2);
+    expect(asked[0].reference_page).toContain('List_of_Bluey_characters');
+    expect(asked[0].reference_text).toBe('Bluey and Bingo are sisters.');
+    await expect(page.locator('#ai-grounding-link')).toHaveText('Pasted reference text');
+    await expect(page.locator('#ai-grounding-link')).not.toHaveAttribute('href');
+    await expect(page.locator('#ai-grounding-pick')).toBeHidden();
+    expect(await blockingViolations(page)).toEqual([]);
+    await capture(page, 'ai-reference.png');
+    await page.locator('#ai-request').fill('Only Bingo');
+    await expect(page.locator('#ai-tray')).toBeHidden();
+    await expect(page.locator('#ai-grounding-source')).toBeHidden();
+    await page.locator('#ai-reference-text').fill('Bingo is Bluey’s sister.');
+    await page.locator('#ai-go').click();
+    await expect(page.locator('#ai-tray')).toBeVisible();
+    expect(asked[1].reference_text).toBe('Bingo is Bluey’s sister.');
+    expect(asked[1].request).toBe('Only Bingo');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('#ai-reference-text')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+    await capture(page, 'ai-reference-mobile.png');
+    expect(errors).toEqual([]);
+  });
+
+  test('an already working built-in model can be upgraded in settings', async ({ page }) => {
+    await mockTD(page, {
+      status: defaultStatus({ pages: ['Eating'] }), layout: defaultLayout('Eating'),
+    });
+    const local = { ...LOCAL_MODEL, engine_available: true, downloaded: true, choices: [
+      { key: 'small', name: 'Small', supported: true, downloaded: true, size: '1 GB', summary: 'Small model.' },
+      { key: 'large', name: 'Large', supported: true, downloaded: false, size: '4.7 GB', summary: 'Larger model.' },
+    ] };
+    await mockAi(page, [{ words: [] }], { status: readyStatus({ local }) });
+    const downloads = [];
+    await page.route('**/api/ai/download', (route) => {
+      if (route.request().method() === 'POST') downloads.push(route.request().postDataJSON());
+      return fulfillJson(route, { ok: true, download: { status: 'downloading', done: 0, total: 100 } });
+    });
+    await newItems(page, 'Snacks');
+    await ready(page);
+    await openSettings(page);
+    await expect(page.locator('#ai-upgrade-model')).toBeVisible();
+    await expect(page.locator('#ai-upgrade-download')).toBeHidden();
+    await page.locator('#ai-upgrade-model').selectOption('large');
+    await expect(page.locator('#ai-upgrade-note')).toContainText('Larger model.');
+    await page.locator('#ai-upgrade-download').click();
+    expect(downloads).toEqual([{ model_key: 'large' }]);
+    await expect(page.locator('#ai-stage-downloading')).toBeVisible();
+  });
+
   test('the reference article is named, and can be refused', async ({ page }) => {
     await mockTD(page, {
       status: defaultStatus({ pages: ['Eating'] }),

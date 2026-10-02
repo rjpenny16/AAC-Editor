@@ -41,6 +41,7 @@ import pathlib
 
 import pytest
 
+from tdsnap.web import prompts
 from tests import ai_eval
 
 pytestmark = pytest.mark.skipif(
@@ -77,6 +78,8 @@ def test_eval_set_pass_rate(smoke_localai, record_property):
             count=case["count"],
             kind=case["kind"],
             function=case.get("function"),
+            reference=case.get("reference"),
+            request=case.get("request"),
         )
         if error:
             # A generation that failed outright is a failed case, named as
@@ -86,6 +89,10 @@ def test_eval_set_pass_rate(smoke_localai, record_property):
                 "failures": [f"generation failed: {error}"],
             })
             continue
+        items = prompts.clean_items(
+            items, case["count"], case["kind"], case["category"],
+            reference=case.get("reference", ""), function=case.get("function"),
+        )
         result = ai_eval.score(case, items)
         result["items"] = items
         results.append(result)

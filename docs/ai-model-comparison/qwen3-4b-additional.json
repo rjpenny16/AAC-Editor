@@ -1,0 +1,141 @@
+{
+  "model": "Qwen3 4B Instruct 2507",
+  "pin": {
+    "key": "qwen3-4b",
+    "name": "Qwen3 4B Instruct 2507",
+    "license": "Apache-2.0",
+    "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "revision": "a06e946bb6b655725eafa393f4a9745d460374c9",
+    "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+    "size": 2497281120,
+    "min_memory_bytes": 0,
+    "size_hint": "2.5 GB",
+    "summary": "Benchmark candidate",
+    "url_override": ""
+  },
+  "seed": 42,
+  "n_ctx": 8192,
+  "n_threads": 11,
+  "logical_cpus": 12,
+  "system_memory_bytes": 16357158912,
+  "thinking": false,
+  "baseline_memory": {
+    "working_set": 25923584,
+    "private_bytes": 16683008,
+    "peak_working_set": 27938816
+  },
+  "results": [
+    {
+      "id": "bluey-without-reference",
+      "passed": false,
+      "failures": [
+        "allowed_items: 'Brisbane' is not a member of the requested source-specific set"
+      ],
+      "items": [
+        "Bluey",
+        "Brisbane",
+        "Chloe",
+        "Giggle",
+        "Ned",
+        "Milo",
+        "Buddy",
+        "Lucky"
+      ],
+      "raw_items": [
+        "Bluey",
+        "Brisbane",
+        "Chloe",
+        "Giggle",
+        "Ned",
+        "Milo",
+        "Buddy",
+        "Lucky",
+        "Molly",
+        "Pippa",
+        "Daisy"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 18.376,
+      "cpu_seconds": 163.0,
+      "usage": {
+        "prompt_tokens": 484,
+        "completion_tokens": 55,
+        "total_tokens": 539
+      },
+      "memory": {
+        "working_set": 5279408128,
+        "private_bytes": 4456505344,
+        "peak_working_set": 5532905472
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Brisbane\", \"Chloe\", \"Giggle\", \"Giggle\", \"Ned\", \"Milo\", \"Buddy\", \"Lucky\", \"Molly\", \"Pippa\", \"Daisy\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "subgroup-without-reference",
+      "passed": false,
+      "failures": [
+        "allowed_items: 'Lord Voldemort' is not a member of the requested source-specific set"
+      ],
+      "items": [
+        "Lord Voldemort",
+        "Darth Malfoy",
+        "Draco Malfoy",
+        "Neville Longbottom",
+        "Lucius Malfoy"
+      ],
+      "raw_items": [
+        "Lord Voldemort",
+        "Darth Malfoy",
+        "Draco Malfoy",
+        "Neville Longbottom",
+        "Lucius Malfoy",
+        "Pansy Parkinson",
+        "Severus Snape",
+        "Bellatrix Lestrange"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 16.455,
+      "cpu_seconds": 164.562,
+      "usage": {
+        "prompt_tokens": 493,
+        "completion_tokens": 51,
+        "total_tokens": 544
+      },
+      "memory": {
+        "working_set": 5265178624,
+        "private_bytes": 4467556352,
+        "peak_working_set": 5532905472
+      },
+      "raw_content": "{\"items\": [\"Lord Voldemort\", \"Darth Malfoy\", \"Draco Malfoy\", \"Neville Longbottom\", \"Lucius Malfoy\", \"Pansy Parkinson\", \"Severus Snape\", \"Bellatrix Lestrange\"]}",
+      "finish_reason": "stop"
+    }
+  ],
+  "load_seconds": 4.146,
+  "loaded_memory": {
+    "working_set": 4843843584,
+    "private_bytes": 4433842176,
+    "peak_working_set": 4843843584
+  },
+  "architecture": "qwen3",
+  "chat_format": "chat_template.default",
+  "peak_memory": {
+    "working_set": 5526388736,
+    "private_bytes": 4546977792
+  },
+  "final_memory": {
+    "working_set": 5265166336,
+    "private_bytes": 4467503104,
+    "peak_working_set": 5532905472
+  },
+  "summary": {
+    "total": 2,
+    "passed": 0,
+    "failed": 2,
+    "pass_rate": 0.0
+  },
+  "median_seconds": 17.416,
+  "total_cpu_seconds": 327.562
+}

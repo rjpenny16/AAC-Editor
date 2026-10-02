@@ -69,6 +69,14 @@ def test_confident_nonsense_does_not_pass():
     )["passed"]
 
 
+def test_reference_cases_require_every_item_to_match_the_requested_set():
+    case = BY_ID["death-eaters-reference-subset"]
+    good = ["Bellatrix Lestrange", "Lucius Malfoy", "Peter Pettigrew", "Antonin Dolohov"]
+    assert ai_eval.score(case, good)["passed"]
+    for wrong in ("Harry Potter", "Hogwarts", "Captain Banana"):
+        assert not ai_eval.score(case, [*good[:3], wrong])["passed"]
+
+
 def test_every_word_case_asks_for_something_recognisable():
     for case in CASES:
         if case["kind"] == "words":
@@ -105,6 +113,15 @@ def test_name_shaped_answers_are_distinguished_from_nouns():
         ai_eval.score(case, ["Abraham Lincoln", "the white house is big",
                              "John Adams", "James Monroe"])["failures"]
     )
+
+
+def test_kitchen_objects_can_include_the_room_name():
+    case = BY_ID["things-in-a-kitchen"]
+    assert ai_eval.score(case, ["Kitchen table", "Sink", "Stove", "Fridge", "Spoon"])["passed"]
+    result = ai_eval.score(case, ["Things in a kitchen", "Sink", "Stove", "Fridge", "Spoon"])
+    assert any("not_the_title" in failure for failure in result["failures"])
+    result = ai_eval.score(case, ["Kitchen", "Sink", "Stove", "Fridge", "Spoon"])
+    assert any("forbidden_items" in failure for failure in result["failures"])
 
 
 def test_phrase_cases_check_the_classifier_was_applied():

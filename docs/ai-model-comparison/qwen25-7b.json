@@ -1,0 +1,2813 @@
+{
+  "model": "Qwen2.5 7B Instruct",
+  "pin": {
+    "key": "qwen25-7b",
+    "name": "Qwen2.5 7B Instruct",
+    "license": "Apache-2.0",
+    "file": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+    "repo": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+    "revision": "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031",
+    "sha256": "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
+    "size": 4683074240,
+    "min_memory_bytes": 16106127360,
+    "size_hint": "about 4.7 GB",
+    "summary": "Larger model for detailed topics. Needs 16 GB of memory; slower on CPU.",
+    "url_override": ""
+  },
+  "seed": 42,
+  "n_ctx": 8192,
+  "n_threads": 11,
+  "logical_cpus": 12,
+  "system_memory_bytes": 16357158912,
+  "thinking": false,
+  "baseline_memory": {
+    "working_set": 29999104,
+    "private_bytes": 17227776,
+    "peak_working_set": 32034816
+  },
+  "results": [
+    {
+      "id": "harry-potter-characters",
+      "passed": false,
+      "failures": [
+        "forbids: 'Hogwarts' contains the forbidden word 'hogwarts'"
+      ],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": false,
+      "items": [
+        "Harry Potter",
+        "Ron Weasley",
+        "Hermione Granger",
+        "Sirius Black",
+        "Snape",
+        "Dumbledore",
+        "Gryffindor",
+        "Hogwarts"
+      ],
+      "raw_items": [
+        "Harry Potter",
+        "Ron Weasley",
+        "Hermione Granger",
+        "Sirius Black",
+        "Snape",
+        "Dumbledore",
+        "Gryffindor",
+        "Hogwarts",
+        "Quidditch",
+        "Sorting Hat",
+        "Dementor",
+        "Voldemort"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 26.95,
+      "cpu_seconds": 237.422,
+      "usage": {
+        "prompt_tokens": 462,
+        "completion_tokens": 62,
+        "total_tokens": 524
+      },
+      "memory": {
+        "working_set": 6163914752,
+        "private_bytes": 5004849152,
+        "peak_working_set": 6228525056
+      },
+      "raw_content": "{\"items\": [\"Harry Potter\", \"Ron Weasley\", \"Hermione Granger\", \"Sirius Black\", \"Snape\", \"Dumbledore\", \"Gryffindor\", \"Hogwarts\", \"Quidditch\", \"Sorting Hat\", \"Dementor\", \"Voldemort\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "disney-characters",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Mickey Mouse",
+        "Snow White",
+        "Cinderella",
+        "Donald Duck",
+        "Simba",
+        "Pumba",
+        "Peter Pan",
+        "Mulan"
+      ],
+      "raw_items": [
+        "Mickey Mouse",
+        "Snow White",
+        "Cinderella",
+        "Donald Duck",
+        "Simba",
+        "Pumba",
+        "Peter Pan",
+        "Mulan",
+        "Buzz Lightyear",
+        "Winnie the Pooh",
+        "Daisy Duck",
+        "Tigger"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 22.735,
+      "cpu_seconds": 220.0,
+      "usage": {
+        "prompt_tokens": 461,
+        "completion_tokens": 58,
+        "total_tokens": 519
+      },
+      "memory": {
+        "working_set": 6045151232,
+        "private_bytes": 5005729792,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Mickey Mouse\", \"Snow White\", \"Cinderella\", \"Donald Duck\", \"Simba\", \"Pumba\", \"Peter Pan\", \"Mulan\", \"Buzz Lightyear\", \"Winnie the Pooh\", \"Daisy Duck\", \"Tigger\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "us-presidents",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "George Washington",
+        "Abraham Lincoln",
+        "Theodore Roosevelt",
+        "Franklin D. Roosevelt",
+        "John F. Kennedy",
+        "Lyndon B. Johnson"
+      ],
+      "raw_items": [
+        "George Washington",
+        "Abraham Lincoln",
+        "Theodore Roosevelt",
+        "Franklin D. Roosevelt",
+        "John F. Kennedy",
+        "Lyndon B. Johnson",
+        "Richard Nixon",
+        "Ronald Reagan",
+        "Barack Obama"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 21.262,
+      "cpu_seconds": 211.875,
+      "usage": {
+        "prompt_tokens": 459,
+        "completion_tokens": 51,
+        "total_tokens": 510
+      },
+      "memory": {
+        "working_set": 5891731456,
+        "private_bytes": 5012901888,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"George Washington\", \"Abraham Lincoln\", \"Theodore Roosevelt\", \"Franklin D. Roosevelt\", \"John F. Kennedy\", \"Lyndon B. Johnson\", \"Richard Nixon\", \"Ronald Reagan\", \"Barack Obama\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "farm-animals",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Cow",
+        "Sheep",
+        "Chicken",
+        "Pig",
+        "Goat",
+        "Horse",
+        "Duck",
+        "Geese"
+      ],
+      "raw_items": [
+        "Cow",
+        "Sheep",
+        "Chicken",
+        "Pig",
+        "Goat",
+        "Horse",
+        "Duck",
+        "Geese",
+        "Turkey",
+        "Rabbit",
+        "Donkey",
+        "Alpaca"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 20.605,
+      "cpu_seconds": 207.047,
+      "usage": {
+        "prompt_tokens": 461,
+        "completion_tokens": 49,
+        "total_tokens": 510
+      },
+      "memory": {
+        "working_set": 5903994880,
+        "private_bytes": 5026131968,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Cow\", \"Sheep\", \"Chicken\", \"Pig\", \"Goat\", \"Horse\", \"Duck\", \"Geese\", \"Turkey\", \"Rabbit\", \"Donkey\", \"Alpaca\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "breakfast-foods",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Cereal",
+        "Toast",
+        "Jam",
+        "Bread",
+        "Yogurt",
+        "Eggs",
+        "Oatmeal",
+        "Muffin"
+      ],
+      "raw_items": [
+        "Cereal",
+        "Toast",
+        "Jam",
+        "Bread",
+        "Yogurt",
+        "Eggs",
+        "Oatmeal",
+        "Muffin",
+        "Fruit",
+        "Coffee",
+        "Tea",
+        "Juice"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 21.507,
+      "cpu_seconds": 205.344,
+      "usage": {
+        "prompt_tokens": 462,
+        "completion_tokens": 52,
+        "total_tokens": 514
+      },
+      "memory": {
+        "working_set": 5722324992,
+        "private_bytes": 5021679616,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Cereal\", \"Toast\", \"Jam\", \"Bread\", \"Yogurt\", \"Eggs\", \"Oatmeal\", \"Muffin\", \"Fruit\", \"Coffee\", \"Tea\", \"Juice\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "pizza-toppings",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Pepperoni",
+        "Mushrooms",
+        "Onions",
+        "Bacon",
+        "Olives",
+        "Peppers",
+        "Sausage",
+        "Extra Cheese"
+      ],
+      "raw_items": [
+        "Pepperoni",
+        "Mushrooms",
+        "Onions",
+        "Bacon",
+        "Olives",
+        "Peppers",
+        "Sausage",
+        "Extra Cheese",
+        "Green Peppers",
+        "Black Olives",
+        "Pineapple",
+        "Ham"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 21.921,
+      "cpu_seconds": 215.734,
+      "usage": {
+        "prompt_tokens": 461,
+        "completion_tokens": 56,
+        "total_tokens": 517
+      },
+      "memory": {
+        "working_set": 5371441152,
+        "private_bytes": 5033369600,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Pepperoni\", \"Mushrooms\", \"Onions\", \"Bacon\", \"Olives\", \"Peppers\", \"Sausage\", \"Extra Cheese\", \"Green Peppers\", \"Black Olives\", \"Pineapple\", \"Ham\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "musical-instruments",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Guitar",
+        "Drum",
+        "Piano",
+        "Violin",
+        "Flute",
+        "Trumpet",
+        "Cello",
+        "Bass"
+      ],
+      "raw_items": [
+        "Guitar",
+        "Drum",
+        "Piano",
+        "Violin",
+        "Flute",
+        "Trumpet",
+        "Cello",
+        "Bass",
+        "Harmonica",
+        "Saxophone",
+        "Didgeridoo",
+        "Triangle"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 21.682,
+      "cpu_seconds": 212.859,
+      "usage": {
+        "prompt_tokens": 462,
+        "completion_tokens": 54,
+        "total_tokens": 516
+      },
+      "memory": {
+        "working_set": 5140897792,
+        "private_bytes": 5029576704,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Guitar\", \"Drum\", \"Piano\", \"Violin\", \"Flute\", \"Trumpet\", \"Cello\", \"Bass\", \"Harmonica\", \"Saxophone\", \"Didgeridoo\", \"Triangle\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "colors",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Red",
+        "Blue",
+        "Green",
+        "Yellow",
+        "Purple",
+        "Orange",
+        "Black",
+        "White"
+      ],
+      "raw_items": [
+        "Red",
+        "Blue",
+        "Green",
+        "Yellow",
+        "Purple",
+        "Orange",
+        "Black",
+        "White",
+        "Brown",
+        "Gray",
+        "Pink",
+        "Cyan"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 18.917,
+      "cpu_seconds": 176.266,
+      "usage": {
+        "prompt_tokens": 460,
+        "completion_tokens": 40,
+        "total_tokens": 500
+      },
+      "memory": {
+        "working_set": 4851642368,
+        "private_bytes": 5040418816,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Red\", \"Blue\", \"Green\", \"Yellow\", \"Purple\", \"Orange\", \"Black\", \"White\", \"Brown\", \"Gray\", \"Pink\", \"Cyan\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "body-parts",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Head",
+        "Arms",
+        "Legs",
+        "Hands",
+        "Feet",
+        "Torso",
+        "Ears",
+        "Nose"
+      ],
+      "raw_items": [
+        "Head",
+        "Arms",
+        "Legs",
+        "Hands",
+        "Feet",
+        "Torso",
+        "Ears",
+        "Nose",
+        "Mouth",
+        "Eyes",
+        "Hair",
+        "Shoulders"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 20.161,
+      "cpu_seconds": 192.469,
+      "usage": {
+        "prompt_tokens": 461,
+        "completion_tokens": 48,
+        "total_tokens": 509
+      },
+      "memory": {
+        "working_set": 4851019776,
+        "private_bytes": 5044400128,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Head\", \"Arms\", \"Legs\", \"Hands\", \"Feet\", \"Torso\", \"Ears\", \"Nose\", \"Mouth\", \"Eyes\", \"Hair\", \"Shoulders\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "feelings",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Happy",
+        "Sad",
+        "Angry",
+        "Scared",
+        "Tired",
+        "Excited",
+        "Surprised",
+        "Love"
+      ],
+      "raw_items": [
+        "Happy",
+        "Sad",
+        "Angry",
+        "Scared",
+        "Tired",
+        "Excited",
+        "Surprised",
+        "Love",
+        "Hate",
+        "Confused",
+        "Ashamed",
+        "Guilty"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 19.799,
+      "cpu_seconds": 199.656,
+      "usage": {
+        "prompt_tokens": 461,
+        "completion_tokens": 49,
+        "total_tokens": 510
+      },
+      "memory": {
+        "working_set": 4855525376,
+        "private_bytes": 5048422400,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Happy\", \"Sad\", \"Angry\", \"Scared\", \"Tired\", \"Excited\", \"Surprised\", \"Love\", \"Hate\", \"Confused\", \"Ashamed\", \"Guilty\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "playground-equipment",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Slide",
+        "Swing",
+        "Monkey Bars",
+        "See-Saw",
+        "Sandbox",
+        "Climbing Wall"
+      ],
+      "raw_items": [
+        "Slide",
+        "Swing",
+        "Monkey Bars",
+        "See-Saw",
+        "Sandbox",
+        "Climbing Wall"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 17.616,
+      "cpu_seconds": 178.141,
+      "usage": {
+        "prompt_tokens": 460,
+        "completion_tokens": 36,
+        "total_tokens": 496
+      },
+      "memory": {
+        "working_set": 4869763072,
+        "private_bytes": 5035122688,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Slide\", \"Swing\", \"Monkey Bars\", \"See-Saw\", \" Sandbox\", \" Climbing Wall\", \" Slide\", \" Slide\", \" Slide\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "things-in-a-kitchen",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Knife",
+        "Fork",
+        "Spoon",
+        "Mug",
+        "Pan",
+        "Bowl",
+        "Oven",
+        "Refrigerator"
+      ],
+      "raw_items": [
+        "Knife",
+        "Fork",
+        "Spoon",
+        "Mug",
+        "Pan",
+        "Bowl",
+        "Oven",
+        "Refrigerator",
+        "Microwave",
+        "Toaster",
+        "Coffee maker",
+        "Blender"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 20.93,
+      "cpu_seconds": 209.828,
+      "usage": {
+        "prompt_tokens": 463,
+        "completion_tokens": 51,
+        "total_tokens": 514
+      },
+      "memory": {
+        "working_set": 4875640832,
+        "private_bytes": 5037109248,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Knife\", \"Fork\", \"Spoon\", \"Mug\", \"Pan\", \"Bowl\", \"Oven\", \"Refrigerator\", \"Microwave\", \"Toaster\", \"Coffee maker\", \"Blender\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "school-subjects",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Math",
+        "Science",
+        "History",
+        "English",
+        "Art",
+        "Music"
+      ],
+      "raw_items": [
+        "Math",
+        "Science",
+        "History",
+        "English",
+        "Art",
+        "Music",
+        "Physical Education",
+        "Spanish",
+        "French"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 16.814,
+      "cpu_seconds": 169.516,
+      "usage": {
+        "prompt_tokens": 459,
+        "completion_tokens": 31,
+        "total_tokens": 490
+      },
+      "memory": {
+        "working_set": 4878876672,
+        "private_bytes": 5040549888,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Math\", \"Science\", \"History\", \"English\", \"Art\", \"Music\", \"Physical Education\", \"Spanish\", \"French\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "zoo-animals",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Lion",
+        "Giraffe",
+        "Elephant",
+        "Monkey",
+        "Tiger",
+        "Zebra",
+        "Kangaroo",
+        "Penguin"
+      ],
+      "raw_items": [
+        "Lion",
+        "Giraffe",
+        "Elephant",
+        "Monkey",
+        "Tiger",
+        "Zebra",
+        "Kangaroo",
+        "Penguin",
+        "Bear",
+        "Crocodile",
+        "Koala",
+        "Rhino"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 21.138,
+      "cpu_seconds": 213.094,
+      "usage": {
+        "prompt_tokens": 462,
+        "completion_tokens": 52,
+        "total_tokens": 514
+      },
+      "memory": {
+        "working_set": 4835086336,
+        "private_bytes": 5044629504,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Lion\", \"Giraffe\", \"Elephant\", \"Monkey\", \"Tiger\", \"Zebra\", \"Kangaroo\", \"Penguin\", \"Bear\", \"Crocodile\", \"Koala\", \"Rhino\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "sports",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Basketball",
+        "Football",
+        "Soccer",
+        "Tennis",
+        "Swimming",
+        "Running",
+        "Gymnastics",
+        "Cycling"
+      ],
+      "raw_items": [
+        "Basketball",
+        "Football",
+        "Soccer",
+        "Tennis",
+        "Swimming",
+        "Running",
+        "Gymnastics",
+        "Cycling",
+        "Volleyball",
+        "Track",
+        "Baseball",
+        "Basket"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 20.933,
+      "cpu_seconds": 200.656,
+      "usage": {
+        "prompt_tokens": 460,
+        "completion_tokens": 50,
+        "total_tokens": 510
+      },
+      "memory": {
+        "working_set": 4761542656,
+        "private_bytes": 5049094144,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Basketball\", \"Football\", \"Soccer\", \"Tennis\", \"Swimming\", \"Running\", \"Gymnastics\", \"Cycling\", \"Volleyball\", \"Track\", \"Baseball\", \"Basket\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "swimming-phrases",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "Jumping in feels great",
+          "function": "positive"
+        },
+        {
+          "label": "Do you like swimming?",
+          "function": "question"
+        },
+        {
+          "label": "I prefer freestyle",
+          "function": "personal"
+        },
+        {
+          "label": "Water hurts my eyes",
+          "function": "personal"
+        },
+        {
+          "label": "Swimming is relaxing",
+          "function": "comment"
+        },
+        {
+          "label": "Can we go swimming?",
+          "function": "question"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "Jumping in feels great",
+          "function": "positive"
+        },
+        {
+          "label": "Do you like swimming?",
+          "function": "question"
+        },
+        {
+          "label": "I prefer freestyle",
+          "function": "personal"
+        },
+        {
+          "label": "Water hurts my eyes",
+          "function": "personal"
+        },
+        {
+          "label": "Swimming is relaxing",
+          "function": "comment"
+        },
+        {
+          "label": "Can we go swimming?",
+          "function": "question"
+        },
+        {
+          "label": "I can't swim well",
+          "function": "negative"
+        },
+        {
+          "label": "We should swim more often",
+          "function": "positive"
+        },
+        {
+          "label": "This pool is too cold",
+          "function": "negative"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 33.686,
+      "cpu_seconds": 316.578,
+      "usage": {
+        "prompt_tokens": 340,
+        "completion_tokens": 145,
+        "total_tokens": 485
+      },
+      "memory": {
+        "working_set": 4591079424,
+        "private_bytes": 5052125184,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [{\"label\": \"Jumping in feels great\", \"function\": \"positive\"}, {\"label\": \"Do you like swimming?\" , \"function\": \"question\"}, {\"label\": \"I prefer freestyle\", \"function\": \"personal\"}, {\"label\": \"Water hurts my eyes\", \"function\": \"negative\"}, {\"label\": \"Swimming is relaxing\", \"function\": \"comment\"}, {\"label\": \"Can we go swimming?\" , \"function\": \"question\"}, {\"label\": \"I can't swim well\", \"function\": \"negative\"}, {\"label\": \"We should swim more often\", \"function\": \"positive\"}, {\"label\": \"This pool is too cold\", \"function\": \"negative\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "birthday-party-phrases",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "Cakes are yummy!",
+          "function": "positive"
+        },
+        {
+          "label": "Everyone is here!",
+          "function": "comment"
+        },
+        {
+          "label": "I don't like loud noises",
+          "function": "negative"
+        },
+        {
+          "label": "Let's play games!",
+          "function": "positive"
+        },
+        {
+          "label": "Can we have ice cream?",
+          "function": "question"
+        },
+        {
+          "label": "I like balloons!",
+          "function": "positive"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "Cakes are yummy!",
+          "function": "positive"
+        },
+        {
+          "label": "Everyone is here!",
+          "function": "comment"
+        },
+        {
+          "label": "I don't like loud noises",
+          "function": "negative"
+        },
+        {
+          "label": "Let's play games!",
+          "function": "positive"
+        },
+        {
+          "label": "Can we have ice cream?",
+          "function": "question"
+        },
+        {
+          "label": "I like balloons!",
+          "function": "positive"
+        },
+        {
+          "label": "It's too crowded",
+          "function": "negative"
+        },
+        {
+          "label": "We should sing happy birthday",
+          "function": "positive"
+        },
+        {
+          "label": "I brought a present",
+          "function": "personal"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 31.973,
+      "cpu_seconds": 312.109,
+      "usage": {
+        "prompt_tokens": 340,
+        "completion_tokens": 142,
+        "total_tokens": 482
+      },
+      "memory": {
+        "working_set": 4612718592,
+        "private_bytes": 5057384448,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [{\"label\": \"Cakes are yummy!\", \"function\": \"positive\"}, {\"label\": \"Everyone is here!\", \"function\": \"comment\"}, {\"label\": \"I don't like loud noises.\", \"function\": \"negative\"}, {\"label\": \"Let's play games!\", \"function\": \"positive\"}, {\"label\": \"Can we have ice cream?\", \"function\": \"question\"}, {\"label\": \"I like balloons!\", \"function\": \"positive\"}, {\"label\": \"It's too crowded.\", \"function\": \"negative\"}, {\"label\": \"We should sing happy birthday.\", \"function\": \"comment\"}, {\"label\": \"I brought a present.\", \"function\": \"personal\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "haircut-phrases",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "My hair feels so soft!",
+          "function": "personal"
+        },
+        {
+          "label": "Do you want a buzz cut?",
+          "function": "question"
+        },
+        {
+          "label": "I like short sides and long top",
+          "function": "positive"
+        },
+        {
+          "label": "My barber is great!",
+          "function": "personal"
+        },
+        {
+          "label": "I don't like clippers",
+          "function": "negative"
+        },
+        {
+          "label": "I got a new haircut today",
+          "function": "comment"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "My hair feels so soft!",
+          "function": "personal"
+        },
+        {
+          "label": "Do you want a buzz cut?",
+          "function": "question"
+        },
+        {
+          "label": "I like short sides and long top",
+          "function": "positive"
+        },
+        {
+          "label": "My barber is great!",
+          "function": "personal"
+        },
+        {
+          "label": "I don't like clippers",
+          "function": "negative"
+        },
+        {
+          "label": "I got a new haircut today",
+          "function": "comment"
+        },
+        {
+          "label": "I want a fade",
+          "function": "positive"
+        },
+        {
+          "label": "This haircut looks good on me",
+          "function": "positive"
+        },
+        {
+          "label": "I hate when my hair splits",
+          "function": "negative"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 34.941,
+      "cpu_seconds": 341.812,
+      "usage": {
+        "prompt_tokens": 341,
+        "completion_tokens": 154,
+        "total_tokens": 495
+      },
+      "memory": {
+        "working_set": 4613357568,
+        "private_bytes": 5062250496,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [{\"label\": \"My hair feels so soft!\", \"function\": \"positive\"}, {\"label\": \"Do you want a buzz cut?\", \"function\": \"question\"}, {\"label\": \"I like short sides and long top.\", \"function\": \"personal\"}, {\"label\": \"My barber is great!\", \"function\": \"positive\"}, {\"label\": \"I don't like clippers.\", \"function\": \"negative\"}, {\"label\": \"I got a new haircut today.\", \"function\": \"comment\"}, {\"label\": \"I want a fade.\", \"function\": \"personal\"}, {\"label\": \"This haircut looks good on me.\", \"function\": \"positive\"}, {\"label\": \"I hate when my hair splits.\", \"function\": \"negative\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "questions-only",
+      "passed": false,
+      "failures": [
+        "min_items: only 2 usable items, wanted 3"
+      ],
+      "target_items": 5,
+      "complete": false,
+      "first_reply_passed": false,
+      "items": [
+        {
+          "label": "Do you bring sunscreen?",
+          "function": "question"
+        },
+        {
+          "label": "Should we go earlier?",
+          "function": "question"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "Do you bring sunscreen?",
+          "function": "question"
+        },
+        {
+          "label": "The sand is warm",
+          "function": "comment"
+        },
+        {
+          "label": "I enjoy swimming",
+          "function": "positive"
+        },
+        {
+          "label": "The waves are too strong",
+          "function": "negative"
+        },
+        {
+          "label": "I like to build sandcastles",
+          "function": "positive"
+        },
+        {
+          "label": "Should we go earlier?",
+          "function": "question"
+        },
+        {
+          "label": "The beach is crowded today",
+          "function": "comment"
+        },
+        {
+          "label": "I don't like the noise",
+          "function": "negative"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 30.911,
+      "cpu_seconds": 305.812,
+      "usage": {
+        "prompt_tokens": 355,
+        "completion_tokens": 130,
+        "total_tokens": 485
+      },
+      "memory": {
+        "working_set": 4652130304,
+        "private_bytes": 5050724352,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [{\"label\": \"Do you bring sunscreen?\", \"function\": \"question\"}, {\"label\": \"The sand is warm.\", \"function\": \"comment\"}, {\"label\": \"I enjoy swimming.\", \"function\": \"positive\"}, {\"label\": \"The waves are too strong.\", \"function\": \"negative\"}, {\"label\": \"I like to build sandcastles.\", \"function\": \"personal\"}, {\"label\": \"Should we go earlier?\", \"function\": \"question\"}, {\"label\": \"The beach is crowded today.\", \"function\": \"comment\"}, {\"label\": \"I don't like the noise.\", \"function\": \"negative\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "negative-only",
+      "passed": true,
+      "failures": [],
+      "target_items": 5,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "The noise is too loud",
+          "function": "negative"
+        },
+        {
+          "label": "People talk too much",
+          "function": "negative"
+        },
+        {
+          "label": "I need quiet time",
+          "function": "negative"
+        },
+        {
+          "label": "The music is too loud",
+          "function": "negative"
+        },
+        {
+          "label": "I don't like crowded places",
+          "function": "negative"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "The noise is too loud",
+          "function": "negative"
+        },
+        {
+          "label": "People talk too much",
+          "function": "negative"
+        },
+        {
+          "label": "I need quiet time",
+          "function": "negative"
+        },
+        {
+          "label": "The music is too loud",
+          "function": "negative"
+        },
+        {
+          "label": "I don't like crowded places",
+          "function": "negative"
+        },
+        {
+          "label": "I prefer quieter spots",
+          "function": "negative"
+        },
+        {
+          "label": "I avoid loud restaurants",
+          "function": "negative"
+        },
+        {
+          "label": "Quiet areas are better",
+          "function": "negative"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 30.032,
+      "cpu_seconds": 297.031,
+      "usage": {
+        "prompt_tokens": 354,
+        "completion_tokens": 129,
+        "total_tokens": 483
+      },
+      "memory": {
+        "working_set": 4656336896,
+        "private_bytes": 5055537152,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [{\"label\": \"The noise is too loud.\", \"function\": \"negative\"}, {\"label\": \"People talk too much.\", \"function\": \"negative\"}, {\"label\": \"I need quiet time.\", \"function\": \"negative\"}, {\"label\": \"The music is too loud.\", \"function\": \"negative\"}, {\"label\": \"I don't like crowded places.\", \"function\": \"negative\"}, {\"label\": \"I prefer quieter spots.\", \"function\": \"negative\"}, {\"label\": \"I avoid loud restaurants.\", \"function\": \"negative\"}, {\"label\": \"Quiet areas are better.\", \"function\": \"negative\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "bluey-reference-characters",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Bluey",
+        "Bingo",
+        "Chilli",
+        "Bandit",
+        "Muffin",
+        "Socks"
+      ],
+      "raw_items": [
+        "Bluey",
+        "Bingo",
+        "Chilli",
+        "Bandit",
+        "Muffin",
+        "Socks"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 20.997,
+      "cpu_seconds": 209.703,
+      "usage": {
+        "prompt_tokens": 609,
+        "completion_tokens": 28,
+        "total_tokens": 637
+      },
+      "memory": {
+        "working_set": 4728377344,
+        "private_bytes": 5067882496,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Bingo\", \"Chilli\", \"Bandit\", \"Muffin\", \"Socks\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "death-eaters-reference-subset",
+      "passed": true,
+      "failures": [],
+      "target_items": 4,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Bellatrix Lestrange",
+        "Lucius Malfoy",
+        "Barty Crouch Jr",
+        "Peter Pettigrew"
+      ],
+      "raw_items": [
+        "Bellatrix Lestrange",
+        "Lucius Malfoy",
+        "Barty Crouch Jr",
+        "Peter Pettigrew",
+        "Antonin Dolohov"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 23.65,
+      "cpu_seconds": 241.219,
+      "usage": {
+        "prompt_tokens": 661,
+        "completion_tokens": 37,
+        "total_tokens": 698
+      },
+      "memory": {
+        "working_set": 4731392000,
+        "private_bytes": 5071040512,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bellatrix Lestrange\", \"Lucius Malfoy\", \"Barty Crouch Jr\", \"Peter Pettigrew\", \"Antonin Dolohov\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "reference-exhaustion",
+      "passed": true,
+      "failures": [],
+      "target_items": 3,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Bluey",
+        "Bingo",
+        "Bandit"
+      ],
+      "raw_items": [
+        "Bluey",
+        "Bingo",
+        "Bandit"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 16.98,
+      "cpu_seconds": 169.375,
+      "usage": {
+        "prompt_tokens": 566,
+        "completion_tokens": 15,
+        "total_tokens": 581
+      },
+      "memory": {
+        "working_set": 4736856064,
+        "private_bytes": 5074345984,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Bingo\", \"Bandit\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "bluey-without-reference",
+      "passed": false,
+      "failures": [
+        "allowed_items: 'Buzz' is not a member of the requested source-specific set",
+        "min_items: only 5 usable items, wanted 8"
+      ],
+      "target_items": 8,
+      "complete": false,
+      "first_reply_passed": false,
+      "items": [
+        "Bluey",
+        "Bandit",
+        "Buzz",
+        "Lola",
+        "Wilma"
+      ],
+      "raw_items": [
+        "Bluey",
+        "Bandit",
+        "Buzz",
+        "Lola",
+        "Wilma"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 16.031,
+      "cpu_seconds": 160.562,
+      "usage": {
+        "prompt_tokens": 505,
+        "completion_tokens": 22,
+        "total_tokens": 527
+      },
+      "memory": {
+        "working_set": 4675321856,
+        "private_bytes": 5067722752,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Bandit\", \"Buzz\", \"Lola\", \"Wilma\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "subgroup-without-reference",
+      "passed": false,
+      "failures": [
+        "min_items: only 4 usable items, wanted 5"
+      ],
+      "target_items": 5,
+      "complete": false,
+      "first_reply_passed": false,
+      "items": [
+        "Lord Voldemort",
+        "Bellatrix Lestrange",
+        "Draco Malfoy",
+        "Lucius Malfoy"
+      ],
+      "raw_items": [
+        "Lord Voldemort",
+        "Bellatrix Lestrange",
+        "Draco Malfoy",
+        "Lucius Malfoy"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 17.417,
+      "cpu_seconds": 181.484,
+      "usage": {
+        "prompt_tokens": 514,
+        "completion_tokens": 26,
+        "total_tokens": 540
+      },
+      "memory": {
+        "working_set": 4688658432,
+        "private_bytes": 5080662016,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Lord Voldemort\", \"Bellatrix Lestrange\", \"Draco Malfoy\", \"Lucius Malfoy\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "actors-versus-characters",
+      "passed": true,
+      "failures": [],
+      "target_items": 5,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Elsa",
+        "Anna",
+        "Olaf",
+        "Kristoff",
+        "Sven"
+      ],
+      "raw_items": [
+        "Elsa",
+        "Anna",
+        "Olaf",
+        "Kristoff",
+        "Sven",
+        "Hans"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 20.456,
+      "cpu_seconds": 209.766,
+      "usage": {
+        "prompt_tokens": 638,
+        "completion_tokens": 26,
+        "total_tokens": 664
+      },
+      "memory": {
+        "working_set": 4692008960,
+        "private_bytes": 5083553792,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Elsa\", \"Anna\", \"Olaf\", \"Kristoff\", \"Sven\", \"Hans\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "animals-versus-products",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Cow",
+        "Chicken",
+        "Sheep",
+        "Pig",
+        "Goat",
+        "Duck",
+        "Horse",
+        "Donkey"
+      ],
+      "raw_items": [
+        "Cow",
+        "Chicken",
+        "Sheep",
+        "Pig",
+        "Goat",
+        "Duck",
+        "Horse",
+        "Donkey"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 22.254,
+      "cpu_seconds": 224.297,
+      "usage": {
+        "prompt_tokens": 635,
+        "completion_tokens": 33,
+        "total_tokens": 668
+      },
+      "memory": {
+        "working_set": 4718592000,
+        "private_bytes": 5062082560,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Cow\", \"Chicken\", \"Sheep\", \"Pig\", \"Goat\", \"Duck\", \"Horse\", \"Donkey\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "historical-subgroup",
+      "passed": true,
+      "failures": [],
+      "target_items": 4,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "George Washington",
+        "Thomas Jefferson",
+        "Abraham Lincoln",
+        "Ulysses S Grant"
+      ],
+      "raw_items": [
+        "George Washington",
+        "Thomas Jefferson",
+        "Abraham Lincoln",
+        "Ulysses S Grant",
+        "Grover Cleveland"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 22.26,
+      "cpu_seconds": 219.578,
+      "usage": {
+        "prompt_tokens": 647,
+        "completion_tokens": 29,
+        "total_tokens": 676
+      },
+      "memory": {
+        "working_set": 4731609088,
+        "private_bytes": 5075533824,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"George Washington\", \"Thomas Jefferson\", \"Abraham Lincoln\", \"Ulysses S Grant\", \"Grover Cleveland\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "source-has-no-members",
+      "passed": true,
+      "failures": [],
+      "target_items": 0,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [],
+      "raw_items": [
+        "Bluey",
+        "Bandit",
+        "Buzz",
+        "Bob",
+        "Lola"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 19.533,
+      "cpu_seconds": 197.469,
+      "usage": {
+        "prompt_tokens": 614,
+        "completion_tokens": 21,
+        "total_tokens": 635
+      },
+      "memory": {
+        "working_set": 4669444096,
+        "private_bytes": 5078794240,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Bandit\", \"Buzz\", \"Bob\", \"Lola\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "source-over-prior-knowledge",
+      "passed": true,
+      "failures": [],
+      "target_items": 4,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Nori",
+        "Pippa",
+        "Tavi",
+        "Wren"
+      ],
+      "raw_items": [
+        "Nori",
+        "Pippa",
+        "Tavi",
+        "Wren"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 19.744,
+      "cpu_seconds": 202.375,
+      "usage": {
+        "prompt_tokens": 640,
+        "completion_tokens": 20,
+        "total_tokens": 660
+      },
+      "memory": {
+        "working_set": 4671991808,
+        "private_bytes": 5082624000,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Nori\", \"Pippa\", \"Tavi\", \"Wren\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "bluey-reference-characters",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Bluey",
+        "Bingo",
+        "Chilli",
+        "Bandit",
+        "Muffin",
+        "Socks"
+      ],
+      "raw_items": [
+        "Bluey",
+        "Bingo",
+        "Chilli",
+        "Bandit",
+        "Muffin",
+        "Socks"
+      ],
+      "error": null,
+      "repeat": 1,
+      "seconds": 20.375,
+      "cpu_seconds": 210.562,
+      "usage": {
+        "prompt_tokens": 609,
+        "completion_tokens": 28,
+        "total_tokens": 637
+      },
+      "memory": {
+        "working_set": 4686643200,
+        "private_bytes": 5084753920,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Bingo\", \"Chilli\", \"Bandit\", \"Muffin\", \"Socks\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "death-eaters-reference-subset",
+      "passed": true,
+      "failures": [],
+      "target_items": 4,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Bellatrix Lestrange",
+        "Lucius Malfoy",
+        "Barty Crouch Jr",
+        "Peter Pettigrew"
+      ],
+      "raw_items": [
+        "Bellatrix Lestrange",
+        "Lucius Malfoy",
+        "Barty Crouch Jr",
+        "Peter Pettigrew",
+        "Antonin Dolohov"
+      ],
+      "error": null,
+      "repeat": 1,
+      "seconds": 24.033,
+      "cpu_seconds": 233.438,
+      "usage": {
+        "prompt_tokens": 661,
+        "completion_tokens": 37,
+        "total_tokens": 698
+      },
+      "memory": {
+        "working_set": 4688568320,
+        "private_bytes": 5089558528,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bellatrix Lestrange\", \"Lucius Malfoy\", \"Barty Crouch Jr\", \"Peter Pettigrew\", \"Antonin Dolohov\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "reference-exhaustion",
+      "passed": true,
+      "failures": [],
+      "target_items": 3,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Bluey",
+        "Bingo",
+        "Bandit"
+      ],
+      "raw_items": [
+        "Bluey",
+        "Bingo",
+        "Bandit"
+      ],
+      "error": null,
+      "repeat": 1,
+      "seconds": 16.817,
+      "cpu_seconds": 170.406,
+      "usage": {
+        "prompt_tokens": 566,
+        "completion_tokens": 15,
+        "total_tokens": 581
+      },
+      "memory": {
+        "working_set": 4692643840,
+        "private_bytes": 5093466112,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Bingo\", \"Bandit\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "actors-versus-characters",
+      "passed": true,
+      "failures": [],
+      "target_items": 5,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Elsa",
+        "Anna",
+        "Olaf",
+        "Kristoff",
+        "Sven"
+      ],
+      "raw_items": [
+        "Elsa",
+        "Anna",
+        "Olaf",
+        "Kristoff",
+        "Sven",
+        "Hans"
+      ],
+      "error": null,
+      "repeat": 1,
+      "seconds": 20.581,
+      "cpu_seconds": 213.562,
+      "usage": {
+        "prompt_tokens": 638,
+        "completion_tokens": 26,
+        "total_tokens": 664
+      },
+      "memory": {
+        "working_set": 4697255936,
+        "private_bytes": 5097078784,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Elsa\", \"Anna\", \"Olaf\", \"Kristoff\", \"Sven\", \"Hans\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "animals-versus-products",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Cow",
+        "Chicken",
+        "Sheep",
+        "Pig",
+        "Goat",
+        "Duck",
+        "Horse",
+        "Donkey"
+      ],
+      "raw_items": [
+        "Cow",
+        "Chicken",
+        "Sheep",
+        "Pig",
+        "Goat",
+        "Duck",
+        "Horse",
+        "Donkey"
+      ],
+      "error": null,
+      "repeat": 1,
+      "seconds": 22.124,
+      "cpu_seconds": 223.172,
+      "usage": {
+        "prompt_tokens": 635,
+        "completion_tokens": 33,
+        "total_tokens": 668
+      },
+      "memory": {
+        "working_set": 4700016640,
+        "private_bytes": 5098926080,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Cow\", \"Chicken\", \"Sheep\", \"Pig\", \"Goat\", \"Duck\", \"Horse\", \"Donkey\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "historical-subgroup",
+      "passed": true,
+      "failures": [],
+      "target_items": 4,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "George Washington",
+        "Thomas Jefferson",
+        "Abraham Lincoln",
+        "Ulysses S Grant"
+      ],
+      "raw_items": [
+        "George Washington",
+        "Thomas Jefferson",
+        "Abraham Lincoln",
+        "Ulysses S Grant",
+        "Grover Cleveland"
+      ],
+      "error": null,
+      "repeat": 1,
+      "seconds": 21.883,
+      "cpu_seconds": 217.984,
+      "usage": {
+        "prompt_tokens": 647,
+        "completion_tokens": 29,
+        "total_tokens": 676
+      },
+      "memory": {
+        "working_set": 4706095104,
+        "private_bytes": 5102456832,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"George Washington\", \"Thomas Jefferson\", \"Abraham Lincoln\", \"Ulysses S Grant\", \"Grover Cleveland\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "source-has-no-members",
+      "passed": true,
+      "failures": [],
+      "target_items": 0,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [],
+      "raw_items": [
+        "Bluey",
+        "Bandit",
+        "Buzz",
+        "Bob",
+        "Lola"
+      ],
+      "error": null,
+      "repeat": 1,
+      "seconds": 18.989,
+      "cpu_seconds": 197.672,
+      "usage": {
+        "prompt_tokens": 614,
+        "completion_tokens": 21,
+        "total_tokens": 635
+      },
+      "memory": {
+        "working_set": 4739600384,
+        "private_bytes": 5086068736,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Bandit\", \"Buzz\", \"Bob\", \"Lola\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "source-over-prior-knowledge",
+      "passed": true,
+      "failures": [],
+      "target_items": 4,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Nori",
+        "Pippa",
+        "Tavi",
+        "Wren"
+      ],
+      "raw_items": [
+        "Nori",
+        "Pippa",
+        "Tavi",
+        "Wren"
+      ],
+      "error": null,
+      "repeat": 1,
+      "seconds": 19.714,
+      "cpu_seconds": 202.141,
+      "usage": {
+        "prompt_tokens": 640,
+        "completion_tokens": 20,
+        "total_tokens": 660
+      },
+      "memory": {
+        "working_set": 4746391552,
+        "private_bytes": 5090115584,
+        "peak_working_set": 6243385344
+      },
+      "raw_content": "{\"items\": [\"Nori\", \"Pippa\", \"Tavi\", \"Wren\"]}",
+      "finish_reason": "stop"
+    }
+  ],
+  "load_seconds": 12.007,
+  "loaded_memory": {
+    "working_set": 2718973952,
+    "private_bytes": 4982390784,
+    "peak_working_set": 3457732608
+  },
+  "architecture": "qwen2",
+  "chat_format": "chat_template.default",
+  "cases": [
+    {
+      "id": "harry-potter-characters",
+      "category": "Harry Potter characters",
+      "kind": "words",
+      "count": 8,
+      "why": "The named example in the prompt. Related vocabulary is not an example of a type.",
+      "checks": {
+        "forbids": [
+          "magic",
+          "wand",
+          "hogwarts",
+          "broom",
+          "spell",
+          "wizard",
+          "quidditch",
+          "potion"
+        ],
+        "expects_any": [
+          "harry",
+          "hermione",
+          "ron",
+          "dumbledore",
+          "hagrid",
+          "snape",
+          "malfoy",
+          "voldemort",
+          "neville",
+          "ginny",
+          "luna",
+          "sirius",
+          "weasley",
+          "potter",
+          "granger"
+        ],
+        "looks_like_names": true,
+        "min_items": 4,
+        "no_duplicates": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "disney-characters",
+      "category": "Disney characters",
+      "kind": "words",
+      "count": 8,
+      "why": "Same rule, a franchise the small model is more likely to know.",
+      "checks": {
+        "forbids": [
+          "castle",
+          "movie",
+          "cartoon",
+          "magic",
+          "disneyland",
+          "song"
+        ],
+        "expects_any": [
+          "mickey",
+          "minnie",
+          "donald",
+          "goofy",
+          "pluto",
+          "elsa",
+          "anna",
+          "simba",
+          "ariel",
+          "belle",
+          "woody",
+          "buzz",
+          "moana",
+          "stitch",
+          "olaf",
+          "cinderella",
+          "dumbo",
+          "bambi",
+          "pooh",
+          "tinker bell",
+          "rapunzel",
+          "aladdin"
+        ],
+        "looks_like_names": true,
+        "min_items": 4,
+        "no_duplicates": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "us-presidents",
+      "category": "US presidents",
+      "kind": "words",
+      "count": 6,
+      "why": "People, not offices: 'president' and 'White House' are the failure shape.",
+      "checks": {
+        "forbids": [
+          "president",
+          "white house",
+          "election",
+          "government",
+          "senate"
+        ],
+        "expects_any": [
+          "washington",
+          "lincoln",
+          "jefferson",
+          "adams",
+          "roosevelt",
+          "kennedy",
+          "obama",
+          "reagan",
+          "truman",
+          "madison",
+          "monroe",
+          "wilson",
+          "eisenhower",
+          "carter",
+          "clinton",
+          "bush",
+          "grant",
+          "jackson",
+          "biden",
+          "nixon"
+        ],
+        "looks_like_names": true,
+        "min_items": 4,
+        "no_duplicates": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "farm-animals",
+      "category": "Farm animals",
+      "kind": "words",
+      "count": 8,
+      "why": "A plain concrete category. Places and equipment are not animals.",
+      "checks": {
+        "forbids": [
+          "barn",
+          "farm",
+          "tractor",
+          "field",
+          "farmer",
+          "hay"
+        ],
+        "expects_any": [
+          "cow",
+          "cows",
+          "pig",
+          "pigs",
+          "sheep",
+          "horse",
+          "horses",
+          "chicken",
+          "chickens",
+          "goat",
+          "goats",
+          "duck",
+          "ducks",
+          "hen",
+          "rooster",
+          "donkey",
+          "turkey",
+          "lamb",
+          "goose"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 2
+      }
+    },
+    {
+      "id": "breakfast-foods",
+      "category": "Breakfast foods",
+      "kind": "words",
+      "count": 8,
+      "why": "Meals are not foods; a time of day is not something to eat.",
+      "checks": {
+        "forbids": [
+          "breakfast",
+          "morning",
+          "kitchen",
+          "plate",
+          "meal"
+        ],
+        "expects_any": [
+          "egg",
+          "eggs",
+          "toast",
+          "cereal",
+          "pancake",
+          "pancakes",
+          "waffle",
+          "waffles",
+          "bacon",
+          "oatmeal",
+          "yogurt",
+          "bagel",
+          "muffin",
+          "sausage",
+          "juice",
+          "banana",
+          "porridge",
+          "coffee",
+          "fruit"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "pizza-toppings",
+      "category": "Pizza toppings",
+      "kind": "words",
+      "count": 8,
+      "why": "The thing itself is not a topping of itself.",
+      "checks": {
+        "forbids": [
+          "pizza",
+          "oven",
+          "delivery",
+          "restaurant",
+          "slice"
+        ],
+        "expects_any": [
+          "cheese",
+          "pepperoni",
+          "mushroom",
+          "mushrooms",
+          "onion",
+          "onions",
+          "pepper",
+          "peppers",
+          "olive",
+          "olives",
+          "sausage",
+          "ham",
+          "pineapple",
+          "bacon",
+          "tomato",
+          "tomatoes",
+          "spinach",
+          "basil",
+          "chicken"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "musical-instruments",
+      "category": "Musical instruments",
+      "kind": "words",
+      "count": 8,
+      "why": "Music, band and concert are the topic, not members of the type.",
+      "checks": {
+        "forbids": [
+          "music",
+          "band",
+          "concert",
+          "song",
+          "orchestra",
+          "instrument"
+        ],
+        "expects_any": [
+          "piano",
+          "guitar",
+          "drum",
+          "drums",
+          "violin",
+          "flute",
+          "trumpet",
+          "cello",
+          "saxophone",
+          "clarinet",
+          "harp",
+          "banjo",
+          "ukulele",
+          "keyboard",
+          "tambourine",
+          "xylophone",
+          "trombone",
+          "accordion"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 2
+      }
+    },
+    {
+      "id": "colors",
+      "category": "Colors",
+      "kind": "words",
+      "count": 8,
+      "why": "The simplest possible category; anything but a colour is a failure.",
+      "checks": {
+        "forbids": [
+          "color",
+          "colour",
+          "paint",
+          "rainbow",
+          "crayon"
+        ],
+        "expects_any": [
+          "red",
+          "blue",
+          "green",
+          "yellow",
+          "orange",
+          "purple",
+          "pink",
+          "black",
+          "white",
+          "brown",
+          "gray",
+          "grey"
+        ],
+        "min_items": 6,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 2
+      }
+    },
+    {
+      "id": "body-parts",
+      "category": "Body parts",
+      "kind": "words",
+      "count": 8,
+      "why": "Core AAC vocabulary; medical and clothing words are the drift.",
+      "checks": {
+        "forbids": [
+          "body",
+          "doctor",
+          "hospital",
+          "medicine",
+          "shirt"
+        ],
+        "expects_any": [
+          "head",
+          "hand",
+          "hands",
+          "arm",
+          "arms",
+          "leg",
+          "legs",
+          "foot",
+          "feet",
+          "eye",
+          "eyes",
+          "ear",
+          "ears",
+          "nose",
+          "mouth",
+          "hair",
+          "finger",
+          "fingers",
+          "toe",
+          "toes",
+          "knee",
+          "elbow",
+          "shoulder",
+          "back",
+          "tummy",
+          "stomach",
+          "neck",
+          "teeth"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 2
+      }
+    },
+    {
+      "id": "feelings",
+      "category": "Feelings",
+      "kind": "words",
+      "count": 8,
+      "why": "Feelings, not the things that cause them.",
+      "checks": {
+        "forbids": [
+          "feeling",
+          "emotion",
+          "therapy",
+          "mood chart"
+        ],
+        "expects_any": [
+          "happy",
+          "sad",
+          "angry",
+          "mad",
+          "scared",
+          "tired",
+          "excited",
+          "nervous",
+          "silly",
+          "calm",
+          "frustrated",
+          "worried",
+          "proud",
+          "bored",
+          "sick",
+          "lonely",
+          "surprised",
+          "afraid",
+          "upset"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 2
+      }
+    },
+    {
+      "id": "playground-equipment",
+      "category": "Playground equipment",
+      "kind": "words",
+      "count": 6,
+      "why": "Equipment, not the activity or the place.",
+      "checks": {
+        "forbids": [
+          "playground",
+          "recess",
+          "school",
+          "play",
+          "park"
+        ],
+        "expects_any": [
+          "swing",
+          "swings",
+          "slide",
+          "seesaw",
+          "see-saw",
+          "monkey bars",
+          "sandbox",
+          "sandpit",
+          "climbing frame",
+          "merry-go-round",
+          "roundabout",
+          "jungle gym",
+          "trampoline",
+          "spring rider",
+          "climbing wall"
+        ],
+        "min_items": 4,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "things-in-a-kitchen",
+      "category": "Things in a kitchen",
+      "kind": "words",
+      "count": 8,
+      "why": "A broad title: concrete things a person would want to name.",
+      "checks": {
+        "forbidden_items": [
+          "kitchen"
+        ],
+        "not_the_title": true,
+        "expects_any": [
+          "fork",
+          "spoon",
+          "knife",
+          "plate",
+          "cup",
+          "bowl",
+          "fridge",
+          "refrigerator",
+          "oven",
+          "stove",
+          "sink",
+          "pot",
+          "pan",
+          "microwave",
+          "toaster",
+          "kettle",
+          "mug",
+          "glass",
+          "napkin",
+          "blender",
+          "dishwasher"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "school-subjects",
+      "category": "School subjects",
+      "kind": "words",
+      "count": 6,
+      "why": "Subjects, not the building, the people, or the objects in it.",
+      "checks": {
+        "forbids": [
+          "school",
+          "teacher",
+          "classroom",
+          "backpack",
+          "subject"
+        ],
+        "expects_any": [
+          "math",
+          "maths",
+          "science",
+          "reading",
+          "english",
+          "history",
+          "art",
+          "music",
+          "geography",
+          "spelling",
+          "writing",
+          "gym",
+          "pe",
+          "computer",
+          "biology",
+          "chemistry",
+          "physics"
+        ],
+        "min_items": 4,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "zoo-animals",
+      "category": "Zoo animals",
+      "kind": "words",
+      "count": 8,
+      "why": "Animals, not the outing.",
+      "checks": {
+        "forbids": [
+          "zoo",
+          "cage",
+          "ticket",
+          "keeper",
+          "visit"
+        ],
+        "expects_any": [
+          "lion",
+          "lions",
+          "tiger",
+          "tigers",
+          "elephant",
+          "elephants",
+          "giraffe",
+          "zebra",
+          "monkey",
+          "monkeys",
+          "bear",
+          "penguin",
+          "snake",
+          "hippo",
+          "hippopotamus",
+          "rhino",
+          "rhinoceros",
+          "gorilla",
+          "kangaroo",
+          "panda",
+          "seal",
+          "flamingo",
+          "crocodile",
+          "alligator",
+          "meerkat"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 2
+      }
+    },
+    {
+      "id": "sports",
+      "category": "Sports",
+      "kind": "words",
+      "count": 8,
+      "why": "Sports, not equipment or venues.",
+      "checks": {
+        "forbids": [
+          "sport",
+          "ball",
+          "stadium",
+          "team",
+          "coach"
+        ],
+        "expects_any": [
+          "soccer",
+          "football",
+          "basketball",
+          "baseball",
+          "tennis",
+          "swimming",
+          "running",
+          "hockey",
+          "golf",
+          "volleyball",
+          "cycling",
+          "skiing",
+          "boxing",
+          "cricket",
+          "rugby",
+          "gymnastics",
+          "skating"
+        ],
+        "min_items": 5,
+        "no_duplicates": true,
+        "not_the_title": true,
+        "max_words": 2
+      }
+    },
+    {
+      "id": "swimming-phrases",
+      "category": "Swimming",
+      "kind": "phrases",
+      "count": 6,
+      "why": "Quick-fire phrases: the classifier must be applied to what came back.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "birthday-party-phrases",
+      "category": "Birthday party",
+      "kind": "phrases",
+      "count": 6,
+      "why": "A social routine a topic page is commonly built for.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "haircut-phrases",
+      "category": "Getting a haircut",
+      "kind": "phrases",
+      "count": 6,
+      "why": "An event where refusing and stopping matter as much as liking it.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "questions-only",
+      "category": "Going to the beach",
+      "kind": "phrases",
+      "count": 5,
+      "function": "question",
+      "why": "One function was asked for; a statement must never be tagged a question.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "negative-only",
+      "category": "Loud places",
+      "kind": "phrases",
+      "count": 5,
+      "function": "negative",
+      "why": "The function a user reaches for when something has to stop.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "bluey-reference-characters",
+      "category": "Bluey characters",
+      "kind": "words",
+      "count": 6,
+      "reference": "Bluey and Bingo are sisters. Their parents are Bandit and Chilli. Their cousins are Muffin and Socks. Bluey's friends include Chloe, Rusty, Mackenzie, Coco and Indy. They live in Brisbane. Bluey is a blue heeler and Bingo is a red heeler. The family enjoys playing games.",
+      "why": "Every name must be a real character from the supplied reference; a city, dog breed or invented name cannot pass.",
+      "checks": {
+        "expects_any": [
+          "Bluey",
+          "Bingo"
+        ],
+        "allowed_items": [
+          "Bluey",
+          "Bingo",
+          "Bandit",
+          "Chilli",
+          "Muffin",
+          "Socks",
+          "Chloe",
+          "Rusty",
+          "Mackenzie",
+          "Coco",
+          "Indy"
+        ],
+        "min_items": 5,
+        "max_words": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "death-eaters-reference-subset",
+      "category": "Harry Potter characters",
+      "kind": "words",
+      "count": 4,
+      "request": "Only Death Eaters, full names. Do not include other characters.",
+      "reference": "Death Eaters: Bellatrix Lestrange, Lucius Malfoy, Barty Crouch Jr, Peter Pettigrew and Antonin Dolohov. Harry Potter, Hermione Granger and Ron Weasley are members of Dumbledore's Army, not Death Eaters. Hogwarts is the school. A wand is a magical object.",
+      "why": "The user's requested subgroup matters even when other valid character names appear in the same source.",
+      "checks": {
+        "expects_any": [
+          "Bellatrix",
+          "Lucius",
+          "Dolohov"
+        ],
+        "allowed_items": [
+          "Bellatrix Lestrange",
+          "Lucius Malfoy",
+          "Barty Crouch Jr",
+          "Peter Pettigrew",
+          "Antonin Dolohov"
+        ],
+        "min_items": 4,
+        "max_words": 4,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "reference-exhaustion",
+      "category": "Bluey characters",
+      "kind": "words",
+      "count": 8,
+      "reference": "The characters in this excerpt are Bluey, Bingo and Bandit. Brisbane is their city. Fetch is a game.",
+      "why": "A small source should produce a short accurate answer instead of padding the requested count with invented or unrelated labels.",
+      "checks": {
+        "expects_any": [
+          "Bluey",
+          "Bingo",
+          "Bandit"
+        ],
+        "allowed_items": [
+          "Bluey",
+          "Bingo",
+          "Bandit"
+        ],
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "bluey-without-reference",
+      "category": "Bluey characters",
+      "count": 8,
+      "kind": "words",
+      "request": "Characters only.",
+      "reference": "",
+      "checks": {
+        "allowed_items": [
+          "Bluey",
+          "Bingo",
+          "Bandit",
+          "Chilli",
+          "Muffin",
+          "Socks",
+          "Chloe",
+          "Rusty",
+          "Mackenzie",
+          "Coco",
+          "Indy",
+          "Snickers",
+          "Honey",
+          "Lucky",
+          "Judo",
+          "Jack",
+          "Winton",
+          "Calypso",
+          "Trixie",
+          "Stripe",
+          "Frisky",
+          "Rad",
+          "Radley",
+          "Pat",
+          "Wendy",
+          "Lila",
+          "Pom Pom",
+          "Doreen",
+          "Jean Luc",
+          "Jean-Luc",
+          "Bob",
+          "Nana",
+          "Grandad",
+          "Mort",
+          "Bobo",
+          "Bucky",
+          "Hercules",
+          "Pretzel",
+          "Bentley",
+          "Buddy",
+          "Chucky",
+          "Jasper",
+          "Missy",
+          "Captain",
+          "Mia",
+          "Lulu",
+          "Dusty"
+        ],
+        "min_items": 8,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "subgroup-without-reference",
+      "category": "Harry Potter characters",
+      "count": 5,
+      "kind": "words",
+      "request": "Only Death Eaters, full names. Do not include other characters.",
+      "reference": "",
+      "checks": {
+        "allowed_items": [
+          "Bellatrix Lestrange",
+          "Lucius Malfoy",
+          "Draco Malfoy",
+          "Barty Crouch Jr",
+          "Barty Crouch Jr.",
+          "Bartemius Crouch Jr",
+          "Peter Pettigrew",
+          "Antonin Dolohov",
+          "Severus Snape",
+          "Walden Macnair",
+          "Augustus Rookwood",
+          "Corban Yaxley",
+          "Fenrir Greyback",
+          "Amycus Carrow",
+          "Alecto Carrow",
+          "Rodolphus Lestrange",
+          "Rabastan Lestrange",
+          "Igor Karkaroff",
+          "Thorfinn Rowle",
+          "Voldemort",
+          "Lord Voldemort",
+          "Tom Riddle",
+          "Tom Marvolo Riddle"
+        ],
+        "min_items": 5,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "actors-versus-characters",
+      "category": "Frozen characters",
+      "count": 5,
+      "kind": "words",
+      "request": "Characters only, not actors.",
+      "reference": "Frozen characters: Elsa, Anna, Olaf, Kristoff, Sven and Hans. Cast: Idina Menzel voices Elsa; Kristen Bell voices Anna; Josh Gad voices Olaf. Arendelle is the kingdom and Let It Go is a song.",
+      "checks": {
+        "allowed_items": [
+          "Elsa",
+          "Anna",
+          "Olaf",
+          "Kristoff",
+          "Sven",
+          "Hans"
+        ],
+        "min_items": 5,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "animals-versus-products",
+      "category": "Farm animals",
+      "count": 8,
+      "kind": "words",
+      "request": "Animals only.",
+      "reference": "Farm livestock: cows produce milk, chickens lay eggs, sheep provide wool, and pigs, goats, ducks, horses and donkeys are raised on farms. Hay, grain and feed are foods. Barns, tractors and fences are equipment.",
+      "checks": {
+        "allowed_items": [
+          "Cow",
+          "Cows",
+          "Chicken",
+          "Chickens",
+          "Sheep",
+          "Pig",
+          "Pigs",
+          "Goat",
+          "Goats",
+          "Duck",
+          "Ducks",
+          "Horse",
+          "Horses",
+          "Donkey",
+          "Donkeys"
+        ],
+        "min_items": 8,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "historical-subgroup",
+      "category": "US presidents",
+      "count": 4,
+      "kind": "words",
+      "request": "Only presidents who served before 1900.",
+      "reference": "Presidents before 1900: George Washington, Thomas Jefferson, Abraham Lincoln, Ulysses S Grant and Grover Cleveland. Presidents after 1900: John F Kennedy, Ronald Reagan, Barack Obama and Joe Biden. Washington DC is the capital.",
+      "checks": {
+        "allowed_items": [
+          "George Washington",
+          "Thomas Jefferson",
+          "Abraham Lincoln",
+          "Ulysses S Grant",
+          "Grover Cleveland"
+        ],
+        "min_items": 4,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "source-has-no-members",
+      "category": "Bluey characters",
+      "count": 6,
+      "kind": "words",
+      "request": "Characters only.",
+      "reference": "This excerpt describes Brisbane, Queensland and Australia. It discusses animation, television broadcasts, production schedules and games. No character names are given in this excerpt.",
+      "checks": {
+        "allowed_items": [],
+        "min_items": 0,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "source-over-prior-knowledge",
+      "category": "Meadow Club characters",
+      "count": 4,
+      "kind": "words",
+      "request": "Only characters named here.",
+      "reference": "The fictional Meadow Club story has four characters: Nori, Pippa, Tavi and Wren. Maple is their town, Pebble is their clubhouse and Starfall is their annual event. The author is Rowan Vale and the illustrator is Ellis Reed.",
+      "checks": {
+        "allowed_items": [
+          "Nori",
+          "Pippa",
+          "Tavi",
+          "Wren"
+        ],
+        "min_items": 4,
+        "no_duplicates": true
+      }
+    }
+  ],
+  "peak_memory": {
+    "working_set": 6242050048,
+    "private_bytes": 5177167872
+  },
+  "final_memory": {
+    "working_set": 4746690560,
+    "private_bytes": 5090099200,
+    "peak_working_set": 6243385344
+  },
+  "summary": {
+    "total": 38,
+    "passed": 34,
+    "failed": 4,
+    "pass_rate": 0.895,
+    "complete_first_replies": 34
+  },
+  "median_seconds": 20.965,
+  "total_cpu_seconds": 8308.014,
+  "n_threads_batch": 12
+}

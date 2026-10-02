@@ -67,8 +67,9 @@ function undoLastRemoval() {
 const undoBtn = $("undo-remove-btn");
 if (undoBtn) {
   undoBtn.addEventListener("click", undoLastRemoval);
-  chipbox.addEventListener("keydown", (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+  document.querySelector(".workspace-side").addEventListener("keydown", (event) => {
+    if ((event.target === wordInput || chipbox.contains(event.target))
+      && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
       undoLastRemoval();
     }
@@ -78,7 +79,8 @@ if (undoBtn) {
 function updateTopicInputRow() {
   if (!chipbox || !wordInput) return;
   if (!chipbox.classList.contains("topic-mode")) {
-    if (wordInput.parentElement !== chipbox) chipbox.append(wordInput);
+    const entry = $("word-entry-row");
+    if (wordInput.parentElement !== entry) entry.prepend(wordInput);
     return;
   }
   const fn = TOPIC_FUNCTIONS.includes(state.activeFn) ? state.activeFn : "question";
@@ -99,6 +101,18 @@ document.querySelectorAll(".topic-row-add").forEach((button) => {
 });
 wordInput.addEventListener("focus", () => chipbox.classList.add("input-active"));
 wordInput.addEventListener("blur", () => chipbox.classList.remove("input-active"));
+wordInput.addEventListener("input", updateAddState);
+
+function updateAddState() {
+  const full = state.words.length >= pageCapacity();
+  const empty = !wordInput.value.trim();
+  const button = $("word-add-btn");
+  button.disabled = full;
+  button.setAttribute("aria-disabled", String(full || empty));
+  $("word-entry-hint").textContent = full
+    ? "This page is full. Remove a pending button to make room."
+    : empty ? "Type a word to enable Add." : "Select Add or press Enter. You can paste a comma-separated list.";
+}
 
 chipbox.addEventListener("click", (event) => {
   if (event.target === chipbox) wordInput.focus();
@@ -115,6 +129,7 @@ function takeWordInput() {
     addWords(value, wordInput.dataset.forced || null);
     if (state.pageStyle === "topic") wordInput.blur();
   }
+  updateAddState();
 }
 
 wordInput.addEventListener("keydown", (event) => {
@@ -355,15 +370,24 @@ function renderWords() {
       ? `${state.words.length} planned · ${state.words.length - capacity} won’t fit — remove buttons or choose another page`
     : state.words.length === 0
       ? `${capacity} space${capacity === 1 ? "" : "s"} available`
-      : `${state.words.length} added · ${left} space${left === 1 ? "" : "s"} left`;
+      : `${state.words.length} button${state.words.length === 1 ? "" : "s"} ready to add · ${left} space${left === 1 ? "" : "s"} left`;
   meter.classList.toggle("full", state.words.length >= capacity);
   wordInput.disabled = state.words.length >= capacity;
-  $("word-add-btn").disabled = state.words.length >= capacity;
+  updateAddState();
   wordInput.placeholder = state.pageStyle === "topic"
     ? "+"
+    : "Type a word or phrase";
+  $("pending-empty").hidden = state.words.length > 0;
+  const changed = state.pageEdits.changes.length + state.pageEdits.moves.length
+    + state.pageEdits.removals.length;
+  $("workspace-action-summary").textContent = changed
+    ? `${state.words.length} new · ${changed} existing edit${changed === 1 ? "" : "s"} · ${left} spaces left`
     : state.words.length
-      ? ""
-      : "Type a word, press Enter — or paste a comma-separated list";
+      ? `${state.words.length} button${state.words.length === 1 ? "" : "s"} ready to add · ${left} spaces left`
+      : "No changes yet";
+  $("workspace-action-hint").textContent = state.words.length || changed
+    ? "Nothing changes until you confirm."
+    : "Add a word or edit a button to continue.";
   updateTopicInputRow();
   if (undoBtn) undoBtn.hidden = !undoStack.canUndo();
   renderExistingEditControls();

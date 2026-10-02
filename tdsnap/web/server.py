@@ -1719,6 +1719,13 @@ def ai_words():
     grounding_title = _bounded_text(
         payload.get("grounding_title"), "grounding_title", MAX_PAGE_NAME_CHARS
     )
+    reference_page = _bounded_text(payload.get("reference_page"), "reference_page", 2048)
+    reference_text = _bounded_text(payload.get("reference_text"), "reference_text", 30_000)
+    if reference_page:
+        try:
+            grounding_title = grounding.wikipedia_title(reference_page)
+        except ValueError as exc:
+            raise PagesetError(str(exc)) from exc
     grounding_exclude = _validated_labels(
         payload.get("grounding_exclude"), "grounding_exclude", 20
     )
@@ -1771,12 +1778,37 @@ def ai_words():
     # earlier answer. The user's own words — `existing`, `avoid`, `like`,
     # `style` — are not in scope of this call by construction, and a test pins
     # that they never reach it.
-    source = grounding.lookup(
-        category,
-        requested=grounding_requested,
-        title=grounding_title or None,
-        exclude=grounding_exclude,
-    )
+    if reference_text:
+        source = {
+            "used": True, "text": reference_text, "title": "Pasted reference text",
+            "url": "", "alternatives": [],
+        }
+    else:
+        source = grounding.lookup(
+            category,
+            max_chars=grounding.MAX_ARTICLE_CHARS,
+            requested=grounding_requested or bool(reference_page),
+            title=grounding_title or None,
+            exclude=grounding_exclude,
+        )
+    if (reference_page or reference_text) and not source["used"]:
+        return jsonify({"ok": False, "words": [], "error":
+                        "That reference article could not be read. Check the article link, "
+                        "or paste its text in the reference field."}), 400
+    if source["used"]:
+        if not reference_page and not grounding_title and not reference_text:
+            source = grounding.choose_reference(source, user_request)
+        source["text"] = grounding.select_passages(
+            source["text"], f"{category} {user_request} {' '.join(like)}"
+        )
+        if not source["text"]:
+            return jsonify({"ok": False, "words": [], "error":
+                            "That reference has no usable passages. Paste a relevant "
+                            "section or choose another article."}), 400
+    elif grounding_requested:
+        note = " ".join(filter(None, [note,
+            "No usable reference article was found; these suggestions use the model's "
+            "own knowledge. You can provide an exact article or paste reference text."]))
     args["reference"] = source["text"]
     # Ask for more than the user wants: cleaning drops repeats, the page title
     # echoed back, and anything already on the page, so a request for exactly
@@ -1785,7 +1817,7 @@ def ai_words():
     started = time.monotonic()
     words, error = generate()
     elapsed = time.monotonic() - started
-    reported = {key: value for key, value in source.items() if key != "text"}
+    reported = {key: source[key] for key in ("used", "title", "url", "alternatives")}
     if error:
         return jsonify({"ok": False, "error": error, "words": [],
                         "engine": engine, "grounding": reported}), 502
@@ -1802,6 +1834,7 @@ def ai_words():
         return prompts.clean_items(
             candidates, count, kind=kind, category=category,
             exclude=[*existing, *avoid, *already],
+            reference=source["text"], function=function,
         )
 
     words = usable(words)

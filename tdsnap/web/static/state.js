@@ -44,6 +44,7 @@ const state = {
   placementAdjusted: false,
   grid: { cols: 8, rows: 5 },
   existingButtons: [], // [{slot, label, message, function, symbol, editable, locked_reason}]
+  selectedWord: null, // A pending word selected on the arrangement canvas.
   // Pending edits to buttons that already exist on the page, kept apart from
   // state.words because they reach into vocabulary somebody already uses.
   // Built by edits.js rather than written out here, so a new kind of edit can

@@ -1,0 +1,309 @@
+{
+  "date": "2026-10-01",
+  "hardware": {
+    "cpu": "AMD Ryzen 7 7445HS",
+    "physical_cores": 6,
+    "logical_processors": 12,
+    "usable_memory_GiB": 15.23379135131836
+  },
+  "quality_generations_per_model": 41,
+  "quality_generations_total": 123,
+  "models": [
+    {
+      "key": "qwen3-4b",
+      "model": "Qwen3 4B Instruct 2507",
+      "file_bytes": 2497281120,
+      "passed": 37,
+      "total": 41,
+      "complete_first_replies": 37,
+      "reference_passed": 16,
+      "reference_total": 16,
+      "median_word_seconds": 14.745,
+      "median_phrase_seconds": 25.325,
+      "peak_resident_bytes": 5526388736,
+      "peak_private_bytes": 4611792896,
+      "main_cpu_seconds": 6064.498,
+      "main_wall_seconds": 607.231,
+      "main_avg_cpu_percent": 83.22612536799558,
+      "failed_cases": [
+        {
+          "id": "bluey-without-reference",
+          "phase": "main",
+          "failures": [
+            "allowed_items: 'Brisbane' is not a member of the requested source-specific set"
+          ],
+          "items": [
+            "Bluey",
+            "Brisbane",
+            "Chloe",
+            "Giggle",
+            "Ned",
+            "Milo",
+            "Buddy",
+            "Lucky"
+          ]
+        },
+        {
+          "id": "subgroup-without-reference",
+          "phase": "main",
+          "failures": [
+            "allowed_items: 'Darth Malfoy' is not a member of the requested source-specific set"
+          ],
+          "items": [
+            "Lord Voldemort",
+            "Darth Malfoy",
+            "Draco Malfoy",
+            "Neville Longbottom",
+            "Lucius Malfoy"
+          ]
+        },
+        {
+          "id": "bluey-without-reference",
+          "phase": "seed43",
+          "failures": [
+            "allowed_items: 'Bert' is not a member of the requested source-specific set"
+          ],
+          "items": [
+            "Bluey",
+            "Bert",
+            "Chilli",
+            "Bandit",
+            "Ginger",
+            "Milo",
+            "Buddy",
+            "Tilly"
+          ]
+        },
+        {
+          "id": "subgroup-without-reference",
+          "phase": "seed43",
+          "failures": [
+            "allowed_items: 'Dumbledore' is not a member of the requested source-specific set"
+          ],
+          "items": [
+            "Lord Voldemort",
+            "Dumbledore",
+            "Malfoy",
+            "Crabbe",
+            "Goyle"
+          ]
+        }
+      ],
+      "threads6_matched_trial": {
+        "n_threads": 6,
+        "n_threads_batch": 6,
+        "seconds": 19.339,
+        "cpu_seconds": 112.266,
+        "avg_cpu_percent": 48.37633796990537,
+        "passed": true
+      }
+    },
+    {
+      "key": "qwen35-4b",
+      "model": "Qwen3.5 4B",
+      "file_bytes": 2740937888,
+      "passed": 37,
+      "total": 41,
+      "complete_first_replies": 35,
+      "reference_passed": 15,
+      "reference_total": 16,
+      "median_word_seconds": 20.237,
+      "median_phrase_seconds": 35.755,
+      "peak_resident_bytes": 4778881024,
+      "peak_private_bytes": 3943243776,
+      "main_cpu_seconds": 7751.094,
+      "main_wall_seconds": 818.5020000000001,
+      "main_avg_cpu_percent": 78.9154455334257,
+      "failed_cases": [
+        {
+          "id": "reference-exhaustion",
+          "phase": "main",
+          "failures": [
+            "allowed_items: 'Brisbane' is not a member of the requested source-specific set"
+          ],
+          "items": [
+            "Bluey",
+            "Bingo",
+            "Bandit",
+            "Brisbane",
+            "Fetch"
+          ]
+        },
+        {
+          "id": "bluey-without-reference",
+          "phase": "main",
+          "failures": [
+            "allowed_items: 'Jojo' is not a member of the requested source-specific set"
+          ],
+          "items": [
+            "Bluey",
+            "Bandit",
+            "Chilli",
+            "Coco",
+            "Muffin",
+            "Jojo",
+            "Tilly",
+            "The Dodo"
+          ]
+        },
+        {
+          "id": "bluey-without-reference",
+          "phase": "seed43",
+          "failures": [
+            "allowed_items: 'Billy' is not a member of the requested source-specific set"
+          ],
+          "items": [
+            "Bluey",
+            "Bandit",
+            "Chilli",
+            "Coco",
+            "Muffin",
+            "Billy",
+            "Jojo",
+            "Rolie"
+          ]
+        },
+        {
+          "id": "subgroup-without-reference",
+          "phase": "seed43",
+          "failures": [
+            "allowed_items: 'Harry Potter' is not a member of the requested source-specific set"
+          ],
+          "items": [
+            "Harry Potter",
+            "Ron Weasley",
+            "Hermione Granger",
+            "Albus Dumbledore",
+            "Severus Snape"
+          ]
+        }
+      ],
+      "threads6_matched_trial": {
+        "n_threads": 6,
+        "n_threads_batch": 6,
+        "seconds": 25.961,
+        "cpu_seconds": 141.891,
+        "avg_cpu_percent": 45.54620392126651,
+        "passed": true
+      }
+    },
+    {
+      "key": "qwen25-7b",
+      "model": "Qwen2.5 7B Instruct",
+      "file_bytes": 4683074240,
+      "passed": 35,
+      "total": 41,
+      "complete_first_replies": 35,
+      "reference_passed": 16,
+      "reference_total": 16,
+      "median_word_seconds": 20.93,
+      "median_phrase_seconds": 31.973,
+      "peak_resident_bytes": 6242050048,
+      "peak_private_bytes": 5177167872,
+      "main_cpu_seconds": 8308.014,
+      "main_wall_seconds": 838.3510000000003,
+      "main_avg_cpu_percent": 82.5828918913438,
+      "failed_cases": [
+        {
+          "id": "harry-potter-characters",
+          "phase": "main",
+          "failures": [
+            "forbids: 'Hogwarts' contains the forbidden word 'hogwarts'"
+          ],
+          "items": [
+            "Harry Potter",
+            "Ron Weasley",
+            "Hermione Granger",
+            "Sirius Black",
+            "Snape",
+            "Dumbledore",
+            "Gryffindor",
+            "Hogwarts"
+          ]
+        },
+        {
+          "id": "questions-only",
+          "phase": "main",
+          "failures": [
+            "min_items: only 2 usable items, wanted 3"
+          ],
+          "items": [
+            {
+              "label": "Do you bring sunscreen?",
+              "function": "question"
+            },
+            {
+              "label": "Should we go earlier?",
+              "function": "question"
+            }
+          ]
+        },
+        {
+          "id": "bluey-without-reference",
+          "phase": "main",
+          "failures": [
+            "allowed_items: 'Buzz' is not a member of the requested source-specific set",
+            "min_items: only 5 usable items, wanted 8"
+          ],
+          "items": [
+            "Bluey",
+            "Bandit",
+            "Buzz",
+            "Lola",
+            "Wilma"
+          ]
+        },
+        {
+          "id": "subgroup-without-reference",
+          "phase": "main",
+          "failures": [
+            "min_items: only 4 usable items, wanted 5"
+          ],
+          "items": [
+            "Lord Voldemort",
+            "Bellatrix Lestrange",
+            "Draco Malfoy",
+            "Lucius Malfoy"
+          ]
+        },
+        {
+          "id": "bluey-without-reference",
+          "phase": "seed43",
+          "failures": [
+            "allowed_items: 'Buzz' is not a member of the requested source-specific set",
+            "min_items: only 5 usable items, wanted 8"
+          ],
+          "items": [
+            "Bluey",
+            "Bandit",
+            "Buzz",
+            "Bob",
+            "Lola"
+          ]
+        },
+        {
+          "id": "subgroup-without-reference",
+          "phase": "seed43",
+          "failures": [
+            "min_items: only 4 usable items, wanted 5"
+          ],
+          "items": [
+            "Lord Voldemort",
+            "Bellatrix Lestrange",
+            "Draco Malfoy",
+            "Lucius Malfoy"
+          ]
+        }
+      ],
+      "threads6_matched_trial": {
+        "n_threads": 6,
+        "n_threads_batch": 6,
+        "seconds": 27.109,
+        "cpu_seconds": 149.922,
+        "avg_cpu_percent": 46.08617064443542,
+        "passed": false
+      }
+    }
+  ],
+  "total_generations_including_thread_trials": 129
+}

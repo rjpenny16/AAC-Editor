@@ -27,7 +27,7 @@ const PREVIEW_ICONS = {
 };
 
 function addPreviewCellContent(cell, label, fn = "", showSymbol = true) {
-  if (showSymbol) {
+  if (showSymbol && fn) {
     const symbol = document.createElement("span");
     symbol.className = "cell-symbol";
     symbol.innerHTML = PREVIEW_ICONS[fn] || PREVIEW_ICONS.default;
@@ -39,6 +39,40 @@ function addPreviewCellContent(cell, label, fn = "", showSymbol = true) {
   text.className = "cell-label";
   text.textContent = label;
   cell.append(text);
+}
+
+function addCellState(cell, label) {
+  const badge = document.createElement("span");
+  badge.className = "cell-state";
+  badge.textContent = label;
+  badge.setAttribute("aria-hidden", "true");
+  cell.append(badge);
+}
+
+function selectableWord(cell, item) {
+  addCellState(cell, "New");
+  const marker = document.createElement("span");
+  marker.className = "cell-selection";
+  marker.setAttribute("aria-hidden", "true");
+  cell.append(marker);
+  const select = () => {
+    state.selectedWord = item;
+    $("preview").querySelectorAll(".cell.used").forEach((other) => {
+      const selected = other === cell;
+      other.classList.toggle("selected", selected);
+      other.setAttribute("aria-pressed", String(selected));
+    });
+  };
+  const selected = state.selectedWord === item;
+  cell.classList.toggle("selected", selected);
+  cell.setAttribute("aria-pressed", String(selected));
+  cell.addEventListener("click", select);
+  cell.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      select();
+    }
+  });
 }
 
 function renderGrid3Preview(preview) {
@@ -67,7 +101,8 @@ function renderGrid3Preview(preview) {
     if (existing) {
       renderExistingCell(cell, existing, model.slot);
     } else if (!model.safe_blank && !moveFrom(state.pageEdits, model.slot)) {
-      cell.classList.add("existing");
+      cell.classList.add("existing", "locked");
+      addCellState(cell, "Locked");
       if (model.label) addPreviewCellContent(cell, model.label, "", false);
       cell.title = "Existing or special Grid 3 cell — locked";
       cell.setAttribute("aria-label", `${model.label || "Special cell"}, existing and locked`);
@@ -78,6 +113,7 @@ function renderGrid3Preview(preview) {
       cell.draggable = true;
       cell.tabIndex = 0;
       cell.setAttribute("role", "button");
+      selectableWord(cell, item);
       cell.setAttribute(
         "aria-label",
         `${item.label}, row ${model.y + 1}, column ${model.x + 1}. ` +
@@ -266,6 +302,7 @@ function renderExistingCell(cell, existing, slot) {
     // buttons can be touched is the first thing somebody needs from this
     // grid, and a pointing device is not how everyone arrives at it.
     cell.classList.add("locked");
+    addCellState(cell, "Locked");
     cell.title = existing.locked_reason || "Existing TD Snap button — position preserved";
     cell.setAttribute(
       "aria-label",
@@ -307,6 +344,12 @@ function renderPreview() {
     ? titleOf(state.parentId)
     : $("title-input").value.trim();
   $("preview-page-title").textContent = previewTitle || "AAC page preview";
+  $("current-page-label").textContent = previewTitle || "New page";
+  $("preview-grid-size").textContent = `${state.grid.cols} × ${state.grid.rows} grid`;
+  const lockNote = $("preview-lock-note");
+  lockNote.hidden = state.operation !== "existing" || state.mode !== "file";
+  lockNote.textContent = "Existing buttons are locked in this copy.";
+  if (!state.words.includes(state.selectedWord)) state.selectedWord = null;
   preview.style.setProperty("--cols", state.grid.cols);
   preview.style.setProperty("--rows", state.grid.rows);
   preview.classList.toggle("topic-preview", state.pageStyle === "topic");
@@ -363,6 +406,7 @@ function renderPreview() {
       cell.draggable = true;
       cell.tabIndex = 0;
       cell.setAttribute("role", "button");
+      selectableWord(cell, item);
       cell.setAttribute(
         "aria-label",
         `${item.label}, row ${Math.floor(slot / state.grid.cols) + 1}, ` +

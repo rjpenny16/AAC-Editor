@@ -34,6 +34,8 @@ def test_no_unchecked_alternatives_or_explicit_extract_reach_model(monkeypatch):
     def get(params):
         if params.get("list") == "search":
             return {"query": {"search": [{"title": title} for title in pages]}}
+        if params.get("action") == "parse":
+            return {"parse": {"text": ""}}
         text = pages[params["titles"]]
         if text is None:
             raise OSError("offline")
@@ -68,7 +70,7 @@ def test_explicit_manual_choice_cannot_bypass_filter(monkeypatch):
     monkeypatch.setattr(grounding, "_search_titles", lambda _: ["Games"])
     monkeypatch.setattr(grounding, "_extract", lambda _: "Board games are fun.")
     result = grounding.lookup("Games", requested=True, title="Erotic games")
-    assert result["title"] == "Games"
+    assert result == grounding._empty()  # Never substitute another exact reference.
     assert "Erotic" not in str(result)
 
 
@@ -76,4 +78,4 @@ def test_rejected_manual_choice_stays_rejected(monkeypatch):
     monkeypatch.setattr(grounding, "_search_titles", lambda _: ["Games", "Chess"])
     monkeypatch.setattr(grounding, "_extract", lambda _: "A board game.")
     result = grounding.lookup("Games", requested=True, title="Games", exclude=["games"])
-    assert result["title"] == "Chess"
+    assert result == grounding._empty()

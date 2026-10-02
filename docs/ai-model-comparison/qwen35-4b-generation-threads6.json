@@ -1,0 +1,147 @@
+{
+  "model": "Qwen3.5 4B",
+  "pin": {
+    "key": "qwen35-4b",
+    "name": "Qwen3.5 4B",
+    "license": "Apache-2.0",
+    "file": "Qwen3.5-4B-Q4_K_M.gguf",
+    "repo": "unsloth/Qwen3.5-4B-GGUF",
+    "revision": "e87f176479d0855a907a41277aca2f8ee7a09523",
+    "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "size": 2740937888,
+    "min_memory_bytes": 0,
+    "size_hint": "2.74 GB",
+    "summary": "Benchmark candidate",
+    "url_override": ""
+  },
+  "seed": 42,
+  "n_ctx": 8192,
+  "n_threads": 6,
+  "logical_cpus": 12,
+  "system_memory_bytes": 16357158912,
+  "thinking": false,
+  "baseline_memory": {
+    "working_set": 25968640,
+    "private_bytes": 16744448,
+    "peak_working_set": 27979776
+  },
+  "results": [
+    {
+      "id": "harry-potter-characters",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Harry Potter",
+        "Hermione Granger",
+        "Ron Weasley",
+        "Albus Dumbledore",
+        "Severus Snape",
+        "Luna Lovegood",
+        "Neville Longbottom",
+        "Ginny Weasley"
+      ],
+      "raw_items": [
+        "Harry Potter",
+        "Hermione Granger",
+        "Ron Weasley",
+        "Albus Dumbledore",
+        "Severus Snape",
+        "Luna Lovegood",
+        "Neville Longbottom",
+        "Ginny Weasley",
+        "Rubeus Hagrid",
+        "Dobby",
+        "Hedwig",
+        "Fawkes"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 22.939,
+      "cpu_seconds": 165.141,
+      "usage": {
+        "prompt_tokens": 453,
+        "completion_tokens": 71,
+        "total_tokens": 524
+      },
+      "memory": {
+        "working_set": 4664233984,
+        "private_bytes": 3715334144,
+        "peak_working_set": 4771082240
+      },
+      "raw_content": "{\"items\": [\"Harry Potter\", \"Hermione Granger\", \"Ron Weasley\", \"Albus Dumbledore\", \"Severus Snape\", \"Luna Lovegood\", \"Neville Longbottom\", \"Ginny Weasley\", \"Rubeus Hagrid\", \"Dobby\", \"Hedwig\", \"Fawkes\"]}",
+      "finish_reason": "stop"
+    }
+  ],
+  "load_seconds": 2.789,
+  "loaded_memory": {
+    "working_set": 3194613760,
+    "private_bytes": 3695222784,
+    "peak_working_set": 3194613760
+  },
+  "architecture": "qwen35",
+  "chat_format": "embedded template, enable_thinking=False",
+  "cases": [
+    {
+      "id": "harry-potter-characters",
+      "category": "Harry Potter characters",
+      "kind": "words",
+      "count": 8,
+      "why": "The named example in the prompt. Related vocabulary is not an example of a type.",
+      "checks": {
+        "forbids": [
+          "magic",
+          "wand",
+          "hogwarts",
+          "broom",
+          "spell",
+          "wizard",
+          "quidditch",
+          "potion"
+        ],
+        "expects_any": [
+          "harry",
+          "hermione",
+          "ron",
+          "dumbledore",
+          "hagrid",
+          "snape",
+          "malfoy",
+          "voldemort",
+          "neville",
+          "ginny",
+          "luna",
+          "sirius",
+          "weasley",
+          "potter",
+          "granger"
+        ],
+        "looks_like_names": true,
+        "min_items": 4,
+        "no_duplicates": true,
+        "max_words": 3
+      }
+    }
+  ],
+  "peak_memory": {
+    "working_set": 4763496448,
+    "private_bytes": 3854176256
+  },
+  "final_memory": {
+    "working_set": 4664250368,
+    "private_bytes": 3715289088,
+    "peak_working_set": 4771082240
+  },
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "complete_first_replies": 1
+  },
+  "median_seconds": 22.939,
+  "total_cpu_seconds": 165.141,
+  "n_threads_batch": 12
+}

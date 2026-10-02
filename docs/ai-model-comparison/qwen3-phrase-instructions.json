@@ -1,0 +1,555 @@
+{
+  "model": "Qwen3 4B Instruct 2507",
+  "pin": {
+    "key": "qwen3-4b",
+    "name": "Qwen3 4B Instruct 2507",
+    "license": "Apache-2.0",
+    "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "revision": "a06e946bb6b655725eafa393f4a9745d460374c9",
+    "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+    "size": 2497281120,
+    "min_memory_bytes": 0,
+    "size_hint": "2.5 GB",
+    "summary": "Benchmark candidate",
+    "url_override": ""
+  },
+  "seed": 42,
+  "n_ctx": 8192,
+  "n_threads": 6,
+  "n_threads_batch": 6,
+  "logical_cpus": 12,
+  "system_memory_bytes": 16357158912,
+  "thinking": false,
+  "baseline_memory": {
+    "working_set": 25845760,
+    "private_bytes": 16551936,
+    "peak_working_set": 27860992
+  },
+  "results": [
+    {
+      "id": "swimming-phrases",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "Is the pool clean today?",
+          "function": "question"
+        },
+        {
+          "label": "The water feels great",
+          "function": "positive"
+        },
+        {
+          "label": "I hate the chlorine smell",
+          "function": "negative"
+        },
+        {
+          "label": "I want to swim now",
+          "function": "positive"
+        },
+        {
+          "label": "Swimming is fun",
+          "function": "positive"
+        },
+        {
+          "label": "How deep is the pool?",
+          "function": "question"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "Is the pool clean today?",
+          "function": "question"
+        },
+        {
+          "label": "The water feels great",
+          "function": "positive"
+        },
+        {
+          "label": "I hate the chlorine smell",
+          "function": "negative"
+        },
+        {
+          "label": "I want to swim now",
+          "function": "positive"
+        },
+        {
+          "label": "Swimming is fun",
+          "function": "positive"
+        },
+        {
+          "label": "How deep is the pool?",
+          "function": "question"
+        },
+        {
+          "label": "I prefer warm water",
+          "function": "personal"
+        },
+        {
+          "label": "The waves are too rough",
+          "function": "negative"
+        },
+        {
+          "label": "I enjoy the splash",
+          "function": "positive"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 26.868,
+      "cpu_seconds": 149.578,
+      "usage": {
+        "prompt_tokens": 386,
+        "completion_tokens": 144,
+        "total_tokens": 530
+      },
+      "memory": {
+        "working_set": 4994412544,
+        "private_bytes": 4458827776,
+        "peak_working_set": 5368692736
+      },
+      "raw_content": "{\"items\": [{\"label\": \"Is the pool clean today?\", \"function\": \"question\"}, {\"label\": \"The water feels great\", \"function\": \"positive\"}, {\"label\": \"I hate the chlorine smell\", \"function\": \"negative\"}, {\"label\": \"I want to swim now\", \"function\": \"personal\"}, {\"label\": \"Swimming is fun\", \"function\": \"comment\"}, {\"label\": \"How deep is the pool?\", \"function\": \"question\"}, {\"label\": \"I prefer warm water\", \"function\": \"personal\"}, {\"label\": \"The waves are too rough\", \"function\": \"negative\"}, {\"label\": \"I enjoy the splash\", \"function\": \"positive\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "birthday-party-phrases",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "Is there cake available?",
+          "function": "question"
+        },
+        {
+          "label": "The decorations are bright!",
+          "function": "positive"
+        },
+        {
+          "label": "I don’t like balloons",
+          "function": "negative"
+        },
+        {
+          "label": "Can we have music?",
+          "function": "question"
+        },
+        {
+          "label": "Kids are running around",
+          "function": "comment"
+        },
+        {
+          "label": "I want more games",
+          "function": "positive"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "Is there cake available?",
+          "function": "question"
+        },
+        {
+          "label": "The decorations are bright!",
+          "function": "positive"
+        },
+        {
+          "label": "I don’t like balloons",
+          "function": "negative"
+        },
+        {
+          "label": "Can we have music?",
+          "function": "question"
+        },
+        {
+          "label": "Kids are running around",
+          "function": "comment"
+        },
+        {
+          "label": "I want more games",
+          "function": "positive"
+        },
+        {
+          "label": "Too many guests!",
+          "function": "negative"
+        },
+        {
+          "label": "The party is loud",
+          "function": "comment"
+        },
+        {
+          "label": "I need water",
+          "function": "personal"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 23.904,
+      "cpu_seconds": 137.625,
+      "usage": {
+        "prompt_tokens": 386,
+        "completion_tokens": 138,
+        "total_tokens": 524
+      },
+      "memory": {
+        "working_set": 4741185536,
+        "private_bytes": 4460601344,
+        "peak_working_set": 5368692736
+      },
+      "raw_content": "{\"items\": [{\"label\": \"Is there cake available?\", \"function\": \"question\"}, {\"label\": \"The decorations are bright!\", \"function\": \"positive\"}, {\"label\": \"I don’t like balloons\", \"function\": \"negative\"}, {\"label\": \"Can we have music?\", \"function\": \"personal\"}, {\"label\": \"Kids are running around\", \"function\": \"comment\"}, {\"label\": \"I want more games\", \"function\": \"positive\"}, {\"label\": \"Too many guests!\", \"function\": \"negative\"}, {\"label\": \"The party is loud\", \"function\": \"comment\"}, {\"label\": \"I need water\", \"function\": \"personal\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "haircut-phrases",
+      "passed": true,
+      "failures": [],
+      "target_items": 6,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "Do I need a haircut today?",
+          "function": "question"
+        },
+        {
+          "label": "My hair looks messy now",
+          "function": "personal"
+        },
+        {
+          "label": "I like short hair",
+          "function": "positive"
+        },
+        {
+          "label": "Hair is getting too long",
+          "function": "personal"
+        },
+        {
+          "label": "The barber is slow",
+          "function": "negative"
+        },
+        {
+          "label": "Haircuts feel good",
+          "function": "positive"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "Do I need a haircut today?",
+          "function": "question"
+        },
+        {
+          "label": "My hair looks messy now",
+          "function": "personal"
+        },
+        {
+          "label": "I like short hair",
+          "function": "positive"
+        },
+        {
+          "label": "Hair is getting too long",
+          "function": "personal"
+        },
+        {
+          "label": "The barber is slow",
+          "function": "negative"
+        },
+        {
+          "label": "Haircuts feel good",
+          "function": "positive"
+        },
+        {
+          "label": "I want a fade",
+          "function": "positive"
+        },
+        {
+          "label": "New style looks neat",
+          "function": "comment"
+        },
+        {
+          "label": "I hate clippers",
+          "function": "negative"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 23.867,
+      "cpu_seconds": 138.922,
+      "usage": {
+        "prompt_tokens": 387,
+        "completion_tokens": 143,
+        "total_tokens": 530
+      },
+      "memory": {
+        "working_set": 4751347712,
+        "private_bytes": 4472209408,
+        "peak_working_set": 5368692736
+      },
+      "raw_content": "{\"items\": [{\"label\": \"Do I need a haircut today?\", \"function\": \"question\"}, {\"label\": \"My hair looks messy now\", \"function\": \"negative\"}, {\"label\": \"I like short hair\", \"function\": \"positive\"}, {\"label\": \"Hair is getting too long\", \"function\": \"personal\"}, {\"label\": \"The barber is slow\", \"function\": \"negative\"}, {\"label\": \"Haircuts feel good\", \"function\": \"positive\"}, {\"label\": \"I want a fade\", \"function\": \"personal\"}, {\"label\": \"New style looks neat\", \"function\": \"comment\"}, {\"label\": \"I hate clippers\", \"function\": \"negative\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "questions-only",
+      "passed": true,
+      "failures": [],
+      "target_items": 5,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "Is the sand warm today?",
+          "function": "question"
+        },
+        {
+          "label": "Do we have towels?",
+          "function": "question"
+        },
+        {
+          "label": "Is the water safe to swim in?",
+          "function": "question"
+        },
+        {
+          "label": "Do I need sunscreen?",
+          "function": "question"
+        },
+        {
+          "label": "Is there a beach chair?",
+          "function": "question"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "Is the sand warm today?",
+          "function": "question"
+        },
+        {
+          "label": "Do we have towels?",
+          "function": "question"
+        },
+        {
+          "label": "I want to build a sandcastle",
+          "function": "positive"
+        },
+        {
+          "label": "Is the water safe to swim in?",
+          "function": "question"
+        },
+        {
+          "label": "I don’t like the sunburn",
+          "function": "negative"
+        },
+        {
+          "label": "Do I need sunscreen?",
+          "function": "question"
+        },
+        {
+          "label": "I need shade right now",
+          "function": "comment"
+        },
+        {
+          "label": "Is there a beach chair?",
+          "function": "question"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 24.029,
+      "cpu_seconds": 138.891,
+      "usage": {
+        "prompt_tokens": 401,
+        "completion_tokens": 136,
+        "total_tokens": 537
+      },
+      "memory": {
+        "working_set": 4649402368,
+        "private_bytes": 4467507200,
+        "peak_working_set": 5368692736
+      },
+      "raw_content": "{\"items\": [{\"label\": \"Is the sand warm today?\", \"function\": \"question\"}, {\"label\": \"Do we have towels?\", \"function\": \"question\"}, {\"label\": \"I want to build a sandcastle\", \"function\": \"question\"}, {\"label\": \"Is the water safe to swim in?\", \"function\": \"question\"}, {\"label\": \"I don’t like the sunburn\", \"function\": \"question\"}, {\"label\": \"Do I need sunscreen?\", \"function\": \"question\"}, {\"label\": \"I need shade right now\", \"function\": \"question\"}, {\"label\": \"Is there a beach chair?\", \"function\": \"question\"}]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "negative-only",
+      "passed": true,
+      "failures": [],
+      "target_items": 5,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        {
+          "label": "Too loud at the party",
+          "function": "negative"
+        },
+        {
+          "label": "I don’t like construction noise",
+          "function": "negative"
+        },
+        {
+          "label": "This place is too loud",
+          "function": "negative"
+        },
+        {
+          "label": "I need quiet now",
+          "function": "negative"
+        },
+        {
+          "label": "I hate loud music",
+          "function": "negative"
+        }
+      ],
+      "raw_items": [
+        {
+          "label": "Too loud at the party",
+          "function": "negative"
+        },
+        {
+          "label": "The noise hurts my ears",
+          "function": "personal"
+        },
+        {
+          "label": "I don’t like construction noise",
+          "function": "negative"
+        },
+        {
+          "label": "This place is too loud",
+          "function": "negative"
+        },
+        {
+          "label": "I need quiet now",
+          "function": "negative"
+        },
+        {
+          "label": "I hate loud music",
+          "function": "negative"
+        },
+        {
+          "label": "I prefer soft sounds",
+          "function": "negative"
+        },
+        {
+          "label": "I can’t hear myself talk",
+          "function": "negative"
+        }
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 22.689,
+      "cpu_seconds": 130.484,
+      "usage": {
+        "prompt_tokens": 400,
+        "completion_tokens": 131,
+        "total_tokens": 531
+      },
+      "memory": {
+        "working_set": 4325687296,
+        "private_bytes": 4471902208,
+        "peak_working_set": 5368692736
+      },
+      "raw_content": "{\"items\": [{\"label\": \"Too loud at the party\", \"function\": \"negative\"}, {\"label\": \"The noise hurts my ears\", \"function\": \"negative\"}, {\"label\": \"I don’t like construction noise\", \"function\": \"negative\"}, {\"label\": \"This place is too loud\", \"function\": \"negative\"}, {\"label\": \"I need quiet now\", \"function\": \"negative\"}, {\"label\": \"I hate loud music\", \"function\": \"negative\"}, {\"label\": \"I prefer soft sounds\", \"function\": \"negative\"}, {\"label\": \"I can’t hear myself talk\", \"function\": \"negative\"}]}",
+      "finish_reason": "stop"
+    }
+  ],
+  "load_seconds": 3.781,
+  "loaded_memory": {
+    "working_set": 4846231552,
+    "private_bytes": 4433891328,
+    "peak_working_set": 4846231552
+  },
+  "architecture": "qwen3",
+  "chat_format": "chat_template.default",
+  "cases": [
+    {
+      "id": "swimming-phrases",
+      "category": "Swimming",
+      "kind": "phrases",
+      "count": 6,
+      "why": "Quick-fire phrases: the classifier must be applied to what came back.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "birthday-party-phrases",
+      "category": "Birthday party",
+      "kind": "phrases",
+      "count": 6,
+      "why": "A social routine a topic page is commonly built for.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "haircut-phrases",
+      "category": "Getting a haircut",
+      "kind": "phrases",
+      "count": 6,
+      "why": "An event where refusing and stopping matter as much as liking it.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "questions-only",
+      "category": "Going to the beach",
+      "kind": "phrases",
+      "count": 5,
+      "function": "question",
+      "why": "One function was asked for; a statement must never be tagged a question.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "negative-only",
+      "category": "Loud places",
+      "kind": "phrases",
+      "count": 5,
+      "function": "negative",
+      "why": "The function a user reaches for when something has to stop.",
+      "checks": {
+        "functions_match": true,
+        "ends_questions": true,
+        "min_items": 3,
+        "no_duplicates": true
+      }
+    }
+  ],
+  "peak_memory": {
+    "working_set": 5362728960,
+    "private_bytes": 4554424320
+  },
+  "final_memory": {
+    "working_set": 4319838208,
+    "private_bytes": 4463616000,
+    "peak_working_set": 5368692736
+  },
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "complete_first_replies": 5
+  },
+  "median_seconds": 23.904,
+  "total_cpu_seconds": 695.5,
+  "phrase_prompt_template": "Generate exactly {count} ready-to-speak phrases about the topic \"{category}\"\nfor an AAC (Augmentative and Alternative Communication) user's topic page.\n{function_line}\n{request_line}{existing_line}{reference_line}\nRequirements:\n- Infer what people commonly discuss, ask, like, dislike, and personally share\n  about this topic; make every phrase specific and useful rather than generic\n- Complete, natural speech someone would actually use in conversation\n- Short enough to fit on a communication button (4-10 words)\n- Varied — no two phrases should say the same thing\n- Unless one function is required above, use a balanced mix of all five functions\n- Assign each phrase exactly one function based on its actual meaning:\n  question = a genuine question ending in ?\n  comment = a neutral fact or observation\n  positive = liking, enjoyment, praise, agreement, or wanting more\n  negative = dislike, complaint, refusal, disagreement, or wanting to stop\n  personal = the speaker's current needs or preferences\n- Never invent the user's age, dates, relatives, plans, or past experiences.\n  Personal phrases must be usable choices, not a made-up biography. For example,\n  \"My hair needs a trim\" is usable; \"I visited the barber last week\" is not\n  unless the user supplied that fact. Apply this rule to every function\n- A statement must never be assigned the question function\n- Write the spoken phrase and nothing else: no numbering, bullets, quotation\n  marks, markdown, and no explanation of what the phrase is for\n\nProvide exactly {count} phrases in a JSON object with an \"items\" array. Each item\nmust contain its spoken \"label\" and its \"function\".\n\nExample format:\n{{\"items\": [{{\"label\": \"What happens next?\", \"function\": \"question\"}},\n{{\"label\": \"I love this part\", \"function\": \"positive\"}}]}}",
+  "manual_review": {
+    "unsupported_ages_dates_or_past_visits_found": false,
+    "scope": "The five delivered replies at seed 42 only. Mixed-function replies still do not always include every function."
+  }
+}

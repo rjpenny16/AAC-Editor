@@ -144,17 +144,16 @@ def generate_words(
         return [], str(exc)
     payload = {
         "model": model,
-        "messages": [
-            {"role": "user", "content": prompts.build_prompt(
-                category, count, kind, function, existing, reference,
-                avoid=avoid, like=like, style=style, already=already, request=request,
-            )}
-        ],
+        "messages": prompts.build_messages(
+            category, count, kind, function, existing, reference,
+            avoid=avoid, like=like, style=style, already=already, request=request,
+        ),
         "stream": False,
-        "format": prompts.response_schema(kind),
+        "format": prompts.response_schema(kind, function),
         "options": {
             "num_predict": prompts.token_budget(count, kind),
-            "temperature": 0.7,
+            "temperature": 0.25 if reference else 0.4,
+            "num_ctx": 8192,
         },
     }
     try:

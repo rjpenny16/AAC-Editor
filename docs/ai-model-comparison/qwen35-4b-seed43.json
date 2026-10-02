@@ -1,0 +1,337 @@
+{
+  "model": "Qwen3.5 4B",
+  "pin": {
+    "key": "qwen35-4b",
+    "name": "Qwen3.5 4B",
+    "license": "Apache-2.0",
+    "file": "Qwen3.5-4B-Q4_K_M.gguf",
+    "repo": "unsloth/Qwen3.5-4B-GGUF",
+    "revision": "e87f176479d0855a907a41277aca2f8ee7a09523",
+    "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+    "size": 2740937888,
+    "min_memory_bytes": 0,
+    "size_hint": "2.74 GB",
+    "summary": "Benchmark candidate",
+    "url_override": ""
+  },
+  "seed": 43,
+  "n_ctx": 8192,
+  "n_threads": 11,
+  "logical_cpus": 12,
+  "system_memory_bytes": 16357158912,
+  "thinking": false,
+  "baseline_memory": {
+    "working_set": 25735168,
+    "private_bytes": 16420864,
+    "peak_working_set": 27746304
+  },
+  "results": [
+    {
+      "id": "harry-potter-characters",
+      "passed": true,
+      "failures": [],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": true,
+      "items": [
+        "Harry Potter",
+        "Hermione Granger",
+        "Ron Weasley",
+        "Albus Dumbledore",
+        "Sirius Black",
+        "Luna Lovegood",
+        "Neville Longbottom",
+        "Draco Malfoy"
+      ],
+      "raw_items": [
+        "Harry Potter",
+        "Hermione Granger",
+        "Ron Weasley",
+        "Albus Dumbledore",
+        "Sirius Black",
+        "Luna Lovegood",
+        "Neville Longbottom",
+        "Draco Malfoy",
+        "Ginny Weasley",
+        "Rubeus Hagrid",
+        "Severus Snape",
+        "Minerva McGonagall"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 25.966,
+      "cpu_seconds": 232.875,
+      "usage": {
+        "prompt_tokens": 453,
+        "completion_tokens": 76,
+        "total_tokens": 529
+      },
+      "memory": {
+        "working_set": 4670767104,
+        "private_bytes": 3721146368,
+        "peak_working_set": 4770922496
+      },
+      "raw_content": "{\"items\": [\"Harry Potter\", \"Hermione Granger\", \"Ron Weasley\", \"Albus Dumbledore\", \"Sirius Black\", \"Luna Lovegood\", \"Neville Longbottom\", \"Draco Malfoy\", \"Ginny Weasley\", \"Rubeus Hagrid\", \"Severus Snape\", \"Minerva McGonagall\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "bluey-without-reference",
+      "passed": false,
+      "failures": [
+        "allowed_items: 'Billy' is not a member of the requested source-specific set"
+      ],
+      "target_items": 8,
+      "complete": true,
+      "first_reply_passed": false,
+      "items": [
+        "Bluey",
+        "Bandit",
+        "Chilli",
+        "Coco",
+        "Muffin",
+        "Billy",
+        "Jojo",
+        "Rolie"
+      ],
+      "raw_items": [
+        "Bluey",
+        "Bandit",
+        "Chilli",
+        "Coco",
+        "Muffin",
+        "Billy",
+        "Jojo",
+        "Rolie",
+        "Pop",
+        "Honey",
+        "Tilly",
+        "Socks"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 20.429,
+      "cpu_seconds": 192.703,
+      "usage": {
+        "prompt_tokens": 502,
+        "completion_tokens": 50,
+        "total_tokens": 552
+      },
+      "memory": {
+        "working_set": 4679024640,
+        "private_bytes": 3726184448,
+        "peak_working_set": 4780032000
+      },
+      "raw_content": "{\"items\": [\"Bluey\", \"Bandit\", \"Chilli\", \"Coco\", \"Muffin\", \"Billy\", \"Jojo\", \"Rolie\", \"Pop\", \"Honey\", \"Tilly\", \"Socks\"]}",
+      "finish_reason": "stop"
+    },
+    {
+      "id": "subgroup-without-reference",
+      "passed": false,
+      "failures": [
+        "allowed_items: 'Harry Potter' is not a member of the requested source-specific set"
+      ],
+      "target_items": 5,
+      "complete": true,
+      "first_reply_passed": false,
+      "items": [
+        "Harry Potter",
+        "Ron Weasley",
+        "Hermione Granger",
+        "Albus Dumbledore",
+        "Severus Snape"
+      ],
+      "raw_items": [
+        "Harry Potter",
+        "Ron Weasley",
+        "Hermione Granger",
+        "Albus Dumbledore",
+        "Severus Snape",
+        "Draco Malfoy",
+        "Bellatrix Lestrange",
+        "Lord Voldemort"
+      ],
+      "error": null,
+      "repeat": 0,
+      "seconds": 20.336,
+      "cpu_seconds": 190.234,
+      "usage": {
+        "prompt_tokens": 511,
+        "completion_tokens": 47,
+        "total_tokens": 558
+      },
+      "memory": {
+        "working_set": 4678533120,
+        "private_bytes": 3726065664,
+        "peak_working_set": 4780032000
+      },
+      "raw_content": "{\"items\": [\"Harry Potter\", \"Ron Weasley\", \"Hermione Granger\", \"Albus Dumbledore\", \"Severus Snape\", \"Draco Malfoy\", \"Bellatrix Lestrange\", \"Lord Voldemort\"]}",
+      "finish_reason": "stop"
+    }
+  ],
+  "load_seconds": 2.706,
+  "loaded_memory": {
+    "working_set": 3194208256,
+    "private_bytes": 3695116288,
+    "peak_working_set": 3194208256
+  },
+  "architecture": "qwen35",
+  "chat_format": "embedded template, enable_thinking=False",
+  "cases": [
+    {
+      "id": "harry-potter-characters",
+      "category": "Harry Potter characters",
+      "kind": "words",
+      "count": 8,
+      "why": "The named example in the prompt. Related vocabulary is not an example of a type.",
+      "checks": {
+        "forbids": [
+          "magic",
+          "wand",
+          "hogwarts",
+          "broom",
+          "spell",
+          "wizard",
+          "quidditch",
+          "potion"
+        ],
+        "expects_any": [
+          "harry",
+          "hermione",
+          "ron",
+          "dumbledore",
+          "hagrid",
+          "snape",
+          "malfoy",
+          "voldemort",
+          "neville",
+          "ginny",
+          "luna",
+          "sirius",
+          "weasley",
+          "potter",
+          "granger"
+        ],
+        "looks_like_names": true,
+        "min_items": 4,
+        "no_duplicates": true,
+        "max_words": 3
+      }
+    },
+    {
+      "id": "bluey-without-reference",
+      "category": "Bluey characters",
+      "count": 8,
+      "kind": "words",
+      "request": "Characters only.",
+      "reference": "",
+      "checks": {
+        "allowed_items": [
+          "Bluey",
+          "Bingo",
+          "Bandit",
+          "Chilli",
+          "Muffin",
+          "Socks",
+          "Chloe",
+          "Rusty",
+          "Mackenzie",
+          "Coco",
+          "Indy",
+          "Snickers",
+          "Honey",
+          "Lucky",
+          "Judo",
+          "Jack",
+          "Winton",
+          "Calypso",
+          "Trixie",
+          "Stripe",
+          "Frisky",
+          "Rad",
+          "Radley",
+          "Pat",
+          "Wendy",
+          "Lila",
+          "Pom Pom",
+          "Doreen",
+          "Jean Luc",
+          "Jean-Luc",
+          "Bob",
+          "Nana",
+          "Grandad",
+          "Mort",
+          "Bobo",
+          "Bucky",
+          "Hercules",
+          "Pretzel",
+          "Bentley",
+          "Buddy",
+          "Chucky",
+          "Jasper",
+          "Missy",
+          "Captain",
+          "Mia",
+          "Lulu",
+          "Dusty"
+        ],
+        "min_items": 8,
+        "no_duplicates": true
+      }
+    },
+    {
+      "id": "subgroup-without-reference",
+      "category": "Harry Potter characters",
+      "count": 5,
+      "kind": "words",
+      "request": "Only Death Eaters, full names. Do not include other characters.",
+      "reference": "",
+      "checks": {
+        "allowed_items": [
+          "Bellatrix Lestrange",
+          "Lucius Malfoy",
+          "Draco Malfoy",
+          "Barty Crouch Jr",
+          "Barty Crouch Jr.",
+          "Bartemius Crouch Jr",
+          "Peter Pettigrew",
+          "Antonin Dolohov",
+          "Severus Snape",
+          "Walden Macnair",
+          "Augustus Rookwood",
+          "Corban Yaxley",
+          "Fenrir Greyback",
+          "Amycus Carrow",
+          "Alecto Carrow",
+          "Rodolphus Lestrange",
+          "Rabastan Lestrange",
+          "Igor Karkaroff",
+          "Thorfinn Rowle",
+          "Voldemort",
+          "Lord Voldemort",
+          "Tom Riddle",
+          "Tom Marvolo Riddle"
+        ],
+        "min_items": 5,
+        "no_duplicates": true
+      }
+    }
+  ],
+  "peak_memory": {
+    "working_set": 4778577920,
+    "private_bytes": 3865366528
+  },
+  "final_memory": {
+    "working_set": 4678545408,
+    "private_bytes": 3726061568,
+    "peak_working_set": 4780032000
+  },
+  "summary": {
+    "total": 3,
+    "passed": 1,
+    "failed": 2,
+    "pass_rate": 0.333,
+    "complete_first_replies": 1
+  },
+  "median_seconds": 20.429,
+  "total_cpu_seconds": 615.812
+}

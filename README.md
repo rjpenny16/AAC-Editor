@@ -101,6 +101,12 @@ on adding words.
   Where the app offers more than one, the larger ones are unlocked by the
   memory this computer is *measured* to have — a machine whose memory cannot be
   read is offered the small model and nothing bigger.
+  First-time setup recommends **Qwen3 4B Instruct 2507** (~2.5 GB) on a
+  measured 12 GB-class computer. It performed best in our local vocabulary
+  comparison. Existing installations can download and select it under
+  **Suggestion settings → Built-in suggestion model**. The small model and
+  Qwen2.5 7B (~4.7 GB, 16 GB-class computers) remain available. Both prompt
+  processing and generation use at most six CPU threads to leave headroom.
 - If [Ollama](https://ollama.com/download) is already running, the app can use
   one of its installed models instead — picked from a list of what you actually
   have, not typed from memory. **Suggestion settings** chooses which engine
@@ -117,6 +123,29 @@ generated suggestions all remain local. The article it used is named under the
 suggestions with a link, and you can send it to a different one — or to none —
 if it picked the wrong "Mercury". Administrators can hard-disable grounding
 with `TDSNAP_WEB_GROUNDING=0`.
+
+**Use a specific reference page** accepts an exact English Wikipedia article
+link or title. It reads that article directly, including lists and tables,
+and selects relevant sections throughout the page. For any other website,
+paste its relevant text into the reference field; pasted text stays local
+and takes priority over web lookup. A failed exact article lookup asks you to
+check the link or paste text rather than silently choosing another source.
+Word suggestions using a reference must appear in the selected source text;
+this checks evidence, while relevance to the requested type still depends on
+the model. Online lookup remains optional; requests without a reference use
+the model's own knowledge.
+
+The app supplies instructions automatically on every request: match the exact
+topic and requested type, prefer useful short labels, respect rejected and
+existing buttons, and return fewer items rather than pad a list. Source-based
+word requests use a separate standing instruction and structured request data.
+Phrase requests have their own rules; a requested phrase function is also
+restricted in the output schema. You only need to describe the intended topic
+or narrower group, for example “Only Death Eaters, full names.” Instructions
+help with selection and formatting; accurate reference text is still much
+more reliable than model memory for unfamiliar names. See
+[AI quality notes](docs/AI_QUALITY.md) and the
+[model comparison](docs/ai-model-comparison/README.md).
 
 Nothing is written to disk until you save something. Remembering your last
 AAC app, your Ollama connection, an unfinished page (so a crash or a
@@ -337,6 +366,16 @@ size of the one that ships — so it does not fail a build unless
 TDSNAP_AI_SMOKE=1 python -m pytest tests/test_ai_eval.py
 python scripts/verify_model_pins.py   # confirm each model pin with its publisher
 ```
+
+For a release quality check against the actual offered models, run
+`python scripts/evaluate_ai_quality.py --model large --download --report ai-quality.json`.
+This runs the fixed eval cases through generation and filtering and fails below
+100% by default (`--floor` can set a different threshold). Use repeated `--case`
+options to select a focused set. The reference cases require every output to
+belong to the requested set, including a restricted character subgroup and a
+source that has fewer names than requested; one recognizable name cannot hide
+an otherwise inaccurate answer. The existing cheap CI smoke model remains a
+plumbing check, rather than evidence of the shipped model's vocabulary quality.
 
 The browser suite mocks TD Snap and Grid 3 accessibility responses. Real TD Snap
 and Grid 3 tests are explicit opt-ins (`TDSNAP_LIVE_E2E=1` and

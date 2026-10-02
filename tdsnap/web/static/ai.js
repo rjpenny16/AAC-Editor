@@ -145,6 +145,7 @@ function renderLocalModel(local) {
   if (row.hidden) {
     select.innerHTML = "";
     $("ai-model-choice-note").textContent = "";
+    $("ai-upgrade-row").hidden = true;
     return;
   }
   // A remembered choice only leads until the user picks in this session; a
@@ -162,6 +163,14 @@ function renderLocalModel(local) {
   const usable = offered.find((choice) => choice.key === wanted && choice.supported);
   select.value = (usable || offered[0]).key;
   describeModelChoice(offered);
+  const upgrade = $("ai-upgrade-model");
+  upgrade.replaceChildren(...Array.from(select.options, (option) => option.cloneNode(true)));
+  upgrade.value = select.value;
+  $("ai-upgrade-row").hidden = !(readiness?.ready && offered.length > 1);
+  $("ai-upgrade-note").textContent = $("ai-model-choice-note").textContent;
+  $("ai-upgrade-download").hidden = Boolean(
+    offered.find((choice) => choice.key === upgrade.value)?.downloaded
+  );
 }
 
 function describeModelChoice(offered) {
@@ -202,9 +211,7 @@ function renderOllamaModels(ollamaState) {
 
 /* ---------- setup ---------- */
 
-$("ai-download-btn").addEventListener("click", async () => {
-  const button = $("ai-download-btn");
-  const status = $("ai-download-status");
+async function downloadModel(button, status) {
   status.classList.remove("error", "success");
   status.textContent = "";
   setBusy(button, true, "Starting…");
@@ -227,6 +234,17 @@ $("ai-download-btn").addEventListener("click", async () => {
     setBusy(button, false);
     setActivity();
   }
+}
+
+$("ai-download-btn").addEventListener("click", () =>
+  downloadModel($("ai-download-btn"), $("ai-download-status"))
+);
+$("ai-upgrade-download").addEventListener("click", () =>
+  downloadModel($("ai-upgrade-download"), $("ai-upgrade-status"))
+);
+$("ai-upgrade-model").addEventListener("change", () => {
+  $("ai-model-choice").value = $("ai-upgrade-model").value;
+  $("ai-model-choice").dispatchEvent(new Event("change"));
 });
 
 /* Both routes into the Ollama steps: the one offered beside the download for
@@ -394,7 +412,8 @@ function describeKind() {
    article picked for "Zoo". */
 let articleContext = "";
 function suggestionContext() {
-  return JSON.stringify([state.provider, state.sessionId, state.operation, pageCategory(), state.pageStyle]);
+  return JSON.stringify([state.provider, state.sessionId, state.operation, pageCategory(), state.pageStyle,
+    $("ai-request").value, $("ai-reference-page").value, $("ai-reference-text").value]);
 }
 
 /* One request shape for all the ways of asking: the whole panel, more for the
@@ -417,6 +436,8 @@ async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
       body: JSON.stringify({
         category: pageCategory(),
         request: $("ai-request").value.trim() || null,
+        reference_page: $("ai-reference-page").value.trim() || null,
+        reference_text: $("ai-reference-text").value.trim() || null,
         count,
         host: $("ai-host").value,
         model: $("ai-model").value,
@@ -657,6 +678,15 @@ function clearSuggestions() {
   const event = control.tagName === "BUTTON" ? "click" : "change";
   control.addEventListener(event, () => {
     if (state.aiSuggestions.length) clearSuggestions();
+    $("ai-reference-page").value = "";
+    $("ai-reference-text").value = "";
+  });
+});
+
+["ai-request", "ai-reference-page", "ai-reference-text"].forEach((id) => {
+  $(id).addEventListener("input", () => {
+    clearSuggestions();
+    clearGroundingSource();
   });
 });
 
@@ -686,7 +716,9 @@ function renderGroundingSource(source) {
   }
   box.hidden = false;
   link.textContent = source.title;
-  link.href = source.url;
+  if (source.url) link.href = source.url;
+  else link.removeAttribute("href");
+  pick.parentElement.hidden = !source.url;
   pick.innerHTML = "";
   const keep = document.createElement("option");
   keep.value = "";
@@ -722,12 +754,16 @@ if ($("ai-grounding-pick")) {
     }
     if (choice === "none") {
       state.aiChosenArticle = "";
+      $("ai-reference-page").value = "";
+      $("ai-reference-text").value = "";
       $("ai-grounding").checked = false;
       void savePreference("ai_grounding", false);
       note.textContent =
         "Reference lookup turned off. Suggest again for suggestions with no article behind them.";
     } else {
       state.aiChosenArticle = choice;
+      $("ai-reference-page").value = choice;
+      articleContext = suggestionContext();
       note.textContent = `Suggest again to use “${choice}” instead.`;
     }
   });

@@ -38,6 +38,8 @@ KNOWN_CHECKS = {
     "looks_like_names",  # every item reads as a proper name
     "functions_match",   # each phrase carries the function its text supports
     "ends_questions",    # a phrase tagged question ends in a question mark
+    "allowed_items",     # every label belongs to a complete source-specific set
+    "forbidden_items",   # exact labels, without rejecting valid compound nouns
 }
 
 
@@ -169,6 +171,22 @@ def _check_ends_questions(case, items, _value) -> str:
     return ""
 
 
+def _check_allowed_items(case, items, allowed) -> str:
+    members = {prompts.normalized(label) for label in allowed}
+    for label in _labels(items):
+        if prompts.normalized(label) not in members:
+            return f"{label!r} is not a member of the requested source-specific set"
+    return ""
+
+
+def _check_forbidden_items(case, items, forbidden) -> str:
+    forbidden_labels = {prompts.normalized(label) for label in forbidden}
+    for label in _labels(items):
+        if prompts.normalized(label) in forbidden_labels:
+            return f"{label!r} is a forbidden label"
+    return ""
+
+
 CHECKS = {
     "forbids": _check_forbids,
     "expects_any": _check_expects_any,
@@ -179,6 +197,8 @@ CHECKS = {
     "looks_like_names": _check_looks_like_names,
     "functions_match": _check_functions_match,
     "ends_questions": _check_ends_questions,
+    "allowed_items": _check_allowed_items,
+    "forbidden_items": _check_forbidden_items,
 }
 
 

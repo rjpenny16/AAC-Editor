@@ -6,9 +6,9 @@ file is shipped in the download (the smallest is ~1 GB); the app offers a
 one-time download on first use, stores it in the per-user data directory, and
 runs it fully offline afterwards.
 
-Default model: Qwen2.5-1.5B-Instruct (Apache-2.0), quantized to Q4_K_M GGUF.
-It stays the default forever: a clinic laptop has to be able to run this, and
-the download size matters to families on metered connections.
+Recommended model: Qwen3-4B-Instruct-2507 (Apache-2.0), Q4_K_M GGUF.
+Qwen2.5 1.5B remains the fallback for smaller machines. Setup recommends Qwen3
+when measured memory supports it; download size is shown before setup.
 
 **More than one model, chosen by measurement.** A machine with the memory to
 spare can run something better at niche topics, so the registry below holds
@@ -97,29 +97,41 @@ SMALL = ModelChoice(
     summary="Runs on a clinic laptop. The right choice on a small machine.",
 )
 
-# Declared, deliberately not yet offered. Everything around it is built and
-# tested — the memory gate, the per-choice download, verification and storage,
-# and the picker — but the entry is missing its exact size and SHA-256, and an
-# unpinned entry is one this app will not download. `pinned` is False, so it
-# does not reach the UI at all: a user sees today's single built-in model, and
-# the choice appears the moment the pin is filled in, with no other change.
-# Run `python scripts/verify_model_pins.py --resolve` on a machine that can
-# reach the publisher to print the values to paste here.
+# Verified against the publisher's immutable LFS metadata. The memory gate
+# keeps this optional upgrade available only to machines that can run it.
 LARGE = ModelChoice(
     key="large",
     name="Qwen2.5 7B Instruct",
     license="Apache-2.0",
     file="Qwen2.5-7B-Instruct-Q4_K_M.gguf",
     repo="bartowski/Qwen2.5-7B-Instruct-GGUF",
-    revision="",
-    sha256=None,
-    size=None,
-    min_memory_bytes=16 * GIB,
+    revision="8911e8a47f92bac19d6f5c64a2e2095bd2f7d031",
+    sha256="65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
+    size=4_683_074_240,
+    # Windows reports usable RAM: a nominal 16 GB laptop commonly reports
+    # 15.x GiB after firmware/GPU reservations. Allow that ordinary headroom.
+    min_memory_bytes=15 * GIB,
     size_hint="about 4.7 GB",
-    summary="Better on niche topics. Wants a desktop-class machine.",
+    summary="Larger model for detailed topics. Needs 16 GB of memory; slower on CPU.",
 )
 
-CHOICES = (SMALL, LARGE)
+QWEN3 = ModelChoice(
+    key="qwen3",
+    name="Qwen3 4B Instruct 2507",
+    license="Apache-2.0",
+    file="Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    repo="unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    revision="a06e946bb6b655725eafa393f4a9745d460374c9",
+    sha256="3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+    size=2_497_281_120,
+    # Tested peak resident usage was 5.53 GB. Leave room for Windows and the
+    # editor: nominal 12 GB machines commonly report 11.x GiB of usable RAM.
+    min_memory_bytes=11 * GIB,
+    size_hint="about 2.5 GB",
+    summary="Recommended for vocabulary. Faster than 7B in our tests; needs about 12 GB RAM.",
+)
+
+CHOICES = (SMALL, QWEN3, LARGE)
 
 
 def _environment_override() -> Optional[ModelChoice]:
@@ -340,8 +352,21 @@ def active_key(preferred: Optional[str] = None) -> str:
     if preferred and preferred in ready:
         return preferred
     if ready:
-        return ready[0]
-    return preferred if any(c.key == preferred for c in REGISTRY) else DEFAULT_KEY
+        recommended = recommended_key()
+        return recommended if recommended in ready else ready[0]
+    if any(c.key == preferred for c in REGISTRY):
+        return preferred
+    return recommended_key()
+
+
+def recommended_key() -> str:
+    """Prefer the measured efficiency winner when this machine supports it."""
+    memory = total_memory_bytes()
+    for choice in REGISTRY:
+        if choice.key == QWEN3.key and supported(choice, memory)[0]:
+            return choice.key
+    return next((choice.key for choice in reversed(REGISTRY)
+                 if supported(choice, memory)[0]), DEFAULT_KEY)
 
 
 def download_state() -> dict:
@@ -482,8 +507,11 @@ def _load_llm(key: Optional[str] = None):
                 # not: a grounded prompt (reference facts, the page's own
                 # labels, style samples, rejections) plus forty phrases coming
                 # back overran it, and what overran was silently cut off.
-                n_ctx=4096,
-                n_threads=max(2, (os.cpu_count() or 4) - 1),
+                n_ctx=8192,
+                # Both stages need a cap: the binding otherwise processes
+                # prompts with every logical CPU, even when generation is capped.
+                n_threads=max(1, min(6, (os.cpu_count() or 4) // 2)),
+                n_threads_batch=max(1, min(6, (os.cpu_count() or 4) // 2)),
                 verbose=False,
             )
             _llm_path = path
@@ -512,7 +540,7 @@ def generate_words(
     if error:
         return [], error
     count = max(1, min(int(count), 60))
-    prompt = prompts.build_prompt(
+    messages = prompts.build_messages(
         category, count, kind, function, existing, reference,
         avoid=avoid, like=like, style=style, already=already, request=request,
     )
@@ -520,13 +548,13 @@ def generate_words(
         llm = _load_llm(key)
         with _llm_lock:
             result = llm.create_chat_completion(
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 response_format={
                     "type": "json_object",
-                    "schema": prompts.response_schema(kind),
+                    "schema": prompts.response_schema(kind, function),
                 },
                 max_tokens=prompts.token_budget(count, kind),
-                temperature=0.7,
+                temperature=0.25 if reference else 0.4,
             )
         content = result["choices"][0]["message"]["content"]
     except Exception as exc:
