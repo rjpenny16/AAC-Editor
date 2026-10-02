@@ -511,8 +511,10 @@ def table_snapshot(conn: sqlite3.Connection) -> dict[str, dict[str, object]]:
     snapshot = {}
     for table in schema.tables(conn):
         digest = hashlib.sha256()
-        # identifiers come from PRAGMA table_info, never user input
-        cursor = conn.execute(f'SELECT * FROM "{table}" ORDER BY rowid')  # noqa: S608
+        # Table names come from the file's own schema, so they are quoted.
+        cursor = conn.execute(
+            f"SELECT * FROM {schema.quote_identifier(table)} ORDER BY rowid"  # noqa: S608
+        )
         columns = tuple(description[0] for description in cursor.description)
         key_name = (
             "name" if table == "sqlite_sequence" else

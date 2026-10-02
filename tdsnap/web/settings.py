@@ -51,6 +51,19 @@ def settings_path() -> str:
     return os.path.join(_data_dir(), "settings.json")
 
 
+def ensure_private_dir(path: str) -> None:
+    """Create *path* readable by this user only.
+
+    The folder holds the settings file and the downloaded model. The file is
+    already created owner-only, so this is a second wall on a shared POSIX
+    computer; a Windows profile folder is private to its user already.
+    """
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    if os.name != "nt":
+        with contextlib.suppress(OSError):
+            os.chmod(path, 0o700)
+
+
 def _empty() -> dict:
     return {
         "version": SETTINGS_VERSION,
@@ -125,7 +138,7 @@ def save(preferences: dict, draft: Optional[dict], templates: Optional[list] = N
         }
         encoded = json.dumps(payload, indent=2)
         directory = _data_dir()
-        os.makedirs(directory, exist_ok=True)
+        ensure_private_dir(directory)
         handle, temp_path = tempfile.mkstemp(prefix=".settings-", dir=directory)
         try:
             with os.fdopen(handle, "w", encoding="utf-8") as temp_file:

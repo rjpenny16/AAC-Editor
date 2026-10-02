@@ -22,6 +22,31 @@ SQLITE_MAGIC = b"SQLite format 3\x00"
 PAGE_TYPE_VOCAB = 1
 
 
+def harden_untrusted(conn: sqlite3.Connection) -> None:
+    """Apply the settings SQLite recommends for a database somebody else made.
+
+    A page set can arrive from anywhere: a colleague, a forum, an email. Nothing a
+    genuine TD Snap export needs is switched off by these. Its schema is plain
+    tables and indexes with constant defaults: no triggers, views, virtual
+    tables, or functions in the schema, which is exactly what ``trusted_schema``
+    restricts.
+
+    This is defense in depth, not a wall, and it is worth being exact about how
+    much it does today:
+
+    * ``trusted_schema=OFF`` stops the triggers and views inside a file from
+      calling any SQL function that is not marked innocuous. Python's sqlite3
+      registers none of those, so right now it changes nothing a hostile file
+      could do. It means a function this app might register later can never be
+      reached from a file's own schema.
+    * ``cell_size_check=ON`` makes SQLite check the size of every cell it reads
+      on a b-tree page, turning a corrupt or crafted file into an error rather
+      than an out-of-range read.
+    """
+    conn.execute("PRAGMA trusted_schema=OFF")
+    conn.execute("PRAGMA cell_size_check=ON")
+
+
 def is_sqlite_file(path: str) -> bool:
     """Return True if *path* begins with the SQLite file magic header."""
     try:
@@ -191,6 +216,7 @@ class Pageset:
         try:
             shutil.copyfile(path, working_copy)
             self.conn = sqlite3.connect(working_copy)
+            harden_untrusted(self.conn)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys=ON")
             schema.require_tables(self.conn)

@@ -126,13 +126,28 @@ async function mockSettings(page, initial = {}) {
     draft: initial.draft || null,
     templates: initial.templates || [],
   };
+  // Every body the page sent, for tests that must show something was never sent.
+  // Not enumerable, so the GET below does not echo it back.
+  const writes = [];
+  Object.defineProperty(store, 'writes', { value: writes });
+  const cleared = initial.clearReply || { working_copies_removed: 0, working_copies_open: 0 };
   await page.route('**/api/settings', (route) => {
     const method = route.request().method();
-    if (method === 'GET') return fulfillJson(route, { ok: true, ...store });
+    if (method === 'GET') {
+      return fulfillJson(route, {
+        ok: true,
+        ...store,
+        folder: 'C:\\Users\\Test\\AppData\\Local\\tdsnap-editor',
+        working_copies_folder: 'C:\\Users\\Test\\AppData\\Local\\Temp\\tdsnap-editor',
+      });
+    }
     if (method === 'PUT') {
       const body = route.request().postDataJSON() || {};
+      writes.push(body);
       store.preferences = body.preferences || {};
-      store.draft = body.draft || null;
+      // Mirrors the server: an unfinished page is only ever stored for somebody
+      // who turned that on, whatever the page sends.
+      store.draft = store.preferences.draft_autosave === true ? body.draft || null : null;
       // Mirrors the server: an absent key leaves saved templates alone, so the
       // draft autosave cannot wipe them.
       if ('templates' in body) store.templates = body.templates || [];
@@ -142,7 +157,7 @@ async function mockSettings(page, initial = {}) {
       store.preferences = {};
       store.draft = null;
       store.templates = [];
-      return fulfillJson(route, { ok: true });
+      return fulfillJson(route, { ok: true, ...cleared });
     }
     return route.continue();
   });
@@ -254,7 +269,7 @@ test.describe('beginner word-adding regressions', () => {
   });
 
   test('the draft survives time spent reviewing and choosing a destination', async ({ page }) => {
-    const store = await mockSettings(page);
+    const store = await mockSettings(page, { preferences: { draft_autosave: true } });
     await mockTD(page);
     await existingItems(page);
     await page.locator('#word-input').fill('apple');
@@ -3379,7 +3394,7 @@ test.describe('reusable topic templates', () => {
   });
 
   test('the autosaved draft does not wipe a saved template', async ({ page }) => {
-    const store = await mockSettings(page);
+    const store = await mockSettings(page, { preferences: { draft_autosave: true } });
     await mockTD(page);
 
     await existingItems(page);
@@ -4933,5 +4948,254 @@ test.describe('Open Board files', () => {
     );
     await expect(page.locator('#checks')).toContainText('Every imported link opens the page its board opened');
     expect(applied).toEqual({ fingerprint: 'plan-v1' });
+  });
+});
+
+test.describe('private by default: what is kept, and what can leave', () => {
+  const olderDraft = {
+    provider: 'tdsnap',
+    operation: 'existing',
+    page_style: 'words',
+    active_fn: '',
+    target_page: 'Eating',
+    title: '',
+    items: [
+      { label: 'Apple', message: null, fn: '', slot: 0, symbol: true, symbol_query: null },
+      { label: 'Banana', message: null, fn: '', slot: 1, symbol: true, symbol_query: null },
+    ],
+    saved_at: 1700000000,
+  };
+  const closePanel = (page) => page.locator('#settings-panel button[value="close"]').click();
+  // Reply to /api/ai/words with each of *replies* in turn (the last one repeats).
+  async function mockAi(page, replies) {
+    const asked = [];
+    const queue = [...replies];
+    await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus()));
+    await page.route('**/api/ai/words', (route) => {
+      asked.push(route.request().postDataJSON());
+      const reply = queue.length > 1 ? queue.shift() : queue[0];
+      return fulfillJson(route, {
+        ok: true, engine: 'ollama', requested: 10, returned: reply.words.length,
+        retried: false, note: '', ...reply,
+      });
+    });
+    return asked;
+  }
+  // Two autosave ticks (every 2 seconds), plus a margin.
+  const TWO_TICKS = 4600;
+
+  test('nothing somebody builds is written to disk unless they asked for that', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('private word, another one');
+    await page.locator('#word-input').press('Enter');
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+    await page.waitForTimeout(TWO_TICKS);
+
+    expect(store.draft).toBeNull();
+    expect(store.writes.every((body) => !body.draft)).toBe(true);
+    expect(JSON.stringify(store.writes)).not.toContain('private word');
+  });
+
+  test('keeping an unfinished page is a choice: on saves it, off deletes it', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+    await existingItems(page);
+
+    await page.locator('#settings-panel-btn').click();
+    await expect(page.locator('#draft-autosave-toggle')).not.toBeChecked();
+    await page.locator('#draft-autosave-toggle').check();
+    await expect(page.locator('#settings-panel-status')).toContainText('will keep an unfinished page');
+    expect(store.preferences.draft_autosave).toBe(true);
+    await closePanel(page);
+
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-input').press('Enter');
+    await expect.poll(() => store.draft?.items.length).toBe(1);
+
+    await page.locator('#settings-panel-btn').click();
+    await expect(page.locator('#draft-autosave-toggle')).toBeChecked();
+    await expect(page.locator('#settings-panel-list')).toContainText('Unfinished page');
+    await page.locator('#draft-autosave-toggle').uncheck();
+    await expect(page.locator('#settings-panel-status')).toContainText('deleted');
+    expect(store.preferences.draft_autosave).toBe(false);
+    expect(store.draft).toBeNull();
+    await closePanel(page);
+
+    // Off means off: what is typed from here on is not kept.
+    await page.locator('#word-input').fill('pear');
+    await page.locator('#word-input').press('Enter');
+    await page.waitForTimeout(TWO_TICKS);
+    expect(store.draft).toBeNull();
+  });
+
+  test('the choice is remembered for the next launch', async ({ page }) => {
+    const store = await mockSettings(page, { preferences: { draft_autosave: true } });
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-input').press('Enter');
+    await expect.poll(() => store.draft?.items.length).toBe(1);
+
+    await page.goto(BASE_URL);
+    await page.locator('#settings-panel-btn').click();
+    await expect(page.locator('#draft-autosave-toggle')).toBeChecked();
+  });
+
+  test('a draft an older version kept is offered once, then deleted unless drafts are on', async ({ page }) => {
+    const store = await mockSettings(page, { draft: olderDraft });
+    await mockTD(page);
+    await openEditor(page);
+
+    await expect(page.locator('#draft-banner')).toBeVisible();
+    await expect(page.locator('#draft-banner')).toContainText('Keep an unfinished page');
+    await page.locator('#draft-resume-btn').click();
+    await expect.poll(() => store.draft).toBeNull();
+
+    // Deleting what was kept does not cost the person the words they asked for.
+    await page.locator('#live-connect-btn').click();
+    await expect(page.locator('#chipbox .chip')).toHaveCount(2);
+  });
+
+  test('a draft is kept after it is answered when drafts are on', async ({ page }) => {
+    const store = await mockSettings(page, {
+      draft: olderDraft, preferences: { draft_autosave: true },
+    });
+    await mockTD(page);
+    await openEditor(page);
+    await page.locator('#draft-resume-btn').click();
+    await page.waitForTimeout(500);
+    expect(store.draft).not.toBeNull();
+  });
+
+  test('the Wikipedia lookup starts off every time and is never remembered', async ({ page }) => {
+    const store = await mockSettings(page);
+    await mockTD(page);
+    await existingItems(page);
+    await openSuggestions(page);
+    await page.locator('#ai-options > summary').click();
+    await expect(page.locator('#ai-grounding')).not.toBeChecked();
+    await page.locator('#ai-grounding').check();
+    await expect(page.locator('#ai-grounding')).toBeChecked();
+    await page.waitForTimeout(300);
+    expect(JSON.stringify(store.writes)).not.toContain('ai_grounding');
+
+    // The next launch starts unticked, whatever was chosen before.
+    await page.goto(BASE_URL);
+    await expect(page.locator('#ai-grounding')).not.toBeChecked();
+    expect(store.preferences.ai_grounding).toBeUndefined();
+  });
+
+  test('the saved-data panel says where things are kept and what can leave', async ({ page }) => {
+    await mockSettings(page, { preferences: { provider: 'tdsnap' } });
+    await mockTD(page);
+    await openEditor(page);
+    await page.locator('#settings-panel-btn').click();
+
+    const dialog = page.locator('#settings-panel');
+    await expect(dialog).toContainText('never sent to anyone');
+    await expect(dialog).toContainText('huggingface.co');
+    await expect(dialog).toContainText('en.wikipedia.org');
+    await expect(dialog).toContainText('no analytics, no crash reports, and no update checks');
+    await expect(dialog).toContainText('A working copy of an exported file');
+    await expect(page.locator('#settings-folder-line')).toContainText('tdsnap-editor');
+    await expect(page.locator('#working-copies-folder-line')).toContainText('Temp');
+    await expect(page.locator('#draft-autosave-toggle')).not.toBeChecked();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test('Clear all says exactly what it removed and what it left', async ({ page }) => {
+    const store = await mockSettings(page, {
+      preferences: { provider: 'grid3' },
+      clearReply: { working_copies_removed: 2, working_copies_open: 1 },
+    });
+    await mockTD(page);
+    await openEditor(page);
+    await page.locator('#settings-panel-btn').click();
+    await page.locator('#settings-clear-btn').click();
+
+    const status = page.locator('#settings-panel-status');
+    await expect(status).toContainText('Cleared your saved settings, templates, and any unfinished page');
+    await expect(status).toContainText('Removed 2 leftover temporary copies of a page set');
+    await expect(status).toContainText('open right now stays until you close it');
+    await expect(status).toContainText('suggestion model is not personal data');
+    await expect(page.locator('#settings-panel-list')).toContainText('Nothing saved yet');
+    expect(store.preferences).toEqual({});
+  });
+
+  test('Clear all does not claim more than it did when nothing else was left', async ({ page }) => {
+    await mockSettings(page, { preferences: { provider: 'grid3' } });
+    await mockTD(page);
+    await openEditor(page);
+    await page.locator('#settings-panel-btn').click();
+    await page.locator('#settings-clear-btn').click();
+    const status = page.locator('#settings-panel-status');
+    await expect(status).toContainText('Cleared');
+    await expect(status).not.toContainText('leftover');
+    await expect(status).not.toContainText('open right now');
+    await expect(status).not.toContainText('Nothing is saved on this computer anymore');
+  });
+
+  test('the page never contacts anything but the app that served it', async ({ page }) => {
+    const own = new URL(BASE_URL).origin;
+    const outside = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (!['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)) return; // data: and blob:
+      if (url.origin !== own) outside.push(request.url());
+    });
+    await mockSettings(page);
+    await mockTD(page);
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple, pear');
+    await page.locator('#word-input').press('Enter');
+    await openSuggestions(page);
+    await page.locator('#settings-panel-btn').click();
+    await closePanel(page);
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-items li')).toHaveCount(2);
+    expect(outside).toEqual([]);
+
+    // And the browser itself would refuse if the page ever tried: the app's own
+    // policy stops a request to anywhere else before it is made.
+    const violated = await page.evaluate(() => new Promise((resolve) => {
+      document.addEventListener(
+        'securitypolicyviolation', (event) => resolve(event.violatedDirective), { once: true },
+      );
+      fetch('https://example.invalid/probe').catch(() => {});
+    }));
+    expect(violated).toBe('connect-src');
+    expect(outside).toEqual([]);
+  });
+
+  test('the reference link only ever points at a Wikipedia article', async ({ page }) => {
+    await mockSettings(page);
+    await mockTD(page);
+    const reply = (url) => ({
+      words: ['Waffles'],
+      grounding: { used: true, title: 'Breakfast', url, alternatives: [] },
+    });
+    // Whatever the server names, the page only follows a link to an English Wikipedia article.
+    const asked = await mockAi(page, [
+      reply('javascript:alert(document.domain)'),
+      reply('https://evil.example/wiki/Breakfast'),
+      reply('https://en.wikipedia.org.evil.example/wiki/Breakfast'),
+      reply('https://en.wikipedia.org/wiki/Breakfast'),
+    ]);
+    await existingItems(page);
+    await openSuggestions(page);
+    await page.locator('#ai-options > summary').click();
+    await page.locator('#ai-grounding').check();
+    const link = page.locator('#ai-grounding-link');
+    for (const expected of [null, null, null, 'https://en.wikipedia.org/wiki/Breakfast']) {
+      await page.locator('#ai-go').click();
+      await expect(page.locator('#ai-grounding-source')).toBeVisible();
+      await expect.poll(async () => link.getAttribute('href')).toBe(expected);
+      await page.locator('#ai-tray-clear').click();
+    }
+    expect(asked).toHaveLength(4);
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(link).toHaveAttribute('target', '_blank');
   });
 });

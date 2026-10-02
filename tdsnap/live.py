@@ -322,9 +322,10 @@ def _has_column(conn, table, column) -> bool:
     report anything. See ``_column`` for the row-level counterpart.
     """
     try:
+        quoted = '"' + str(table).replace('"', '""') + '"'
         return any(
             row[1] == column
-            for row in conn.execute(f"PRAGMA table_info({table})")
+            for row in conn.execute(f"PRAGMA table_info({quoted})")
         )
     except sqlite3.Error:
         return False
@@ -478,7 +479,11 @@ def _stored_sparse_grid(group, buttons, width, height):
     if not pageset_path or not title:
         return None
     try:
-        with closing(sqlite3.connect(pageset_path)) as connection:
+        # Read-only like every other read of TD Snap's own file: this only ever
+        # selects, and a person's real page set must never be opened for writing.
+        with closing(sqlite3.connect(
+            f"file:{pageset_path}?mode=ro", uri=True, timeout=1
+        )) as connection:
             layouts = connection.execute(
                 """
                 SELECT pl.Id, COALESCE(p.GridDimension, pl.PageLayoutSetting)

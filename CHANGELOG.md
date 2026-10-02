@@ -11,6 +11,81 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+A security and privacy review of the whole app, with fixes and tests. The full
+record is in [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md), and the plain-language
+statement for users is [PRIVACY.md](PRIVACY.md).
+
+### Changed - what the app keeps on disk
+
+- **Keeping an unfinished page is now a choice, and it is off until you turn it on.**
+  Before, the buttons you were planning were saved to `settings.json` every two
+  seconds without asking. The option is **Keep an unfinished page** under **What
+  AAC Editor saves**. The server refuses to store a draft unless it is on, and turning
+  it off deletes the stored one. A draft an older version already saved is offered
+  once to resume or discard, then deleted unless the option is on.
+- **The Wikipedia lookup starts off every time the app opens.** The tick is no longer
+  remembered, because it is the one setting that sends anything off the computer.
+- **Clear all saved data now also removes leftover working copies** of page sets that a
+  crash or forced close left in the temporary folder, and says what it removed and what
+  it kept. A page set open at that moment is kept until it is closed.
+- **What AAC Editor saves** now lists everything on disk with the real folder names
+  (settings, working copies, the suggestion model) and everything that can leave the
+  computer, naming `huggingface.co` and `en.wikipedia.org`. Wording that overclaimed
+  ("nothing is saved on this computer anymore") is corrected.
+- Checking whether the suggestion model is installed no longer creates the app's data
+  folder. Before, opening the suggestions panel on a fresh install made an empty
+  `tdsnap-editor/models` folder appear while the app said nothing was saved. The folder
+  now appears only when a download starts.
+- Working copies of an exported file are removed whenever the app exits in an orderly
+  way: an unhandled error, being told to stop, or its terminal being closed, not only
+  Ctrl+C or closing the window. Before, stopping the process with `kill` or closing the
+  terminal left the copy behind. Only a forced kill still can.
+
+### Security
+
+- Requests to a local Ollama, the "already running" check, and the window-raise request
+  now never use a proxy and never follow a redirect. Before, a configured `HTTP_PROXY`
+  could carry the page title and button labels sent to Ollama off the computer.
+- A crafted session id can no longer make the app delete the folder above its
+  temporary session folder.
+- The working-copy folder is private to the user (`0700`, one per account, checked for
+  ownership and symlinks) on macOS and Linux.
+- TD Snap's own page set is now opened read-only in every code path. One path used to
+  open it for writing, although it only read.
+- Everything under `/api/tdsnap/` and `/api/grid3/`, and every request that changes
+  anything, now needs the per-run token, which is compared in constant time. This stops
+  a web page from moving TD Snap to another page with a forged request, and closes the
+  last two header-only endpoints.
+- API responses are `no-store`, so a browser does not cache vocabulary, drafts, or
+  templates. Added `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`,
+  `X-Permitted-Cross-Domain-Policies`, and a `Permissions-Policy`.
+- Table names from a file's own schema are now quoted wherever they are used in SQL.
+- Every working copy of a page set sets SQLite's `trusted_schema=OFF` and
+  `cell_size_check=ON`, as defense in depth for files from other people.
+- The desktop window states `private_mode` and keeping outside links out of the window
+  explicitly, rather than relying on pywebview's defaults.
+- The Wikipedia reference link is only followed if it points at an English Wikipedia
+  article.
+- The launch scripts' request to a running copy no longer uses a proxy.
+
+### Added
+
+- `PRIVACY.md`, a plain-language account of what the app keeps, what it can send, how to
+  check it yourself, and how to remove everything.
+- `docs/SECURITY_AUDIT.md`, the technical review: threat model, findings, evidence, what
+  was left alone and why, and the limits of the review.
+- `tests/test_privacy_contract.py`, which turns the privacy and security promises into
+  checks: real-socket proxy and redirect tests, the list of modules that may reach the
+  network, a scan of every web address in the source, a check that every state-changing
+  route needs the token, permission and traversal tests, and checks that the documents
+  match the code. Browser tests prove the page contacts nothing but the app that served it.
+
+### Fixed
+
+- Removed the maintainer's local Windows paths from `design-qa.md`.
+- Updated three development-tooling dependencies of `stylelint` that `npm audit` flagged.
+  None of them ship in the app.
+
 ## [2.3.0] - 2026-10-02
 
 The first release since 2.1.0. All changes below, including the unpublished

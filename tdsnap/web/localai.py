@@ -38,6 +38,7 @@ from collections.abc import Sequence
 from typing import NamedTuple, Optional
 
 from . import prompts
+from .settings import ensure_private_dir
 
 GIB = 1024**3
 
@@ -205,16 +206,25 @@ def choice_for(key: Optional[str] = None) -> ModelChoice:
     return REGISTRY[0]
 
 
-def _models_dir() -> str:
-    """Per-user data dir: %LOCALAPPDATA% on Windows, XDG data home elsewhere."""
+def _models_dir(create: bool = False) -> str:
+    """Per-user data dir: %LOCALAPPDATA% on Windows, XDG data home elsewhere.
+
+    The folder is only created when a download is about to write into it
+    (``create=True``), so asking whether a model is installed leaves nothing on
+    disk. Opening the suggestions panel on a fresh install must not make a folder
+    appear on a computer where the person has not asked for anything.
+    """
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
     else:
         base = os.environ.get(
             "XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share")
         )
-    path = os.path.join(base, "tdsnap-editor", "models")
-    os.makedirs(path, exist_ok=True)
+    root = os.path.join(base, "tdsnap-editor")
+    path = os.path.join(root, "models")
+    if create:
+        ensure_private_dir(root)
+        ensure_private_dir(path)
     return path
 
 
@@ -393,6 +403,7 @@ def start_download(key: Optional[str] = None) -> dict:
                 status="error", done=0, total=0, model=choice.key, error=reason
             )
             return dict(_download)
+        _models_dir(create=True)  # a download is about to write here, and only now
         free = _free_disk_bytes()
         if free < choice.required_free_bytes:
             _download.update(

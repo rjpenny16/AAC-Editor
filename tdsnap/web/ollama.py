@@ -6,15 +6,14 @@ editor works fully without it; failures return empty results plus a
 human-readable message instead of raising.
 """
 
-import ipaddress
 import json
 from collections.abc import Sequence
 from typing import Optional
 from urllib.error import URLError
 from urllib.parse import urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
-from . import prompts
+from . import localhttp, prompts
 
 DEFAULT_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3.2"
@@ -47,11 +46,7 @@ def normalize_host(host: str) -> str:
     hostname = parts.hostname.lower()
     if any(ord(character) < 33 for character in hostname):
         raise ValueError("Enter a valid Ollama address.")
-    try:
-        loopback = hostname == "localhost" or ipaddress.ip_address(hostname).is_loopback
-    except ValueError:
-        loopback = hostname == "localhost"
-    if not loopback:
+    if not localhttp.is_loopback_host(hostname):
         raise ValueError(
             "The Ollama address must use localhost or a loopback IP address."
         )
@@ -64,10 +59,13 @@ def normalize_host(host: str) -> str:
 
 
 def _request_bytes(request: Request, timeout: int) -> tuple[int, bytes]:
-    """Open a bounded HTTP response and return its status and body."""
+    """Open a bounded HTTP response and return its status and body.
+
+    Goes through ``localhttp`` so the request can never use a proxy, reach a
+    non-loopback address, or be redirected somewhere else.
+    """
     try:
-        # host passed through normalize_host: loopback http(s) only
-        response = urlopen(request, timeout=timeout)  # noqa: S310
+        response = localhttp.open_loopback(request, timeout)
     except URLError as exc:
         # HTTPError has a status-bearing response body; other URL errors do not.
         if not hasattr(exc, "code"):

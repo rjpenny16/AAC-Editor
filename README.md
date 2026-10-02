@@ -10,6 +10,11 @@ entire topic pages at once, review every change before it runs, and update the
 page or grid already open in TD Snap or Grid 3 so it keeps its existing sharing and sync
 identity—saving hours of repetitive work.
 
+**Private by design.** Your page sets, button labels, and the words you type never
+leave your computer. There are no accounts, no analytics, and no tracking. Read
+[exactly what AAC Editor keeps and what it can send](PRIVACY.md), and how to check
+it yourself.
+
 ![AAC Editor welcome screen: connect, build, check, and one question about experience](docs/screenshot.png)
 
 ## Download
@@ -86,9 +91,12 @@ button labels, or file names, so it is safe to paste in full.
 
 The app listens only on your computer. Direct mode edits TD Snap through its
 own Windows controls, so the active page set keeps its existing sharing and
-sync identity. AAC Editor does not upload page-set files or button vocabulary;
-the optional single-topic grounding request is the only exception described
-below.
+sync identity. AAC Editor does not upload page-set files or button vocabulary. It
+has no accounts, no analytics, no crash reporting, and no update checks. It uses
+the internet in only two situations, and you start both: the one-time download of
+the optional suggestion model (from huggingface.co), and the optional Wikipedia
+lookup described below. [PRIVACY.md](PRIVACY.md) is the full statement, and
+[docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) is the technical review behind it.
 
 AI is optional and local. It is one button to start: the **Stuck for ideas?**
 panel on the vocabulary screen says whether suggestions are **Ready** or need a
@@ -116,8 +124,9 @@ on adding words.
   That sample of your own labels goes to the model on this computer and no
   further; turn it off with **Match the wording style of this page set**.
 
-Online grounding is separate and off by default. If you explicitly enable it
-for a suggestion, AAC Editor sends only that page title or category to
+Online grounding is separate and off by default, and it starts off again every
+time you open the app: it is never remembered. If you explicitly enable it for a
+suggestion, AAC Editor sends only that page title or category to
 Wikipedia; button labels, page sets, style samples, rejected suggestions, and
 generated suggestions all remain local. The article it used is named under the
 suggestions with a link, and you can send it to a different one — or to none —
@@ -147,13 +156,17 @@ more reliable than model memory for unfamiliar names. See
 [AI quality notes](docs/AI_QUALITY.md) and the
 [model comparison](docs/ai-model-comparison/README.md).
 
-Nothing is written to disk until you save something. Remembering your last
-AAC app, your Ollama connection, an unfinished page (so a crash or a
-reload can offer to resume it), and any templates you save all live in one
-`settings.json` in the same
-per-user data folder the built-in AI model uses — never uploaded, never
-synced. **What AAC Editor saves**, in the app's footer, lists exactly what's
-stored in plain language, and **Clear all saved data** deletes the file.
+AAC Editor keeps very little on disk, and shows you what it keeps. Remembering
+your last AAC app, your answer to the welcome question, your AI choices, and any
+templates you save all live in one `settings.json` in the per-user data folder the
+built-in AI model also uses, never uploaded and never synced. An unfinished page
+(so a crash or a reload can offer to resume it) is kept there only if you turn on
+**Keep an unfinished page**, and it is off until you do. While you edit an exported
+file, a working copy sits in your temporary folder, readable only by your account,
+and is deleted when you close the file or quit. **What AAC Editor saves**, in the
+app's footer, lists what is stored right now in plain language, with the real
+folder names. **Clear all saved data** removes the settings file, templates, any
+unfinished page, and any leftover working copies.
 
 ## Quick start
 
@@ -352,6 +365,12 @@ by `tests/test_ai_cleaning.py`). Because that drops items, the request asks for
 more than you wanted and a round that comes back nearly empty is asked once
 more.
 
+The privacy promises have their own tests. `tests/test_privacy_contract.py` uses
+real sockets and scans the source to pin that local traffic never uses a proxy,
+that only a short, named list of modules can reach the network, that the page can
+load nothing from anywhere else, and that what the documents say matches what the
+code does. Adding a new way for data to leave the computer fails it on purpose.
+
 AI suggestion quality also has its own harness. `tests/fixtures/ai_eval_set.json`
 holds a fixed set of category prompts and the rules the prompt already states —
 *"Harry Potter characters"* must not return *"wand"*, and must return somebody
@@ -404,8 +423,9 @@ build embeds the `uiAccess` manifest, and the administrator prompt goes away.
   tying it to the exact commit and workflow run that produced it.
 - Privacy: AAC Editor will not transfer information to other networked systems
   unless specifically requested by the user or the person installing or
-  operating it. The optional Wikipedia grounding control names the single
-  topic value it sends before the request is made.
+  operating it. The optional model download and the optional Wikipedia lookup are
+  the only two, and each says what it sends before it runs. See
+  [PRIVACY.md](PRIVACY.md).
 
 ## License and trademarks
 

@@ -356,9 +356,10 @@ $("ai-model").addEventListener("input", () => {
 $("ai-model").addEventListener("change", () => {
   void savePreference("ollama_model", $("ai-model").value);
 });
-$("ai-grounding").addEventListener("change", () => {
-  void savePreference("ai_grounding", $("ai-grounding").checked);
-});
+/* The Wikipedia lookup is the one setting that sends anything off this computer,
+   so it is never remembered: the box starts unticked every time the app opens, and
+   ticking it is a choice about the request in front of the person, not a standing
+   permission. */
 
 /* ---------- steering ---------- */
 
@@ -692,6 +693,8 @@ function clearSuggestions() {
 
 /* ---------- the grounding source, named and refusable ---------- */
 
+const WIKIPEDIA_ARTICLES = "https://en.wikipedia.org/wiki/";
+
 function clearGroundingSource() {
   const box = $("ai-grounding-source");
   if (!box) return;
@@ -716,7 +719,9 @@ function renderGroundingSource(source) {
   }
   box.hidden = false;
   link.textContent = source.title;
-  if (source.url) link.href = source.url;
+  // The server builds this link, but it is only ever followed by a click that leaves
+  // the app, so it is held to the one place it can legitimately point.
+  if (source.url && source.url.startsWith(WIKIPEDIA_ARTICLES)) link.href = source.url;
   else link.removeAttribute("href");
   pick.parentElement.hidden = !source.url;
   pick.innerHTML = "";
@@ -757,7 +762,6 @@ if ($("ai-grounding-pick")) {
       $("ai-reference-page").value = "";
       $("ai-reference-text").value = "";
       $("ai-grounding").checked = false;
-      void savePreference("ai_grounding", false);
       note.textContent =
         "Reference lookup turned off. Suggest again for suggestions with no article behind them.";
     } else {

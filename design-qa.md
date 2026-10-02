@@ -6,9 +6,9 @@ final result: passed
 
 Selected option: **3 — Canvas First**. Implemented in the existing Flask frontend.
 
-- Source visual truth: `C:/Users/rjpen/.codex/generated_images/01a0f956-b755-73a0-8a28-7a46530cbadf/exec-e289c631-1f53-42bc-9ed2-f3adb6c9e8aa.png`
+- Source visual truth: `<local design tool output>/exec-e289c631.png`
 - Implementation URL: `http://127.0.0.1:8765/` (isolated preview settings and synthetic exported file).
-- Evidence directory: `C:/Users/rjpen/.codex/visualizations/2026/10/01/01a0f956-b755-73a0-8a28-7a46530cbadf/aac-design/`
+- Evidence directory: `<local design tool output>/aac-design/`
 - Implementation screenshot: evidence directory + `implementation-final.jpg`.
 - Full-view comparison: `comparison-final.jpg`, source left and implementation right in the same image.
 - Focused comparisons: `comparison-editing-final.jpg` and `comparison-states-final.jpg`, source above implementation. Reviewed controls, labels, badges, and selected state at readable scale.
