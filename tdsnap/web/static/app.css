@@ -889,6 +889,7 @@ summary {
 .privacy-list { margin: 0.5rem 0 0; padding-left: 1.25rem; color: var(--ink-soft); font-size: 0.875rem; }
 .privacy-list li + li { margin-top: 0.6rem; }
 .privacy-list strong { color: var(--ink); }
+.privacy-list + .field-hint { margin-top: 0.85rem; }
 .support-report {
   margin: 0.85rem 0 0;
   max-height: 22rem;
