@@ -719,6 +719,7 @@ async function syncLivePreview() {
       `${state.pages.length} pages in this page set`;
     $("preview-live-text").textContent = `Live · ${layout.page}`;
     renderParents(parentFilter.value);
+    renderWords();
   } catch {
     // TD Snap briefly has no page grid while navigating; the next poll retries.
   } finally {

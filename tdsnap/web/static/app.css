@@ -1294,12 +1294,12 @@ body[data-step="items"] #step-build { padding: 0; border: 0; background: transpa
 .preview:not(.grid3-preview) .cell-label { font-size: clamp(1rem, 2vw, 1.75rem); font-weight: 750; overflow-wrap: anywhere; line-height: 1.2; }
 .preview .cell.used {
   border-style: solid;
-  border-color: var(--accent);
+  border-color: var(--fn-color, var(--accent));
   background: var(--surface);
   box-shadow: none;
 }
 .preview:not(.grid3-preview) .cell.existing { color: var(--ink); background: var(--locked-surface); }
-.preview:not(.grid3-preview) .cell.selected { border: 2px solid var(--accent); background: var(--accent-soft); }
+.preview:not(.grid3-preview) .cell.selected { border: 2px solid var(--fn-color, var(--accent)); background: var(--accent-soft); }
 .preview .cell-state {
   position: absolute;
   top: 0.65rem;

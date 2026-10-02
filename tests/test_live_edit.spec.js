@@ -852,7 +852,7 @@ test('a followed page missing from the page list is still sent by its own name',
 
   await connect(page);
   shown = 'Brand New Page';
-  await expect(page.locator('#current-page-label')).toHaveText('Adding to Brand New Page');
+  await expect(page.locator('#current-page-label')).toHaveText('Brand New Page');
   await page.locator('#word-input').fill('Help');
   await page.locator('#word-input').press('Enter');
   await page.locator('#build-btn').click();
@@ -892,7 +892,7 @@ test('open-page path goes straight to Add and edits only after confirmation', as
   await connect(page);
   await expect(page.locator('#wizard-progress-label')).toHaveText('Build');
   await expect(page.locator('#parent-select')).toHaveValue('Eating');
-  await expect(page.locator('#current-page-label')).toHaveText('Adding to Eating');
+  await expect(page.locator('#current-page-label')).toHaveText('Eating');
   await expect(page.locator('#file-badge')).toHaveText('TD Snap · Change app');
   await expect(page.locator('#file-badge')).toHaveAttribute(
     'aria-label', 'Change app (currently TD Snap)',
@@ -1191,8 +1191,8 @@ test('Back from naming a new page returns to the word list on the same page', as
   await page.locator('#wizard-title .wizard-back').click();
   // Straight back where the user was — no screen they never saw on the way in.
   await expect(page.locator('#wizard-items')).toBeVisible();
-  await expect(page.locator('#current-page-label')).toHaveText('Adding to Eating');
-  await expect(page.locator('#capacity')).toHaveText('1 added · 5 spaces left');
+  await expect(page.locator('#current-page-label')).toHaveText('Eating');
+  await expect(page.locator('#capacity')).toHaveText('1 button ready to add · 5 spaces left');
   await expect(page.locator('#chipbox .chip')).toHaveCount(1);
 });
 
@@ -1225,7 +1225,7 @@ test('a partial create resumes on the created page without duplicate buttons', a
   await page.locator('#confirm-update-btn').click();
 
   await expect(page.locator('#wizard-items')).toBeVisible();
-  await expect(page.locator('#current-page-label')).toHaveText('Adding to World Cup Final');
+  await expect(page.locator('#current-page-label')).toHaveText('World Cup Final');
   await expect(page.locator('#parent-select')).toHaveValue('World Cup Final');
   await expect(page.locator('#chipbox .chip')).toHaveCount(1);
   await expect(page.locator('#chipbox .chip')).toContainText('Cheer');
@@ -1399,6 +1399,9 @@ test('AI topic phrases keep meaning-matched colors and rows', async ({ page }) =
     const cell = page.locator('#preview .cell.used').filter({ hasText: label });
     await expect(cell).toHaveCSS('border-color', color);
     await expect(cell).toHaveAttribute('data-slot', slot);
+    await cell.click();
+    await expect(cell).toHaveAttribute('aria-pressed', 'true');
+    await expect(cell).toHaveCSS('border-color', color);
   }
 });
 
@@ -1464,7 +1467,7 @@ test('existing labels are de-duplicated and page capacity is enforced', async ({
   await expect(page.locator('#chip-note')).toContainText('Eating is full.');
   await expect(page.locator('#chip-note')).toContainText('Cherry');
   await expect(page.locator('#word-input')).toBeDisabled();
-  await expect(page.locator('#capacity')).toHaveText('1 added · 0 spaces left');
+  await expect(page.locator('#capacity')).toHaveText('1 button ready to add · 0 spaces left');
 });
 
 /* A new page is empty, so it has the whole grid. The free-cell list belongs to
@@ -1487,7 +1490,7 @@ test('a new page gets the whole grid, not the free cells of the page it came fro
   await page.locator('#word-input').press('Enter');
   await expect(page.locator('#chipbox .chip')).toHaveCount(3);
   await expect(page.locator('#word-input')).toBeEnabled();
-  await expect(page.locator('#capacity')).toHaveText('3 added · 3 spaces left');
+  await expect(page.locator('#capacity')).toHaveText('3 buttons ready to add · 3 spaces left');
 });
 
 test('duplicate feedback names every skipped button and preserves spelling', async ({ page }) => {
@@ -1629,7 +1632,7 @@ test('a page caught mid-navigation is read again rather than reported as an erro
     },
   });
   await connect(page);
-  await expect(page.locator('#current-page-label')).toHaveText('Adding to Eating');
+  await expect(page.locator('#current-page-label')).toHaveText('Eating');
   await expect(page.locator('#build-error')).toBeHidden();
   expect(attempts).toBe(2);
 });
@@ -1651,7 +1654,7 @@ test('Continue waits for the page being loaded instead of asking for another cli
   await expect(page.locator('#destination-error')).toBeHidden();
   release();
   await expect(page.locator('#wizard-items')).toBeVisible();
-  await expect(page.locator('#current-page-label')).toHaveText('Adding to Places');
+  await expect(page.locator('#current-page-label')).toHaveText('Places');
 });
 
 test('planned words that follow TD Snap to another page say so', async ({ page }) => {
@@ -1664,7 +1667,7 @@ test('planned words that follow TD Snap to another page say so', async ({ page }
   await page.locator('#word-input').fill('pizza');
   await page.locator('#word-input').press('Enter');
   visible = 'Games';
-  await expect(page.locator('#current-page-label')).toHaveText('Adding to Games', { timeout: 10_000 });
+  await expect(page.locator('#current-page-label')).toHaveText('Games', { timeout: 10_000 });
   await expect(page.locator('#chip-note')).toContainText('TD Snap is now showing “Games”');
   await expect(page.locator('#chip-note')).toContainText('“Eating”');
 });
@@ -3151,7 +3154,7 @@ test.describe('importing a word list', () => {
 
     await page.locator('#import-add-btn').click();
     await expect(page.locator('#chipbox .chip')).toHaveCount(2);
-    await expect(page.locator('#capacity')).toHaveText('2 added · 0 spaces left');
+    await expect(page.locator('#capacity')).toHaveText('2 buttons ready to add · 0 spaces left');
   });
 
   test('a row that cannot become a button says which row and why', async ({ page }) => {
@@ -3463,7 +3466,7 @@ test.describe('reusable topic templates', () => {
 
     await page.locator('#templates-dialog button[value="close"]').click();
     await expect(page.locator('#chipbox .chip')).toHaveCount(2);
-    await expect(page.locator('#capacity')).toHaveText('2 added · 0 spaces left');
+    await expect(page.locator('#capacity')).toHaveText('2 buttons ready to add · 0 spaces left');
   });
 
   test('a template saved on a bigger grid keeps its words and re-slots them', async ({ page }) => {
@@ -4719,7 +4722,7 @@ test.describe('welcome and how much help to show', () => {
     await mockTD(page);
     await connect(page);
     await expect(page.locator('#ai-panel')).toHaveAttribute('open', '');
-    await expect(page.locator('#preview-hint')).toBeHidden();
+    await expect(page.locator('#preview-hint')).toHaveClass('sr-only');
     await expect(page.locator('#wizard-items .expert-only')).toBeVisible();
     await expect(page.locator('#workspace-tips')).toBeHidden();
     // Hints go; controls stay.

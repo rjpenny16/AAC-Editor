@@ -11,6 +11,38 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-02
+
+The first release since 2.1.0. All changes below, including the unpublished
+2.2.0 work, ship in this release.
+
+### Changed — local suggestions and the Build workspace
+
+- **Qwen3 4B Instruct 2507** is the recommended built-in suggestion model on
+  computers with at least 12 GB-class measured memory. The small Qwen2.5 1.5B
+  model remains available, alongside Qwen2.5 7B on 16 GB-class computers.
+  Model downloads remain pinned by exact URL, size, and SHA-256.
+- Local AI uses at most six CPU threads for prompt processing and generation.
+- Suggestions receive separate standing instructions for words and phrases,
+  with structured request data and phrase-function constraints.
+- An exact English Wikipedia article or pasted reference text can ground
+  suggestions. Article lookup reads relevant sections, lists, and tables;
+  source-based word suggestions must appear in the selected reference text.
+  Online lookup remains optional and off by default; pasted text stays local.
+- The refreshed Build workspace puts the page beside vocabulary entry, with
+  clearer selection, locked-button states, capacity feedback, and review actions.
+- Added AI quality notes and recorded model comparisons documenting the
+  tested models, prompts, thread settings, and limits of source-based suggestions.
+
+### Fixed — final release checks
+
+- Topic-page preview borders retain their communicative-function colors,
+  including when a new button is selected.
+- Following a page change in TD Snap refreshes the Build workspace's page
+  title after the new target is selected.
+- Browser checks now match the refreshed page titles and capacity wording,
+  while retaining the preview instructions for screen readers.
+
 ### Added — Open Board Format (ROADMAP Phase 9)
 
 - **Open Board files** on the Build screen reads `.obf` and `.obz`, the AAC
@@ -326,10 +358,6 @@ file starts tracking changes in detail from 2.2.0 onward.
   dropped. A page set written by an older TD Snap build, without a `Button.Message` column, is still
   matched rather than silently ruled out.
 
-## [2.3.0] - 2026-09-16
-
-The first release since 2.1.0. Everything under 2.2.0 below ships here too.
-
 ### Added
 
 - **Suggestions you can steer, one at a time.** The AI panel was one shot, N items, take it or
@@ -364,8 +392,8 @@ The first release since 2.1.0. Everything under 2.2.0 below ships here too.
   byte size and SHA-256; each downloads to its own file, so fetching a second never disturbs one that
   already worked; and each verifies independently. Anything larger than the default is gated on the
   memory this computer is *measured* to have, and a machine whose memory cannot be read is offered the
-  small model and nothing bigger — the small model stays the default, because a clinic laptop has to
-  be able to run whatever the app picks.
+  small model and nothing bigger. Setup recommends Qwen3 when measured memory
+  supports it, and uses the small model on lower-memory computers.
 
   An entry missing any part of its pin is not offered at all, so nothing unverifiable can be
   downloaded. `scripts/verify_model_pins.py` confirms each pin against the publisher's own metadata
