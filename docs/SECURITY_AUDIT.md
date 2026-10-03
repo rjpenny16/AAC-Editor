@@ -284,8 +284,16 @@ replaced with placeholders. The git history still contains the originals.
   button clicks.
 - **Ollama.** The address must be loopback, enforced in two places.
 - **Files from other people.** `.obz` archives are read in memory, member by member,
-  with limits on entries, bytes, and total size, and never extracted. Grid 3 files are
-  only read from Grid 3's own user folder, after resolving symlinks. There is no
+  with limits on entries, bytes, and total size, and never extracted. The live Grid 3
+  connection only reads grid sets from Grid 3's own user folder, after resolving
+  symlinks. A `.gridset` someone opens as a file is copied into the private session
+  folder first and read there: entry count, total size, and each XML entry are
+  bounded, password-protected entries are refused, nothing is extracted, and edits
+  stream every untouched entry into a new package rather than unpacking it. XML is
+  parsed by the standard library's expat, which resolves no external entities and
+  (from expat 2.4) limits entity amplification. `inspect-format` reads a file the
+  same bounded way, opens any SQLite inside read-only with `harden_untrusted`, and
+  prints names of tables, columns, and elements, never values. There is no
   `eval`, `exec`, `pickle`, `yaml.load`, `shell=True`, or disabled TLS check anywhere.
 - **Support report.** Built from an allow-list of keys, so page content cannot get in.
 - **Privileges.** The app runs `asInvoker`. Administrator approval is requested only

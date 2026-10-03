@@ -48,6 +48,12 @@ FLOORS = {
     # carries one of the highest floors in the project. It decides what an imported
     # board becomes in someone's page set and what an export claims to carry.
     "tdsnap/obf.py": 94,
+    # Phase 12a. Editing a Grid 3 .gridset file into a separate copy: a write
+    # path that is pure file in and file out, like obf.py, so it carries a
+    # floor of the same kind. formats.py decides which writer a file reaches
+    # and what the structure-only inspect report is allowed to print.
+    "tdsnap/gridset.py": 93,
+    "tdsnap/formats.py": 88,
 }
 
 

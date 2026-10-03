@@ -71,7 +71,8 @@ function syncReviewPlacement() {
 /* Changes, moves, and removals only ever apply to the page already open, so
    they travel with an existing-page edit and are dropped everywhere else. */
 function pendingPageEdits() {
-  if (state.mode === "file" || state.operation !== "existing") {
+  const fileLocked = state.mode === "file" && state.fileFormat !== "gridset";
+  if (fileLocked || state.operation !== "existing") {
     return { changes: [], removals: [], moves: [] };
   }
   return state.pageEdits;
@@ -116,9 +117,10 @@ function renderReviewEdits(edits, cols = state.grid.cols) {
 function editPath(operation) {
   if (state.mode === "file") {
     const session = encodeURIComponent(state.sessionId);
-    return operation === "existing"
-      ? `/api/pageset/${session}/page/${encodeURIComponent(state.parentId)}/buttons`
-      : `/api/pageset/${session}/page`;
+    const page = `/api/pageset/${session}/page/${encodeURIComponent(state.parentId)}`;
+    // A grid set can also change, move, and remove cells; a TD Snap file only adds.
+    if (operation !== "existing") return `/api/pageset/${session}/page`;
+    return state.fileFormat === "gridset" ? `${page}/edit` : `${page}/buttons`;
   }
   if (state.provider === "grid3") return "/api/grid3/edit-plan";
   return operation === "existing" ? "/api/tdsnap/edit-plan" : "/api/tdsnap/page";
@@ -140,7 +142,15 @@ function prepareReview() {
     }));
   const payload = freezePayload(state.mode === "file"
     ? operation === "existing"
-      ? { items, fingerprint: state.layoutFingerprint }
+      ? state.fileFormat === "gridset"
+        ? {
+            items,
+            changes: changePayload(edits),
+            removals: [...edits.removals],
+            moves: movePayload(edits),
+            fingerprint: state.layoutFingerprint,
+          }
+        : { items, fingerprint: state.layoutFingerprint }
       : { title, items, parent_page_id: Number(state.parentId) }
     : {
         operation: operation === "existing"

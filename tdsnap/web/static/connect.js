@@ -113,7 +113,8 @@ function selectProvider(provider) {
   $("grid3-limits").hidden = !grid3;
   if (grid3) void loadGrid3Guidance();
   $("connect-task-copy").textContent = file
-    ? "Choose an .sps or .spb file exported from TD Snap. Your original file stays unchanged."
+    ? "Choose an .sps or .spb file exported from TD Snap, or a Grid 3 .gridset. " +
+      "Your original file stays unchanged."
     : grid3
       ? "Open Grid 3 to the grid you want to change (not in Edit Mode), then connect."
       : "Open TD Snap to the page you want to change, then connect.";
@@ -125,7 +126,9 @@ function selectProvider(provider) {
   $("connection-help").innerHTML = file
     ? "<li>Export the page set from TD Snap as an .sps or .spb file.</li>" +
       "<li>Choose that exported file here and add the new page.</li>" +
-      "<li>Save the edited copy, then import it into TD Snap after reviewing it.</li>"
+      "<li>Save the edited copy, then import it into TD Snap after reviewing it.</li>" +
+      "<li>For Grid 3, choose a .gridset copy. Changing, moving, and removing cells " +
+      "work there too; import the edited copy into a test Grid 3 user first.</li>"
     : grid3
       ? "<li>Open Grid 3 and the existing grid you want to change.</li>" +
         "<li>Save or discard any unfinished Grid 3 edits.</li>" +
@@ -315,6 +318,7 @@ async function useFileSession(data) {
   state.connected = true;
   state.sessionId = data.session_id;
   state.filename = data.filename || "page-set.sps";
+  state.fileFormat = data.format === "gridset" ? "gridset" : "sps";
   state.grid = data.grid || state.grid;
   state.pages = data.pages.map((page) => ({ id: String(page.id), title: page.title }));
   // Start on the page set's own home page when it names one.
@@ -344,8 +348,9 @@ async function useFileSession(data) {
   $("build-sub").textContent =
     `${state.filename} · ${state.grid.cols}×${state.grid.rows} grid · ${state.pages.length} pages`;
   $("preview-live-text").textContent = `Exported copy · ${state.filename}`;
-  $("live-result-note").textContent =
-    "Save the edited copy, review it, then import it into TD Snap.";
+  $("live-result-note").textContent = state.fileFormat === "gridset"
+    ? "Save the edited copy, review it, then import it into Grid 3 (a test user first)."
+    : "Save the edited copy, review it, then import it into TD Snap.";
   setProviderState("file", "Ready", "ready");
   show("destination");
   try {
@@ -621,8 +626,10 @@ async function loadTargetLayout(pageName, currentOnly = false) {
     // Changing or removing needs the page set's stored content: without it
     // there is nothing to restore from if the edit fails part-way. A page set
     // AAC Editor cannot fully identify keeps working for adding buttons.
-    state.canEditExisting = ["tdsnap", "grid3"].includes(state.provider) && state.mode === "live" &&
-      state.operation === "existing" && data.content_readable === true;
+    // A Grid 3 grid-set file says so itself: its XML is the stored content.
+    state.canEditExisting = state.operation === "existing" && data.content_readable === true && (
+      (["tdsnap", "grid3"].includes(state.provider) && state.mode === "live") ||
+      (state.mode === "file" && data.can_edit_existing === true));
     // A Grid 3 layout carries the retained undo; TD Snap reports it separately.
     if (state.provider === "grid3" && "undo" in data) state.lastEdit = data.undo;
     // Drop any pending edit whose button moved, was renamed, or stopped being

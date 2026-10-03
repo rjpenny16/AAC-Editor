@@ -56,6 +56,10 @@ so on the Grid 3 screen rather than leaving you to work it out.
   performed by Grid 3's own Edit Mode and checked against the saved grid-set
   file afterwards. Cells that jump to another grid, run a command, or span
   more than one square stay locked and say why.
+- Edits a Grid 3 **`.gridset` file** without Grid 3 running: adds, changes,
+  moves, and removes speaking cells on any grid, creates linked grids, and
+  writes a separate `*.edited.gridset` that is read back and checked before it
+  is offered. See [Grid 3 grid-set files](#grid-3-grid-set-files).
 - Creates word or color-coded topic pages and links them from an existing page.
 - Imports a word list: paste a spreadsheet column or open a CSV/TSV, map which
   column is the label, the message, the function, and the symbol words, and see
@@ -264,6 +268,60 @@ depends on the current TD Snap interface. The exported-file fallback is
 validated against a genuine TD Snap 4.13 export; see
 [Importing edited page sets safely](docs/IMPORT_SAFETY.md) before using it.
 
+## Grid 3 grid-set files
+
+Choose **TD Snap exported file** on the first screen and pick a `.gridset`
+instead of an `.sps`. Grid 3 does not need to be running or even installed,
+and nothing needs administrator approval. Find the file under Grid 3's
+**Grid Sets** folder, or export a copy from Grid 3.
+
+What a grid-set file can do:
+
+- add words and phrases to empty cells on any grid in the set;
+- change, move, or remove cells that just speak, with the same rules the live
+  Grid 3 connection uses;
+- create a new grid the size of an existing one, with Grid 3's **Back** cell in
+  its top-left square, linked from an empty cell;
+- bring in a whole Open Board (`.obz`) set as new linked grids, and export the
+  grid set as `.obz`.
+
+What it will not do: change cells that jump, run commands, or hold word lists,
+pictures, or apps; add symbols (open the edited set in Grid 3 to add pictures);
+or open protected `.gridsetx` sets.
+
+How it stays safe. AAC Editor never writes the file you chose, and never writes
+the copy Grid 3 has open. Every edit writes a new package, reads it back, and
+keeps it only if the reviewed cells say what the review said and every other
+grid, cell, picture, and setting is byte-for-byte or cell-for-cell what it was.
+If anything differs, nothing is kept and the message names the cell. Save the
+edited copy, then import it into a test Grid 3 user before your real one; see
+[Importing edited page sets safely](docs/IMPORT_SAFETY.md#grid-3-grid-sets).
+
+This file path is checked against grid sets built to the structure Grid 3
+3.0 writes (format version 1). It has not yet been round-tripped through every
+Grid 3 release, which is why the import step matters.
+
+## Chat Editor and Empower (PRC-Saltillo)
+
+Chat Editor vocabularies (TouchChat, NovaChat, ChatFusion `.ce` files) and
+Empower vocabularies are **not supported yet**. Opening one says so instead of
+failing on a parse error.
+
+AAC Editor will only edit a format once it has been documented from real,
+disposable files and every edit can be checked after it is written. Anything
+encrypted gets the same answer `.gridsetx` does. To help document one, run:
+
+```bash
+python -m tdsnap inspect-format "My Vocabulary.ce"
+```
+
+The report says how the file is built (container, entry layout, database
+tables and column names, XML element names, whether anything looks encrypted)
+and never prints labels, messages, or other vocabulary. Folder and file names
+inside the file are generalised too, because they can be vocabulary. The
+checklists are in [docs/formats/CHAT_EDITOR.md](docs/formats/CHAT_EDITOR.md)
+and [docs/formats/EMPOWER.md](docs/formats/EMPOWER.md).
+
 ## Python and command-line use
 
 Requires Python 3.9 or newer:
@@ -286,6 +344,9 @@ python -m tdsnap verify "My Page Set.edited.sps"
 python -m tdsnap inspect "My Page Set.sps"
 python -m tdsnap export-obz "My Page Set.sps" -o "My Page Set.obz"
 python -m tdsnap import-obz "My Page Set.sps" "Quick Core.obz" --parent-name "Home Page"
+python -m tdsnap export-obz "My Grids.gridset" -o "My Grids.obz"
+python -m tdsnap import-obz "My Grids.gridset" "Quick Core.obz" --parent-name "Home"
+python -m tdsnap inspect-format "Any AAC file"
 python -m tdsnap.live status
 python -m tdsnap.live add --yes --title Snacks --item Chips --item Apple
 ```
@@ -339,7 +400,11 @@ silently:
 Adding a whole set as linked pages is for exported files only. Doing it live
 would mean creating and linking many pages through TD Snap's editing screens one
 at a time; the file path does it in one transaction the app can check completely.
-Grid 3 can take one board's words, and does not export.
+Live Grid 3 can take one board's words. A Grid 3 `.gridset` file does both
+directions: every board becomes its own grid, linked the way the boards were,
+and the grid set exports to `.obz` with labels, spoken text, layout, and jumps.
+Grid 3's top-left square on each new grid holds its Back cell, so a board's
+top-left button moves to the next empty square, and the review says so.
 
 ## Development
 
@@ -432,7 +497,9 @@ build embeds the `uiAccess` manifest, and the administrator prompt goes away.
 [MIT](LICENSE). The optional AI model is downloaded separately under its own
 Apache-2.0 license. “TD Snap” is a trademark of Tobii Dynavox. This independent
 community project is not affiliated with or endorsed by Tobii Dynavox or
-Smartbox Assistive Technology. “Grid 3” is a Smartbox trademark.
+Smartbox Assistive Technology. “Grid 3” is a Smartbox trademark. “TouchChat”,
+“NovaChat”, “ChatFusion”, “Chat Editor”, and “Empower” belong to PRC-Saltillo,
+which is not affiliated with or endorsing this project either.
 
 ---
 

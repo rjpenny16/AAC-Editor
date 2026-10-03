@@ -99,6 +99,8 @@ const state = {
   currentPage: "",
   sessionId: null,
   filename: "",
+  /* "sps" (TD Snap) or "gridset" (Grid 3) for an exported-file session. */
+  fileFormat: "sps",
   edits: 0,
   applied: false, // has the current word list already been written to the page set?
   // An exported-file session holds edits that exist only in AAC Editor's

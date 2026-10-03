@@ -8,15 +8,20 @@
     python -m tdsnap export-obz <file>      write the page set as Open Board (.obz)
     python -m tdsnap import-obz <file> <boards.obz> --parent-name "Home Page"
                                             add every board as linked pages
+    python -m tdsnap inspect-format <file>  describe how any AAC file is built
+                                            (structure only, never your words)
+
+``list``, ``export-obz`` and ``import-obz`` also accept a Grid 3 ``.gridset``.
 """
 
 import argparse
+import json
 import os
 import sqlite3
 import sys
 from typing import Optional
 
-from . import builder, obf, schema, validate
+from . import builder, formats, gridset, obf, schema, validate
 from .errors import PagesetError
 from .pageset import Pageset, is_sqlite_file
 from .ticks import ticks_to_datetime
@@ -31,7 +36,29 @@ def _open_readonly(path: str) -> sqlite3.Connection:
     return conn
 
 
+def _is_gridset(path: str) -> bool:
+    return formats.detect(path) == formats.GRIDSET
+
+
+def _gridset_parent(path: str, parent_id, parent_name) -> int:
+    with gridset.GridsetFile(path) as source:
+        if parent_id is not None:
+            source.name_for(parent_id)
+            return parent_id
+        for page in source.pages():
+            if page["title"].casefold() == (parent_name or "").casefold():
+                return page["id"]
+    raise PagesetError(f"No grid called {parent_name!r} in this grid set.")
+
+
 def _cmd_list(args) -> int:
+    if _is_gridset(args.pageset):
+        with gridset.GridsetFile(args.pageset) as source:
+            pages = [(page["id"], page["title"]) for page in source.pages()]
+        width = max(len(str(page_id)) for page_id, _ in pages)
+        for page_id, name in pages:
+            print(f"{page_id:>{width}}  {name}")
+        return 0
     conn = _open_readonly(args.pageset)
     try:
         schema.require_tables(conn)
@@ -174,12 +201,15 @@ def _print_skipped(skipped: list) -> None:
 
 
 def _cmd_export_obz(args) -> int:
-    conn = _open_readonly(args.pageset)
-    try:
-        schema.require_tables(conn)
-        boardset = obf.export_pageset(conn)
-    finally:
-        conn.close()
+    if _is_gridset(args.pageset):
+        boardset = gridset.to_boardset(args.pageset)
+    else:
+        conn = _open_readonly(args.pageset)
+        try:
+            schema.require_tables(conn)
+            boardset = obf.export_pageset(conn)
+        finally:
+            conn.close()
     dest = args.output or os.path.splitext(args.pageset)[0] + ".obz"
     if os.path.exists(dest) and os.path.samefile(dest, args.pageset):
         raise PagesetError("Refusing to overwrite the page set; choose another output path.")
@@ -198,8 +228,50 @@ def _cmd_export_obz(args) -> int:
     return 0
 
 
+def _import_obz_gridset(args, boardset) -> int:
+    parent_id = _gridset_parent(args.pageset, args.parent_id, args.parent_name)
+    dest = args.output or _edited_path(args.pageset, ".gridset")
+    if os.path.exists(dest) and os.path.samefile(dest, args.pageset):
+        raise PagesetError("Refusing to overwrite the grid set; choose another output path.")
+    plan = gridset.plan_import(args.pageset, boardset, parent_id)
+    try:
+        report = gridset.import_boards(args.pageset, dest, plan, parent_id)
+    except gridset.GridsetVerificationError as exc:
+        print("Validation FAILED — no file was written:", file=sys.stderr)
+        for problem in exc.problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    print(f"Added {report['pages']} grid(s) with {report['buttons']} cell(s) and "
+          f"{report['links']} link(s), opening from {report['parent']!r}.")
+    for note in plan["notes"]:
+        print(f"note: {note}")
+    if plan["skipped"]:
+        print(f"Not imported ({len(plan['skipped'])}):")
+        _print_skipped(plan["skipped"])
+    print("All validation checks passed.")
+    print(f"Wrote edited grid set to: {dest}")
+    print("Import it into a TEST Grid 3 user first — see docs/IMPORT_SAFETY.md.")
+    return 0
+
+
+def _edited_path(path: str, default_ext: str) -> str:
+    base, ext = os.path.splitext(path)
+    return f"{base}.edited{ext or default_ext}"
+
+
+def _cmd_inspect_format(args) -> int:
+    report = formats.inspect(args.file, show_names=args.show_names)
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(formats.format_report(report))
+    return 0
+
+
 def _cmd_import_obz(args) -> int:
     boardset = obf.read(args.boards)
+    if _is_gridset(args.pageset):
+        return _import_obz_gridset(args, boardset)
     with Pageset(args.pageset, cleanup=True) as ps:
         if args.parent_id is not None:
             parent_id = args.parent_id
@@ -323,6 +395,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                           help="where to write the edited file "
                                "(default: <name>.edited<ext>)")
     p_import.set_defaults(func=_cmd_import_obz)
+
+    p_format = sub.add_parser(
+        "inspect-format",
+        help="describe how any AAC file is built, for supporting a new format "
+             "(structure only: never prints labels or messages)",
+    )
+    p_format.add_argument("file")
+    p_format.add_argument("--json", action="store_true", help="print the report as JSON")
+    p_format.add_argument(
+        "--show-names", action="store_true",
+        help="print entry names in full; they can include page or picture names",
+    )
+    p_format.set_defaults(func=_cmd_inspect_format)
 
     args = parser.parse_args(argv)
     try:

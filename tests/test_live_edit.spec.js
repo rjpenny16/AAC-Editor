@@ -5199,3 +5199,91 @@ test.describe('private by default: what is kept, and what can leave', () => {
     await expect(link).toHaveAttribute('target', '_blank');
   });
 });
+
+
+/* A Grid 3 .gridset opened as a file.
+ *
+ * Its XML is the grid set's stored content, so unlike an exported TD Snap file
+ * the speaking cells are editable, and the whole edit (adds, changes, moves,
+ * removals) goes to one route with one fingerprint.
+ */
+test.describe('a Grid 3 grid-set file', () => {
+  const SESSION = {
+    ok: true,
+    session_id: 'grid-session',
+    filename: 'My Grids.gridset',
+    format: 'gridset',
+    schema_version: null,
+    grid: { cols: 3, rows: 2 },
+    pages: [{ id: 101, title: 'Food' }, { id: 202, title: 'Home' }],
+    home_page_id: 202,
+    baseline_problems: [],
+  };
+  const LAYOUT = {
+    ok: true,
+    page: 'Home',
+    grid: { cols: 3, rows: 2 },
+    buttons: [
+      { slot: 0, label: 'hello', message: 'hello', existing: true, function: null,
+        symbol: false, editable: true, locked_reason: null },
+      { slot: 3, label: 'Food', message: null, existing: true, function: null,
+        symbol: false, editable: false,
+        locked_reason: 'This cell opens another grid, so AAC Editor leaves it alone.' },
+    ],
+    free_slots: [1, 2, 4, 5],
+    content_readable: true,
+    can_edit_existing: true,
+    fingerprint: 'gridset-home-v1',
+  };
+
+  test('changes and adds cells through one reviewed edit', async ({ page }) => {
+    let submitted = null;
+    let path = null;
+    await page.route('**/api/pageset', (route) => fulfillJson(route, SESSION));
+    await page.route('**/api/pageset/grid-session/pages', (route) =>
+      fulfillJson(route, { ok: true, pages: SESSION.pages }));
+    await page.route('**/api/pageset/grid-session/page/*/layout', (route) =>
+      fulfillJson(route, LAYOUT));
+    await page.route('**/api/pageset/grid-session/page/202/edit', (route) => {
+      path = new URL(route.request().url()).pathname;
+      submitted = route.request().postDataJSON();
+      return fulfillJson(route, {
+        ok: true, page: 'Home', buttons: 1, changed: 1, moved: 0, removed: 0, edits: 1,
+        grid: { cols: 3, rows: 2 }, warnings: [],
+        checks: { target_grid: 'pass', content: 'pass', package_entries: 'pass' },
+      });
+    });
+    await openEditor(page);
+    await page.locator('#provider-file').click();
+    await page.locator('#file-input').setInputFiles({
+      name: 'My Grids.gridset',
+      mimeType: 'application/octet-stream',
+      buffer: Buffer.from('synthetic grid set'),
+    });
+    await expect(page.locator('#wizard-destination')).toBeVisible();
+    await page.locator('#wizard-destination .wizard-next').click();
+
+    await expect(page.locator('#preview-lock-note')).toBeHidden();
+    const locked = page.locator('#preview .cell.existing').filter({ hasText: 'Food' });
+    await expect(locked).toHaveAttribute('title', /opens another grid/);
+    const hello = page.locator('#preview .cell.existing').filter({ hasText: 'hello' });
+    await expect(hello).toHaveClass(/editable/);
+    await hello.click();
+    await page.locator('#edit-label').fill('hi');
+    await page.locator('#edit-save').click();
+    await page.locator('#word-input').fill('drink');
+    await page.locator('#word-input').press('Enter');
+    await page.locator('#build-btn').click();
+    await expect(page.locator('#review-changes')).toContainText('hello');
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-heading')).toHaveText('Done — save the edited copy to keep it');
+    await expect(page.locator('#live-result-note')).toContainText('Grid 3');
+
+    expect(path).toBe('/api/pageset/grid-session/page/202/edit');
+    expect(submitted.fingerprint).toBe('gridset-home-v1');
+    expect(submitted.changes).toEqual([{ slot: 0, label: 'hi' }]);
+    expect(submitted.items.map((item) => item.label)).toEqual(['drink']);
+    expect(submitted.removals).toEqual([]);
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+});

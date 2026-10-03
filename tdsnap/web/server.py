@@ -37,7 +37,19 @@ from typing import Optional
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from werkzeug.exceptions import HTTPException
 
-from .. import __version__, builder, grid3, live, obf, pageset, schema, uia, validate
+from .. import (
+    __version__,
+    builder,
+    formats,
+    grid3,
+    gridset,
+    live,
+    obf,
+    pageset,
+    schema,
+    uia,
+    validate,
+)
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import (
@@ -629,7 +641,15 @@ def _current_path(session_id: str) -> str:
     return os.path.join(_session_dir(session_id), "current")
 
 
+def _is_gridset(path: str) -> bool:
+    """True when a session's copy is a Grid 3 grid set rather than a TD Snap page set."""
+    return not is_sqlite_file(path) and gridset.is_gridset_file(path)
+
+
 def _list_pages(path: str):
+    if _is_gridset(path):
+        with gridset.GridsetFile(path) as source:
+            return source.pages()
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
@@ -652,6 +672,9 @@ def _home_page_id(path: str) -> Optional[int]:
     Motor Plan set, "Accessories" — so a new topic page was offered a link from
     there. The home page is where somebody expects to start.
     """
+    if _is_gridset(path):
+        with gridset.GridsetFile(path) as source:
+            return source.home_page_id()
     try:
         with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
             row = conn.execute(
@@ -679,7 +702,13 @@ def _page_state(path: str, page_id: int, include_buttons: bool = True) -> dict:
 
     *include_buttons* is off for the parent picker, which only needs a count and
     must keep working on a page set whose button tables this app cannot read.
+
+    A Grid 3 grid set answers the same questions from its XML, and can say
+    what every cell holds, so its plain speaking cells are editable.
     """
+    if _is_gridset(path):
+        with gridset.GridsetFile(path) as source:
+            return source.page_state(page_id, include_buttons=include_buttons)
     with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
         conn.row_factory = sqlite3.Row
         layout = builder.layout_for_page(conn, page_id, pageset.grid_dimension(conn))
@@ -771,10 +800,9 @@ def _register_session(session_id: str, session_dir: str, filename: str) -> dict:
             raise PagesetError(
                 "Opening this page set would exceed the temporary storage limit."
             )
-        if not is_sqlite_file(original):
-            raise PagesetError(
-                f"{filename!r} is not a TD Snap page set (.sps/.spb export)."
-            )
+        kind = formats.require_supported(original, filename)
+        if kind == formats.GRIDSET:
+            return _register_gridset(session_id, session_dir, filename)
         probe = Pageset(original, working_copy=os.path.join(session_dir, "probe"))
         try:
             schema_version = probe.schema_version
@@ -803,11 +831,39 @@ def _register_session(session_id: str, session_dir: str, filename: str) -> dict:
         "ok": True,
         "session_id": session_id,
         "filename": filename,
+        "format": formats.SPS,
         "schema_version": schema_version,
         "grid": {"cols": cols, "rows": rows},
         "pages": _list_pages(os.path.join(session_dir, "current")),
         "home_page_id": _home_page_id(os.path.join(session_dir, "current")),
         "baseline_problems": baseline["problems"],
+    }
+
+
+def _register_gridset(session_id: str, session_dir: str, filename: str) -> dict:
+    """The Grid 3 half of ``_register_session``: read it once, then activate it."""
+    original = os.path.join(session_dir, "original")
+    current = os.path.join(session_dir, "current")
+    summary = gridset.describe(original)
+    shutil.copyfile(original, current)
+    with _sessions_lock:
+        _sessions[session_id] = {
+            "dir": session_dir,
+            "filename": filename,
+            "baseline_warnings": [],
+            "edits": 0,
+            "last_access": time.time(),
+            "lock": threading.Lock(),
+        }
+    _write_session_meta(session_dir, filename, [], 0)
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "filename": filename,
+        "schema_version": None,
+        **summary,
+        "baseline_problems": [],
+        "limits": gridset.limits(),
     }
 
 
@@ -828,7 +884,11 @@ def edited_filename(session_id: str) -> str:
     """Suggested name for the edited copy."""
     _session_dir(session_id)  # raises, and rehydrates from disk, as needed
     base, ext = os.path.splitext(_sessions[session_id]["filename"])
-    return f"{base}.edited{ext or '.sps'}"
+    return f"{base}.edited{ext or _default_extension(session_id)}"
+
+
+def _default_extension(session_id: str) -> str:
+    return ".gridset" if _is_gridset(_current_path(session_id)) else ".sps"
 
 
 def save_current_as(session_id: str, dest_path: str) -> None:
@@ -1345,13 +1405,22 @@ def pageset_summary(session_id):
     """
     current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
     session = _sessions[session_id]
-    with contextlib.closing(sqlite3.connect(f"file:{current}?mode=ro", uri=True)) as conn:
-        conn.row_factory = sqlite3.Row
-        cols, rows = pageset.grid_dimension(conn)
+    if _is_gridset(current):
+        with gridset.GridsetFile(current) as source:
+            cols, rows = source.grid_dimension()
+        kind = formats.GRIDSET
+    else:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+        ) as conn:
+            conn.row_factory = sqlite3.Row
+            cols, rows = pageset.grid_dimension(conn)
+        kind = formats.SPS
     return jsonify({
         "ok": True,
         "session_id": session_id,
         "filename": session["filename"],
+        "format": kind,
         "grid": {"cols": cols, "rows": rows},
         "pages": _list_pages(current),
         "home_page_id": _home_page_id(current),
@@ -1376,6 +1445,11 @@ def capacity(session_id, page_id):
 def pageset_vocabulary(session_id):
     """The exported-file counterpart of ``/api/tdsnap/vocabulary``."""
     current = _current_path(session_id)
+    if _is_gridset(current):
+        with gridset.GridsetFile(current) as source:
+            return jsonify({"ok": True, "available": True,
+                            "labels": source.labels_by_page(),
+                            "samples": source.label_samples()})
     try:
         with contextlib.closing(
             sqlite3.connect(f"file:{current}?mode=ro", uri=True)
@@ -1414,6 +1488,8 @@ def add_buttons(session_id, page_id):
         raise PagesetError(
             "The review fingerprint is required. Reload the page and review again."
         )
+    if _is_gridset(current):
+        return _gridset_edit(session_id, page_id, items, (), (), (), fingerprint)
     if _page_state(current, page_id)["fingerprint"] != fingerprint:
         raise PagesetError(
             "This page changed after the preview. Reload the page and review the "
@@ -1480,6 +1556,17 @@ def add_page(session_id):
     current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
     session = _sessions[session_id]
     scratch = os.path.join(session["dir"], "scratch")
+    if _is_gridset(current):
+        report, failure = _gridset_write(session_id, lambda source, dest: gridset.add_grid(
+            source, dest, title, items, parent_page_id))
+        if failure:
+            return failure
+        return jsonify({
+            "ok": True, "page_id": report["page_id"], "page_unique_id": report["page"],
+            "buttons": report["buttons"], "nav_button_id": report["nav_button_id"],
+            "grid": report["grid"], "checks": report["checks"],
+            "warnings": report["warnings"], "edits": session["edits"],
+        })
 
     # One edit at a time per session: concurrent requests would share the
     # same scratch working copy and corrupt each other.
@@ -1526,6 +1613,77 @@ def add_page(session_id):
     )
 
 
+def _gridset_write(session_id: str, write):
+    """Run one gridset write into a scratch copy and keep it only if it verified.
+
+    *write(source, dest)* does the edit and its own read-back verification
+    (``gridset``); a failure there leaves ``current`` exactly as it was and
+    answers with the same 422 shape a failed page-set validation does.
+    """
+    current = _current_path(session_id)
+    session = _sessions[session_id]
+    scratch = os.path.join(session["dir"], "scratch")
+    with session["lock"]:
+        try:
+            report = write(current, scratch)
+        except gridset.GridsetVerificationError as exc:
+            with contextlib.suppress(OSError):
+                os.remove(scratch)
+            return None, (jsonify({
+                "ok": False, "error": str(exc), "problems": exc.problems,
+                "checks": {"package_verify": "fail"},
+            }), 422)
+        os.replace(scratch, current)
+        session["edits"] += 1
+        _write_session_meta(
+            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
+        )
+    return report, None
+
+
+def _gridset_edit(session_id, page_id, items, changes, removals, moves, fingerprint):
+    session = _sessions[session_id]
+    report, failure = _gridset_write(session_id, lambda source, dest: gridset.edit_grid(
+        source, dest, page_id, items, changes, removals, moves, fingerprint))
+    if failure:
+        return failure
+    return jsonify({
+        "ok": True, "page_id": page_id, "page": report["page"],
+        "buttons": report["buttons"], "changed": report["changed"],
+        "moved": report["moved"], "removed": report["removed"],
+        "grid": report["grid"], "checks": report["checks"],
+        "warnings": report["warnings"], "edits": session["edits"],
+    })
+
+
+@app.post("/api/pageset/<session_id>/page/<int:page_id>/edit")
+def edit_cells(session_id, page_id):
+    """Add, change, move, and remove cells on one grid of a Grid 3 grid-set file.
+
+    Only grid sets: an exported TD Snap file can add buttons but keeps its
+    existing ones locked, because changing them there would need its own
+    prior-content snapshot and rollback (see ``_page_state``).
+    """
+    payload = _json_payload()
+    current = _current_path(session_id)
+    if not _is_gridset(current):
+        raise PagesetError(
+            "Changing, moving, and removing existing buttons is not available for "
+            "exported TD Snap files."
+        )
+    fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
+    if not fingerprint:
+        raise PagesetError("The review fingerprint is required. Reload the grid and review again.")
+    return _gridset_edit(
+        session_id, page_id,
+        _validated_items(payload.get("items", [])),
+        _validated_changes(payload.get("changes", [])),
+        _validated_removals(payload.get("removals", [])),
+        _validated_moves(payload.get("moves", [])),
+        fingerprint,
+    )
+
+
 @app.post("/api/pageset/<session_id>/close")
 def close_pageset(session_id):
     release_session(session_id)
@@ -1543,7 +1701,7 @@ def download(session_id):
     return send_file(
         current,
         as_attachment=True,
-        download_name=f"{base}.edited{ext or '.sps'}",
+        download_name=f"{base}.edited{ext or _default_extension(session_id)}",
         mimetype="application/octet-stream",
     )
 
@@ -1594,11 +1752,16 @@ def _import_plan(current: str, boardset: dict, parent_page_id: int) -> tuple[dic
     renamed, the parent's free cell taken, a new page with a clashing title — is
     refused rather than quietly adjusted.
     """
-    with contextlib.closing(sqlite3.connect(f"file:{current}?mode=ro", uri=True)) as conn:
-        conn.row_factory = sqlite3.Row
-        grid = pageset.grid_dimension(conn)
-    titles = [page["title"] for page in _list_pages(current)]
-    plan = obf.plan_import(boardset, grid=grid, existing_titles=titles)
+    if _is_gridset(current):
+        plan = gridset.plan_import(current, boardset, parent_page_id)
+    else:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+        ) as conn:
+            conn.row_factory = sqlite3.Row
+            grid = pageset.grid_dimension(conn)
+        titles = [page["title"] for page in _list_pages(current)]
+        plan = obf.plan_import(boardset, grid=grid, existing_titles=titles)
     parent = _page_state(current, parent_page_id)
     if not parent["free_slots"]:
         raise PagesetError(
@@ -1670,6 +1833,21 @@ def apply_board_import(session_id):
             "The page set changed after the import was reviewed. Review the import again."
         )
     scratch = os.path.join(session["dir"], "scratch")
+    if _is_gridset(current):
+        report, failure = _gridset_write(session_id, lambda source, dest: gridset.import_boards(
+            source, dest, plan, stash["parent_page_id"]))
+        if failure:
+            return failure
+        with contextlib.suppress(OSError):
+            os.remove(_import_stash(session["dir"]))
+        first = plan["pages"][0]["title"]
+        return jsonify({
+            "ok": True, "pages": report["pages"], "buttons": report["buttons"],
+            "links": report["links"],
+            "root": {"id": gridset.page_id(first), "title": first},
+            "parent": plan["parent"], "checks": report["checks"],
+            "edits": session["edits"],
+        })
     with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
         baseline = validate.validate_pageset(ps.conn)
         before = validate.table_snapshot(ps.conn)
@@ -1715,6 +1893,8 @@ def apply_board_import(session_id):
 
 
 def _exported_boards(path: str) -> dict:
+    if _is_gridset(path):
+        return gridset.to_boardset(path)
     with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
         conn.row_factory = sqlite3.Row
         return obf.export_pageset(conn)
