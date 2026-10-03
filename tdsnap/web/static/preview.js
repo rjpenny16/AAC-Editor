@@ -347,7 +347,8 @@ function renderPreview() {
   $("current-page-label").textContent = previewTitle || "New page";
   $("preview-grid-size").textContent = `${state.grid.cols} × ${state.grid.rows} grid`;
   const lockNote = $("preview-lock-note");
-  lockNote.hidden = state.operation !== "existing" || state.mode !== "file";
+  lockNote.hidden = state.operation !== "existing" || state.mode !== "file" ||
+    state.fileFormat === "gridset";
   lockNote.textContent = "Existing buttons are locked in this copy.";
   if (!state.words.includes(state.selectedWord)) state.selectedWord = null;
   preview.style.setProperty("--cols", state.grid.cols);

@@ -638,6 +638,92 @@ does, and `GRID3_LIVE_E2E=1` runs the real matrix.
 
 ---
 
+# Track D — Every major AAC app, start to finish
+
+Goal: a Grid 3 grid set, a Chat Editor vocabulary (TouchChat, NovaChat, ChatFusion), or an Empower
+vocabulary goes through the whole flow: open, see pages, add/change/remove/move, create linked
+pages, Open Board in and out, verify, and get it back onto the device. PRC-Saltillo formats are
+**file first, live later**: an edited copy with the same review, verification, and rollback as
+`.sps`, and UI Automation only if a probe proves the editor exposes what it needs.
+
+One clarification of an earlier rule. Phase 10's "no direct grid-set mutation" protects the grid set
+Grid 3 has open, which Grid 3 versions and syncs. It does not forbid writing a *separate* edited
+copy that the person imports themselves, which is exactly what the `.sps` path has always done. The
+file paths below never write the file someone chose, or the one their AAC app is using.
+
+## Phase 11 — Format layer *(~1–2 weeks)* — **shipped**
+
+"An exported file" used to mean only a TD Snap `.sps`. `tdsnap/formats.py` now detects the format by
+content (SQLite, a zip carrying Grid 3's settings, an `.obz`) and by name for the formats it does not
+open yet (`.gridsetx`, `.ce`, Empower), and refuses each of those with the specific reason instead of
+"not a SQLite database". The exported-file routes in `server.py` dispatch on the session copy's
+format; `.sps` behaviour is unchanged and its tests pass untouched.
+
+## Phase 12 — Grid 3 start to finish *(~4–5 weeks)*
+
+### 12a — Edit a `.gridset` file — **shipped**
+
+`tdsnap/gridset.py`: add, change, move, and remove speaking cells on any grid, and create a grid the
+parent's size with a Back cell, linked from the parent. Every edit writes a new package, re-reads it,
+and keeps it only if the reviewed cells match and every other grid, cell, and zip entry is unchanged
+(`gridset.verify`). `FileMap.xml` gains an entry for a new grid in the same shape as the parent's, or
+the edit stops. The browser offers change/move/remove on a grid-set file because its XML is the
+stored content. Covered at 95% by synthetic packages built in the tests; IMPORT_SAFETY has a Grid 3
+section.
+
+### 12b — Open Board for Grid 3 — **shipped**
+
+A grid set exports to `.obz` (labels, spoken text, layout, jumps), and a whole `.obz` imports as new
+linked grids in one verified write, from the browser or `tdsnap import-obz`. The top-left square of
+each new grid is its Back cell, so a board's top-left button moves and the review says so.
+
+### 12c — Word-list cells and symbols *(waiting on a real grid set)*
+
+Write word-list cells in file mode once a real grid set with word lists shows the XML (it is not
+guessed). Probe Grid 3's word-list editor and symbol search over UI Automation; build them live only
+if reachable, otherwise `grid3.explain` names them as unsupported.
+
+### 12d — Hardening *(needs Windows and Grid 3)*
+
+Round-trip edited `.gridset` files through a second Grid 3 release; run `GRID3_LIVE_E2E=1` there.
+
+**Exit:** a `.gridset` round-trips through add/change/move/remove/link and imports cleanly into
+Grid 3 · `.gridset` ↔ `.obz` keeps labels, messages, layout, and links · word-list cells work in file
+mode and are either working or named as unsupported live.
+
+## Phase 13 — Chat Editor (TouchChat / NovaChat / ChatFusion) *(~5–6 weeks)*
+
+- **13a. Discovery** — **tooling shipped, spike pending.** `tdsnap inspect-format` prints a
+  structure-only report (container, generalised entry names, SQLite tables and columns, XML element
+  names, encryption evidence) and never prints vocabulary. The checklist, including the device round
+  trip that decides whether checksums matter, is [docs/formats/CHAT_EDITOR.md](docs/formats/CHAT_EDITOR.md).
+- **13b. Read** — pages, buttons, layout, links into the canonical model; `.obz` export.
+- **13c. Write** — the `.sps` pattern: clone rows, one transaction, integrity/foreign-key/linkage/
+  unexpected-change checks, a separate `*.edited.ce`.
+- **13d. Device round trip and docs.**
+- **13e. Live** — a UIA probe of Chat Editor; go only without coordinates or OCR.
+
+**Exit:** a `.ce` goes through add/change/move/remove/link and `.obz` in/out, imports into Chat
+Editor, and runs on the PRC device.
+
+## Phase 14 — Empower *(size decided by discovery)*
+
+- **14a. Discovery** — [docs/formats/EMPOWER.md](docs/formats/EMPOWER.md): what Empower saves, where
+  it edits, and whether it is encrypted or signed. Encrypted means a definite README position, as
+  for `.gridsetx`.
+- **14b–14e.** If open, the Chat Editor sequence.
+
+**Exit:** either Empower completes the Chat Editor round trip, or the README states a definite,
+evidence-backed position.
+
+## Phase 15 — Polish across the new formats *(runs with each phase)*
+
+Format-aware connect and onboarding copy, the security review of every new parser (done for
+`.gridset` and `inspect-format`; see SECURITY_AUDIT), and the support report naming the format,
+never content.
+
+---
+
 ## Rules that apply to every phase
 
 1. Every new write operation ships with all four: a review step naming the exact change, a fingerprint

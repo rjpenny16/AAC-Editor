@@ -352,19 +352,31 @@ def _css_color(value: str | None) -> str | None:
 
 
 class Grid3Package:
-    def __init__(self, path: str):
+    """A read-only view of a ``.gridset`` package.
+
+    By default only a grid set inside Grid 3's own ``Users`` folder is opened:
+    that is the live path, which reads what Grid 3 itself saved.  The
+    exported-file path (``tdsnap.gridset``) passes ``session_copy=True`` for
+    the private copy it made of a file somebody chose; that copy has no
+    extension and lives in the app's session folder, and it is never the file
+    Grid 3 is using.
+    """
+
+    def __init__(self, path: str, *, session_copy: bool = False):
         if path.lower().endswith(".gridsetx"):
             raise PagesetError(PROTECTED_MESSAGE)
-        if not path.lower().endswith(".gridset"):
-            raise PagesetError("Only unprotected .gridset files are supported.")
         real = os.path.realpath(path)
-        allowed = os.path.realpath(os.path.join(_grid3_root(), "Users"))
-        try:
-            inside = os.path.normcase(os.path.commonpath([real, allowed])) == os.path.normcase(allowed)
-        except ValueError:
-            inside = False
-        if not inside:
-            raise PagesetError("Grid 3 files must come from a local Grid user.")
+        if not session_copy:
+            if not path.lower().endswith(".gridset"):
+                raise PagesetError("Only unprotected .gridset files are supported.")
+            allowed = os.path.realpath(os.path.join(_grid3_root(), "Users"))
+            try:
+                inside = (os.path.normcase(os.path.commonpath([real, allowed]))
+                          == os.path.normcase(allowed))
+            except ValueError:
+                inside = False
+            if not inside:
+                raise PagesetError("Grid 3 files must come from a local Grid user.")
         try:
             self.zip = zipfile.ZipFile(real)
         except (OSError, zipfile.BadZipFile) as exc:
@@ -372,6 +384,7 @@ class Grid3Package:
         self.path = real
         try:
             settings = self._xml("Settings0/settings.xml")
+            self.settings = settings
             version = _text(settings, "GridSetFileFormatVersion")
             if version != _SUPPORTED_FORMAT:
                 raise PagesetError(

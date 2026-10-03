@@ -102,6 +102,7 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
   void clearDraft();
   $("result-eyebrow").textContent = "Complete";
   const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
+  const cellWord = state.provider === "grid3" || state.fileFormat === "gridset" ? "cells" : "vocabulary";
   $("result-heading").textContent = data.undone
     ? `Done — the last change was undone in ${product}`
     : state.mode === "file"
@@ -134,7 +135,7 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
       : touched
         ? `“${title}” was updated: ${editedCounts(data)}. Nothing else on the page changed.`
         : `${data.buttons} speaking button${data.buttons === 1 ? " was" : "s were"} added to ` +
-          `“${title}” without changing its existing ${state.provider === "grid3" ? "cells" : "vocabulary"}.`;
+          `“${title}” without changing its existing ${cellWord}.`;
 
   const checks = $("checks");
   checks.innerHTML = "";

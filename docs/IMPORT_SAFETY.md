@@ -29,6 +29,25 @@ cost you your real setup.
 5. **Only then** import into your real user, and keep the step-2 backup for a
    few days of normal use.
 
+## Grid 3 grid sets
+
+The same idea, with Grid 3's own tools. AAC Editor writes
+`<name>.edited.gridset` and never changes the grid set you chose or the one
+Grid 3 has open.
+
+1. **Keep the original `.gridset`** until the edited copy has proven itself.
+2. **Back up first.** In Grid 3, back up the user or export the grid set.
+3. **Import into a throwaway user.** Create a new Grid 3 user (for example
+   "Import Test") and add the `.edited.gridset` to it.
+4. **Exercise it:** open each grid the edit touched, tap the new and changed
+   cells, follow every new jump and its Back cell, then close and restart
+   Grid 3 and open the grids again.
+5. **Only then** add it to the real user.
+
+If Grid 3 refuses the file or something looks wrong, send the output of
+`python -m tdsnap inspect-format "My Grids.edited.gridset"` with the report. It
+describes the package's structure and never prints its words.
+
 ## If something goes wrong
 
 Run the built-in checker on the edited file and include its output when

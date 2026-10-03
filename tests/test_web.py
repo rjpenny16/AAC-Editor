@@ -63,7 +63,7 @@ def test_index_explains_both_local_ai_setup_options(client):
     assert "Nothing reaches your page until you do" in page
     assert "Drop your" not in page
     assert "TD Snap exported file" in page
-    assert "Work on an exported .sps or .spb copy" in page
+    assert "Work on an exported .sps or .spb copy, or a Grid 3 .gridset" in page
     assert "sends only this page title to Wikipedia" in page
     assert "Welcome to AAC Editor" in page
     assert "How familiar are you with editing AAC pages?" in page

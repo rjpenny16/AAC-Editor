@@ -33,7 +33,7 @@ in [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md).*
 | **Settings**: your last AAC app, your answer to the welcome question, your AI choices | So the app opens the way you left it | `settings.json` in `%LOCALAPPDATA%\tdsnap-editor` | **Clear all saved data** |
 | **Templates** you choose to save | Reuse one topic page for the next person | The same file | When you delete one, or **Clear all saved data** |
 | **An unfinished page** | Resume after a crash or reload | The same file | **Only kept if you turn on "Keep an unfinished page". It is off until you do.** Turning it off deletes it |
-| **A working copy of an exported file** (`.sps`, `.spb`) | Edits are made on a copy, so your original is never changed | Your temporary folder, in `tdsnap-editor` | When you close the file or quit, including if the app is told to stop or its terminal is closed. After a forced kill or a crash, the next start after a day removes it, and **Clear all saved data** removes it at once |
+| **A working copy of an exported file** (`.sps`, `.spb`, or a Grid 3 `.gridset`) | Edits are made on a copy, so your original is never changed | Your temporary folder, in `tdsnap-editor` | When you close the file or quit, including if the app is told to stop or its terminal is closed. After a forced kill or a crash, the next start after a day removes it, and **Clear all saved data** removes it at once |
 | **The suggestion model**, only if you set up suggestions | On-device suggestions | `models` inside the folder above | When you delete the file. It is a public model with nothing about you in it |
 | **Files you save**: edited copies and `.obz` exports | They are your files | Wherever you choose | When you delete them |
 

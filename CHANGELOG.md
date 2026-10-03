@@ -11,6 +11,24 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Added - Grid 3 grid-set files, and the groundwork for PRC-Saltillo
+
+- **Edit a Grid 3 `.gridset` file without Grid 3.** Choose the exported-file
+  option and pick a `.gridset`. Add words to empty cells on any grid; change,
+  move, or remove speaking cells; create a linked grid with its Back cell. Each
+  edit writes a new package, reads it back, and keeps it only if the reviewed
+  cells match and nothing else changed. The edited copy saves as
+  `*.edited.gridset`; the chosen file is never written.
+- **Open Board for Grid 3.** A grid set exports to `.obz`, and a whole `.obz`
+  imports as new linked grids, in the browser and with `tdsnap export-obz` /
+  `tdsnap import-obz`.
+- **`tdsnap inspect-format`** describes how any AAC file is built (container,
+  generalised entry names, database tables and columns, XML element names,
+  encryption evidence) without printing any vocabulary. It is the first step to
+  supporting Chat Editor and Empower; see `docs/formats/`.
+- Opening a Chat Editor `.ce`, an Empower file, a `.gridsetx`, or an `.obz` as a
+  page set now says exactly why it cannot be opened instead of "not a page set".
+
 A security and privacy review of the whole app, with fixes and tests. The full
 record is in [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md), and the plain-language
 statement for users is [PRIVACY.md](PRIVACY.md).
