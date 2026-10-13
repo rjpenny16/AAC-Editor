@@ -30,7 +30,8 @@ def _fsync_directory(directory: str) -> None:
 
 def replace_durably(temporary: str, dest_path: str) -> None:
     """Flush *temporary* to disk, then rename it over *dest_path*."""
-    with open(temporary, "rb") as handle:
+    # r+b, not rb: Windows refuses to fsync a handle that was not opened for writing
+    with open(temporary, "r+b") as handle:
         os.fsync(handle.fileno())
     os.replace(temporary, dest_path)
     _fsync_directory(os.path.dirname(os.path.abspath(dest_path)))
