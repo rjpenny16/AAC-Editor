@@ -11,6 +11,17 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Fixed - Saves survive a crash, and a blocked Grid 3 edit fails cleanly
+
+- **Durable saves.** Settings, the draft, session state, saved page sets and
+  exports now share one write helper that flushes the file to disk before
+  renaming it into place, so a power loss can no longer leave an empty file
+  under the real name.
+- **A blocked or failed `.gridset` edit changes nothing and says why.** If
+  another program (antivirus, Grid 3) holds the file, or the disk is full, the
+  editor now answers with a plain message and removes its scratch copy instead
+  of failing with a server error and leaving the edit count out of step.
+
 ### Added - Grid 3 grid-set files, and the groundwork for PRC-Saltillo
 
 - **Edit a Grid 3 `.gridset` file without Grid 3.** Choose the exported-file

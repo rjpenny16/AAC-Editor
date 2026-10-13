@@ -56,12 +56,12 @@ import os
 import posixpath
 import re
 import sqlite3
-import tempfile
 import zipfile
 from collections import deque
 from typing import Optional, Union
 
 from . import builder, pageset, schema
+from .atomic import atomic_write
 from .colors import FUNCTION_BORDER_COLORS
 from .errors import PagesetError
 
@@ -560,16 +560,7 @@ def to_obz_bytes(boardset: dict) -> bytes:
 def write_obz(boardset: dict, dest_path: str) -> str:
     """Write *boardset* to *dest_path* atomically (temp file, then replace)."""
     data = to_obz_bytes(boardset)
-    directory = os.path.dirname(os.path.abspath(dest_path)) or os.curdir
-    descriptor, temporary = tempfile.mkstemp(prefix=".aac-editor-", suffix=".obz",
-                                             dir=directory)
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(data)
-        os.replace(temporary, dest_path)
-    finally:
-        with contextlib.suppress(OSError):
-            os.remove(temporary)
+    atomic_write(dest_path, data, prefix=".aac-editor-", suffix=".obz")
     return dest_path
 
 

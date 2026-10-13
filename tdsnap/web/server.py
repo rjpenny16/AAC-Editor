@@ -32,6 +32,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import zipfile
 from typing import Optional
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
@@ -50,6 +51,7 @@ from .. import (
     uia,
     validate,
 )
+from ..atomic import atomic_copy, atomic_write, replace_durably
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
 from . import (
@@ -566,17 +568,10 @@ def _write_session_meta(session_dir: str, filename: str, baseline_warnings: list
     the file" rather than breaking the edit that triggered it.
     """
     payload = {"filename": filename, "baseline_warnings": baseline_warnings, "edits": edits}
-    try:
-        handle, temp_path = tempfile.mkstemp(prefix=".meta-", dir=session_dir)
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as temp_file:
-                json.dump(payload, temp_file)
-            os.replace(temp_path, os.path.join(session_dir, "meta.json"))
-        finally:
-            with contextlib.suppress(OSError):
-                os.remove(temp_path)
-    except OSError:
-        pass
+    with contextlib.suppress(OSError):
+        atomic_write(
+            os.path.join(session_dir, "meta.json"), json.dumps(payload), prefix=".meta-"
+        )
 
 
 def _rehydrate_session(session_id: str):
@@ -896,15 +891,7 @@ def save_current_as(session_id: str, dest_path: str) -> None:
     current = _current_path(session_id)
     if not os.path.exists(current):
         raise PagesetError("Nothing to save yet; re-upload the file.")
-    directory = os.path.dirname(os.path.abspath(dest_path)) or os.curdir
-    handle, temporary = tempfile.mkstemp(prefix=".aac-editor-", dir=directory)
-    os.close(handle)
-    try:
-        shutil.copyfile(current, temporary)
-        os.replace(temporary, dest_path)
-    finally:
-        with contextlib.suppress(OSError):
-            os.remove(temporary)
+    atomic_copy(current, dest_path, prefix=".aac-editor-")
     session = _sessions.get(session_id)
     if session is not None:
         session["saved_edits"] = session.get("edits", 0)
@@ -1633,7 +1620,30 @@ def _gridset_write(session_id: str, write):
                 "ok": False, "error": str(exc), "problems": exc.problems,
                 "checks": {"package_verify": "fail"},
             }), 422)
-        os.replace(scratch, current)
+        except (OSError, zipfile.BadZipFile) as exc:
+            # a full disk or an unreadable source: ``current`` is untouched
+            app.logger.warning("grid set edit could not be written: %s", exc)
+            with contextlib.suppress(OSError):
+                os.remove(scratch)
+            return None, (jsonify({
+                "ok": False,
+                "error": "The grid set could not be written, so nothing was changed. "
+                         "Check that there is free disk space and try again.",
+                "checks": {"package_verify": "fail"},
+            }), 500)
+        try:
+            replace_durably(scratch, current)
+        except OSError as exc:
+            # on Windows another program (antivirus, Grid 3) can hold the file open
+            app.logger.warning("grid set edit could not be committed: %s", exc)
+            with contextlib.suppress(OSError):
+                os.remove(scratch)
+            return None, (jsonify({
+                "ok": False,
+                "error": "The edit could not be saved because another program is using "
+                         "the file. Close it and try again; nothing was changed.",
+                "checks": {"package_verify": "fail"},
+            }), 409)
         session["edits"] += 1
         _write_session_meta(
             session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
@@ -1795,14 +1805,10 @@ def plan_board_import(session_id):
     session = _sessions[session_id]
     stash = {"filename": filename, "parent_page_id": parent_page_id, "boardset": boardset}
     with session["lock"]:
-        handle, temporary = tempfile.mkstemp(prefix=".import-", dir=session["dir"])
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as temp_file:
-                json.dump(stash, temp_file, ensure_ascii=False)
-            os.replace(temporary, _import_stash(session["dir"]))
-        finally:
-            with contextlib.suppress(OSError):
-                os.remove(temporary)
+        atomic_write(
+            _import_stash(session["dir"]), json.dumps(stash, ensure_ascii=False),
+            prefix=".import-",
+        )
     return jsonify({"ok": True, "filename": filename, "plan": plan, "fingerprint": fingerprint})
 
 
