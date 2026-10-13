@@ -18,10 +18,11 @@ page-set upload leaves no session behind in ``server.py``.
 import contextlib
 import json
 import os
-import tempfile
 import threading
 import time
 from typing import Optional
+
+from ..atomic import atomic_write
 
 SETTINGS_VERSION = 1
 # Preferences and a draft item list are both small JSON; this is generous
@@ -139,14 +140,7 @@ def save(preferences: dict, draft: Optional[dict], templates: Optional[list] = N
         encoded = json.dumps(payload, indent=2)
         directory = _data_dir()
         ensure_private_dir(directory)
-        handle, temp_path = tempfile.mkstemp(prefix=".settings-", dir=directory)
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as temp_file:
-                temp_file.write(encoded)
-            os.replace(temp_path, settings_path())
-        finally:
-            with contextlib.suppress(OSError):
-                os.remove(temp_path)
+        atomic_write(settings_path(), encoded, prefix=".settings-")
 
 
 def clear() -> None:

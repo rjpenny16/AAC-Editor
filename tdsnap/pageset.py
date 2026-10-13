@@ -13,6 +13,7 @@ import tempfile
 from typing import Optional
 
 from . import schema
+from .atomic import atomic_copy
 from .errors import PagesetError
 
 SQLITE_MAGIC = b"SQLite format 3\x00"
@@ -312,15 +313,8 @@ class Pageset:
             busy = self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]
             if busy:
                 raise PagesetError("Could not checkpoint the working copy before saving.")
-        directory = os.path.dirname(os.path.abspath(dest_path))
-        descriptor, temporary = tempfile.mkstemp(
-            prefix=f".{os.path.basename(dest_path)}.", suffix=".tmp", dir=directory
+        atomic_copy(
+            self.working_path, dest_path,
+            prefix=f".{os.path.basename(dest_path)}.", suffix=".tmp",
         )
-        os.close(descriptor)
-        try:
-            shutil.copyfile(self.working_path, temporary)
-            os.replace(temporary, dest_path)
-        finally:
-            with contextlib.suppress(OSError):
-                os.remove(temporary)
         return dest_path

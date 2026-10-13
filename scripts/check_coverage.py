@@ -43,7 +43,7 @@ FLOORS = {
     # Phase 10. The Grid 3 write path; its automation half only runs on Windows
     # against Grid 3, so the floor covers the planning, verification, rollback,
     # and undo logic that the fake Edit Mode in tests/test_grid3.py exercises.
-    "tdsnap/grid3.py": 55,
+    "tdsnap/grid3.py": 58,
     # Phase 9. Open Board import and export: pure, file in and file out, so it
     # carries one of the highest floors in the project. It decides what an imported
     # board becomes in someone's page set and what an export claims to carry.
@@ -54,6 +54,8 @@ FLOORS = {
     # and what the structure-only inspect report is allowed to print.
     "tdsnap/gridset.py": 93,
     "tdsnap/formats.py": 88,
+    # Every save, export and settings write goes through this one helper.
+    "tdsnap/atomic.py": 95,
 }
 
 

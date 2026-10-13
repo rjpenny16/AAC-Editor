@@ -560,8 +560,9 @@ def _rect(control):
         rect = control.BoundingRectangle
         if rect.right > rect.left and rect.bottom > rect.top:
             return rect
-    # best-effort geometry probe; failure falls back to stored layout
-    except Exception:  # noqa: S110
+    # best-effort geometry probe: a control that vanished (COMError is an
+    # OSError) or lacks a rectangle falls back to the stored layout
+    except (OSError, AttributeError):
         pass
     return None
 

@@ -44,6 +44,7 @@ import zipfile
 from xml.etree import ElementTree as ET
 
 from . import obf
+from .atomic import replace_durably
 from .builder import MAX_TITLE_LENGTH, _normalize_items
 from .colors import hex_from_argb
 from .errors import PagesetError
@@ -648,7 +649,7 @@ class _Writer:
                         shutil.copyfileobj(reader, writer, 1024 * 1024)
                 for entry, data in added.items():
                     out.writestr(entry, data)
-            os.replace(temporary, dest)
+            replace_durably(temporary, dest)
         finally:
             if os.path.exists(temporary):
                 os.remove(temporary)

@@ -2,11 +2,13 @@
 
 import io
 import json
+import os
 import zipfile
 
 import pytest
 
 from tdsnap import gridset
+from tdsnap.web import server
 from tests.test_gridset import make
 from tests.test_web import client, token_headers, upload  # noqa: F401 - fixture
 
@@ -158,3 +160,47 @@ def test_unsupported_uploads_say_why(client, filename, data, message):  # noqa: 
                            headers=token_headers())
     assert response.status_code == 400
     assert message in response.get_json()["error"]
+
+
+def test_commit_blocked_by_another_program_keeps_the_session_copy(
+    client, session, monkeypatch  # noqa: F811
+):
+    sid = session["session_id"]
+    before = layout(client, sid)["fingerprint"]
+    session_dir = server._sessions[sid]["dir"]
+
+    def locked(*_args):
+        raise PermissionError("in use by another process")
+
+    with monkeypatch.context() as local:
+        local.setattr(server, "replace_durably", locked)
+        response = client.post(
+            f"/api/pageset/{sid}/page/{HOME}/buttons",
+            json={"items": ["drink"], "fingerprint": before}, headers=token_headers(),
+        )
+    assert response.status_code == 409
+    assert "another program" in response.get_json()["error"]
+    assert not os.path.exists(os.path.join(session_dir, "scratch"))
+    assert server._sessions[sid]["edits"] == 0
+    assert layout(client, sid)["fingerprint"] == before
+
+
+def test_unwritable_disk_answers_cleanly_and_keeps_the_session_copy(
+    client, session, monkeypatch  # noqa: F811
+):
+    sid = session["session_id"]
+    before = layout(client, sid)["fingerprint"]
+
+    def full(*_args):
+        raise OSError("no space left on device")
+
+    with monkeypatch.context() as local:
+        local.setattr(gridset, "edit_grid", full)
+        response = client.post(
+            f"/api/pageset/{sid}/page/{HOME}/buttons",
+            json={"items": ["drink"], "fingerprint": before}, headers=token_headers(),
+        )
+    assert response.status_code == 500
+    assert response.get_json()["ok"] is False
+    assert server._sessions[sid]["edits"] == 0
+    assert layout(client, sid)["fingerprint"] == before
