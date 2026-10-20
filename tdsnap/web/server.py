@@ -1829,6 +1829,8 @@ def apply_board_import(session_id):
     try:
         with open(_import_stash(session["dir"]), encoding="utf-8") as handle:
             stash = json.load(handle)
+        if not isinstance(stash, dict) or not {"boardset", "parent_page_id"} <= stash.keys():
+            raise ValueError("incomplete import stash")
     except (OSError, ValueError) as exc:
         raise PagesetError(
             "There is no reviewed import waiting. Choose the board file again."

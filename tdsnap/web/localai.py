@@ -427,6 +427,7 @@ def start_download(key: Optional[str] = None) -> dict:
             )
             digest = hashlib.sha256()
             first_bytes = b""
+            written = 0
             # pinned model URL; the download is size- and SHA-256-verified
             with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
                 total = int(response.headers.get("Content-Length") or 0)
@@ -439,10 +440,17 @@ def start_download(key: Optional[str] = None) -> dict:
                             break
                         handle.write(chunk)
                         digest.update(chunk)
+                        written += len(chunk)
+                        # A server that keeps sending past the pinned size must not
+                        # fill the disk before the final size check can run.
+                        if choice.size is not None and written > choice.size:
+                            raise ValueError("The model download has the wrong size.")
                         if len(first_bytes) < 4:
                             first_bytes = (first_bytes + chunk)[:4]
                         with _download_lock:
                             _download["done"] += len(chunk)
+                    handle.flush()
+                    os.fsync(handle.fileno())  # durable before it replaces the model
             size = os.path.getsize(part)
             if first_bytes != b"GGUF":
                 raise ValueError("The download is not a GGUF model.")

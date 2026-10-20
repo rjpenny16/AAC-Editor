@@ -961,3 +961,15 @@ def test_export_then_import_into_a_fresh_page_set_round_trips(seed, seeded_pages
     for board in first["boards"]:
         copy = by_title[renamed[board["id"]]]
         assert comparable(copy, second_names) == comparable(board, renamed)
+
+
+def test_an_apply_with_a_damaged_import_stash_asks_for_a_fresh_review(client, seeded_source):
+    session = open_session(client, seeded_source)
+    review = post_boards(client, f"/api/pageset/{session}/boards", coughdrop_set(),
+                         parent_page_id="1").get_json()
+    with open(server._import_stash(server._sessions[session]["dir"]), "w") as handle:
+        handle.write("{}")
+    applied = client.post(f"/api/pageset/{session}/boards/apply",
+                          json={"fingerprint": review["fingerprint"]}, headers=HEADERS)
+    assert applied.status_code < 500
+    assert "no reviewed import waiting" in applied.get_json()["error"]
