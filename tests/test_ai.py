@@ -6,6 +6,7 @@ the endpoint tests monkeypatch the backends.
 
 import hashlib
 import json
+import os
 import sys
 import time
 from types import SimpleNamespace
@@ -184,6 +185,18 @@ def test_download_rejects_wrong_hash(isolated_model, monkeypatch):
     assert _settle()["status"] == "error"
     assert "integrity" in localai.download_state()["error"].lower()
     assert not localai.is_downloaded()
+
+
+def test_download_stops_once_it_passes_the_pinned_size(isolated_model, monkeypatch):
+    # The advertised size is smaller than what the server sends: the transfer must
+    # abort mid-stream and leave neither a model nor a stray .part file behind.
+    _install(monkeypatch, _choice(isolated_model, size=10, sha256=None))
+    localai.start_download()
+    assert _settle()["status"] == "error"
+    assert "wrong size" in localai.download_state()["error"]
+    assert localai.download_state()["done"] <= isolated_model.stat().st_size
+    assert not localai.is_downloaded()
+    assert not os.path.exists(localai.model_path() + ".part")
 
 
 def test_generate_requires_download(isolated_model, monkeypatch):
