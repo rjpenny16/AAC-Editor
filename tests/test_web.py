@@ -895,6 +895,43 @@ def test_rehydrate_returns_none_without_meta_json(tmp_path, monkeypatch):
     assert server._rehydrate_session("orphan") is None
 
 
+def test_a_session_closed_mid_request_survives_a_close_while_in_flight(
+    client, seeded_source, monkeypatch
+):
+    """Another request closing the session between lookups must not become a 500."""
+    session_id = upload(client, seeded_source).get_json()["session_id"]
+    real = server._exported_boards
+
+    def closed_while_exporting(current):
+        boards = real(current)
+        server.release_session(session_id)
+        return boards
+
+    monkeypatch.setattr(server, "_exported_boards", closed_while_exporting)
+    response = client.get(f"/api/pageset/{session_id}/export.obz")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {"filename": 7, "baseline_warnings": [], "edits": 0},
+        {"filename": "", "baseline_warnings": [], "edits": 0},
+        {"filename": "a.sps", "baseline_warnings": "oops", "edits": 0},
+        {"filename": "a.sps", "baseline_warnings": [], "edits": -3},
+        ["not", "a", "dict"],
+    ],
+)
+def test_a_malformed_meta_file_is_not_rehydrated(client, seeded_source, meta):
+    session_id = upload(client, seeded_source).get_json()["session_id"]
+    with open(os.path.join(server._SESSION_ROOT, session_id, "meta.json"), "w") as handle:
+        json.dump(meta, handle)
+    server._sessions.clear()
+    assert server._rehydrate_session(session_id) is None
+    response = client.get(f"/api/pageset/{session_id}/pages")
+    assert response.status_code == 400
+
+
 def test_unknown_session_still_errors_without_a_directory(client):
     response = client.get("/api/pageset/does-not-exist/pages")
     assert response.status_code == 400

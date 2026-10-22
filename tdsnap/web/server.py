@@ -601,7 +601,16 @@ def _rehydrate_session(session_id: str):
         filename = meta["filename"]
         baseline_warnings = meta.get("baseline_warnings", [])
         edits = int(meta.get("edits", 0))
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    # A hand-edited or truncated meta file must read as "no session", not as a
+    # record that fails later in a handler with a TypeError.
+    if (
+        not isinstance(filename, str)
+        or not filename
+        or not isinstance(baseline_warnings, list)
+        or edits < 0
+    ):
         return None
     session = {
         "dir": session_dir,
@@ -615,7 +624,14 @@ def _rehydrate_session(session_id: str):
         return _sessions.setdefault(session_id, session)
 
 
-def _session_dir(session_id: str) -> str:
+def _session_record(session_id: str) -> dict:
+    """The live session record, rehydrated from disk when the process forgot it.
+
+    Callers that need the record take it from here rather than indexing
+    ``_sessions`` after ``_session_dir``: another request can close or expire
+    the session between the two lookups, and the second one then raised a bare
+    ``KeyError`` that surfaced as a 500 instead of the usual "expired" message.
+    """
     _checked_session_id(session_id)
     with _sessions_lock:
         session = _sessions.get(session_id)
@@ -629,7 +645,11 @@ def _session_dir(session_id: str) -> str:
     session["last_access"] = time.time()
     with contextlib.suppress(OSError):
         os.utime(session["dir"], None)
-    return session["dir"]
+    return session
+
+
+def _session_dir(session_id: str) -> str:
+    return _session_record(session_id)["dir"]
 
 
 def _current_path(session_id: str) -> str:
@@ -877,8 +897,8 @@ def open_path(path: str) -> dict:
 
 def edited_filename(session_id: str) -> str:
     """Suggested name for the edited copy."""
-    _session_dir(session_id)  # raises, and rehydrates from disk, as needed
-    base, ext = os.path.splitext(_sessions[session_id]["filename"])
+    session = _session_record(session_id)  # raises, and rehydrates from disk, as needed
+    base, ext = os.path.splitext(session["filename"])
     return f"{base}.edited{ext or _default_extension(session_id)}"
 
 
@@ -1390,8 +1410,8 @@ def pageset_summary(session_id):
     the page had forgotten which session was its own, so the only way on was
     to open the original file again — without the edits already made.
     """
-    current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
-    session = _sessions[session_id]
+    session = _session_record(session_id)  # raises, and rehydrates from disk, as needed
+    current = os.path.join(session["dir"], "current")
     if _is_gridset(current):
         with gridset.GridsetFile(current) as source:
             cols, rows = source.grid_dimension()
@@ -1482,7 +1502,7 @@ def add_buttons(session_id, page_id):
             "This page changed after the preview. Reload the page and review the "
             "edit again."
         )
-    session = _sessions[session_id]
+    session = _session_record(session_id)
     scratch = os.path.join(session["dir"], "scratch")
 
     with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
@@ -1540,8 +1560,8 @@ def add_page(session_id):
         raise PagesetError("'parent_page_id' is required.")
     parent_page_id = _bounded_int(parent_page_id, "parent_page_id", 1, 2**63 - 1)
 
-    current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
-    session = _sessions[session_id]
+    session = _session_record(session_id)  # raises, and rehydrates from disk, as needed
+    current = os.path.join(session["dir"], "current")
     scratch = os.path.join(session["dir"], "scratch")
     if _is_gridset(current):
         report, failure = _gridset_write(session_id, lambda source, dest: gridset.add_grid(
@@ -1607,8 +1627,8 @@ def _gridset_write(session_id: str, write):
     (``gridset``); a failure there leaves ``current`` exactly as it was and
     answers with the same 422 shape a failed page-set validation does.
     """
-    current = _current_path(session_id)
-    session = _sessions[session_id]
+    session = _session_record(session_id)
+    current = os.path.join(session["dir"], "current")
     scratch = os.path.join(session["dir"], "scratch")
     with session["lock"]:
         try:
@@ -1652,7 +1672,7 @@ def _gridset_write(session_id: str, write):
 
 
 def _gridset_edit(session_id, page_id, items, changes, removals, moves, fingerprint):
-    session = _sessions[session_id]
+    session = _session_record(session_id)
     report, failure = _gridset_write(session_id, lambda source, dest: gridset.edit_grid(
         source, dest, page_id, items, changes, removals, moves, fingerprint))
     if failure:
@@ -1705,7 +1725,7 @@ def download(session_id):
     current = _current_path(session_id)  # raises, and rehydrates from disk, as needed
     if not os.path.exists(current):
         raise PagesetError("Nothing to download; re-upload the file.")
-    session = _sessions[session_id]
+    session = _session_record(session_id)
     session["saved_edits"] = session.get("edits", 0)
     base, ext = os.path.splitext(session["filename"])
     return send_file(
@@ -1802,7 +1822,7 @@ def plan_board_import(session_id):
     parent_page_id = _bounded_int(parent_page_id, "parent_page_id", 1, 2**63 - 1)
     filename, boardset = _board_upload()
     plan, fingerprint = _import_plan(current, boardset, parent_page_id)
-    session = _sessions[session_id]
+    session = _session_record(session_id)
     stash = {"filename": filename, "parent_page_id": parent_page_id, "boardset": boardset}
     with session["lock"]:
         atomic_write(
@@ -1824,8 +1844,8 @@ def apply_board_import(session_id):
     fingerprint = _bounded_text(payload.get("fingerprint"), "fingerprint", 256)
     if not fingerprint:
         raise PagesetError("The review fingerprint is required. Review the import again.")
-    current = _current_path(session_id)
-    session = _sessions[session_id]
+    session = _session_record(session_id)
+    current = os.path.join(session["dir"], "current")
     try:
         with open(_import_stash(session["dir"]), encoding="utf-8") as handle:
             stash = json.load(handle)
@@ -1937,8 +1957,9 @@ def export_summary(session_id):
 
 @app.get("/api/pageset/<session_id>/export.obz")
 def export_obz(session_id):
-    current = _current_path(session_id)
-    return _obz_response(_exported_boards(current), _sessions[session_id]["filename"])
+    session = _session_record(session_id)
+    current = os.path.join(session["dir"], "current")
+    return _obz_response(_exported_boards(current), session["filename"])
 
 
 @app.get("/api/tdsnap/export")
