@@ -11,6 +11,17 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Fixed - Session lookups no longer crash when a session closes mid-request
+
+- **No more 500 when a session is closed while a request is using it.** Handlers
+  now take the session record from a single lookup instead of checking the
+  session and then indexing it a second time, so a request racing with session
+  eviction or expiry gets the usual "expired session" answer instead of a
+  `KeyError`.
+- **A damaged `meta.json` reads as "no session".** A session folder whose
+  metadata has the wrong shape (non-text filename, non-list warnings, negative
+  edit count) is no longer rehydrated into a record that fails later.
+
 ### Fixed - Saves survive a crash, and a blocked Grid 3 edit fails cleanly
 
 - **Durable saves.** Settings, the draft, session state, saved page sets and
