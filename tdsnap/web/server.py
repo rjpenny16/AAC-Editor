@@ -601,7 +601,7 @@ def _rehydrate_session(session_id: str):
         filename = meta["filename"]
         baseline_warnings = meta.get("baseline_warnings", [])
         edits = int(meta.get("edits", 0))
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
         return None
     # A hand-edited or truncated meta file must read as "no session", not as a
     # record that fails later in a handler with a TypeError.
@@ -1851,7 +1851,7 @@ def apply_board_import(session_id):
             stash = json.load(handle)
         if not isinstance(stash, dict) or not {"boardset", "parent_page_id"} <= stash.keys():
             raise ValueError("incomplete import stash")
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:
         raise PagesetError(
             "There is no reviewed import waiting. Choose the board file again."
         ) from exc

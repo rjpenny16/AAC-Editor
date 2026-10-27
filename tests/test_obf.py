@@ -973,3 +973,9 @@ def test_an_apply_with_a_damaged_import_stash_asks_for_a_fresh_review(client, se
                           json={"fingerprint": review["fingerprint"]}, headers=HEADERS)
     assert applied.status_code < 500
     assert "no reviewed import waiting" in applied.get_json()["error"]
+
+
+def test_deeply_nested_board_json_is_a_clean_error():
+    with pytest.raises(PagesetError, match="not valid JSON"):
+        obf._load_json(b"[" * 200_000, "board.obf")
+    assert obf._command_parts("[" * 200_000) is None

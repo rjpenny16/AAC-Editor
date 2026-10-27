@@ -102,7 +102,10 @@ def status(host: str = DEFAULT_HOST) -> dict:
         installed = payload.get("models", [])
         if not isinstance(installed, list):
             raise ValueError("Ollama returned invalid model data.")
-    except (URLError, OSError, TimeoutError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+    except (
+        URLError, OSError, TimeoutError, UnicodeError, json.JSONDecodeError, ValueError,
+        RecursionError,
+    ) as exc:
         return {
             "reachable": False,
             "models": [],
@@ -172,7 +175,7 @@ def generate_words(
     try:
         response_payload = json.loads(raw.decode("utf-8"))
         content = response_payload.get("message", {}).get("content", "")
-    except (json.JSONDecodeError, UnicodeError, AttributeError):
+    except (json.JSONDecodeError, UnicodeError, AttributeError, RecursionError):
         return [], "Ollama returned something that wasn't valid JSON."
     words = prompts.parse_items(
         content, count, kind, category,

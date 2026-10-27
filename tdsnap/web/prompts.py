@@ -518,7 +518,7 @@ def parse_items(
     for candidate in _json_candidates(text):
         try:
             data = json.loads(candidate)
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError, RecursionError):
             continue
         if isinstance(data, dict):
             found = data.get("items")

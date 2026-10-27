@@ -177,7 +177,7 @@ def _xml_shape(data: bytes) -> dict:
 def _json_shape(data: bytes) -> dict:
     try:
         value = json.loads(data)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         return {"json": "unparseable"}
     if isinstance(value, dict):
         return {"json_keys": sorted(value)[:60]}

@@ -150,3 +150,7 @@ def test_cli_imports_an_obz_into_a_gridset(tmp_path, capsys):
     with gridset.GridsetFile(edited) as result:
         assert set(result.names()) == {"Start", "Home", "Food"}
     assert cli.main(["import-obz", target, boards, "--parent-name", "nope"]) == 1
+
+
+def test_deeply_nested_json_shape_is_unparseable_not_a_crash():
+    assert formats._json_shape(b"[" * 200_000) == {"json": "unparseable"}

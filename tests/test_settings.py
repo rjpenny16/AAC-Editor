@@ -220,3 +220,13 @@ def test_a_non_list_templates_key_is_ignored_rather_than_trusted(isolated_data_d
     with open(path, "w", encoding="utf-8") as handle:
         json.dump({"version": 1, "preferences": {}, "draft": None, "templates": "nope"}, handle)
     assert settings.load()["templates"] == []
+
+
+def test_deeply_nested_json_is_quarantined_not_fatal(isolated_data_dir):
+    # A few hundred KB of "[" is under the size cap but overflows the JSON parser's
+    # recursion limit, which raises RecursionError rather than ValueError.
+    with open(settings.settings_path(), "w", encoding="utf-8") as handle:
+        handle.write("[" * 200_000)
+    assert settings.load() == {"version": 1, "preferences": {}, "draft": None, "templates": []}
+    assert not os.path.exists(settings.settings_path())
+    assert any(".corrupt-" in name for name in os.listdir(isolated_data_dir))
