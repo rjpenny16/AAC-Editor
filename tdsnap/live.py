@@ -876,7 +876,7 @@ def _command_kind(commands, command_flags, page_links):
         return "navigate"
     try:
         parsed = json.loads(commands or "")
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         return "unknown"
     values = parsed.get("$values") if isinstance(parsed, dict) else None
     if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], dict):

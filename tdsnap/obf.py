@@ -176,7 +176,7 @@ def _load_json(data: bytes, what: str):
                            f"({MAX_BOARD_BYTES // (1024 * 1024)} MB).")
     try:
         return json.loads(data.decode("utf-8-sig"))
-    except (UnicodeDecodeError, ValueError) as exc:
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise PagesetError(f"{what} is not valid JSON: {exc}") from exc
 
 
@@ -572,7 +572,7 @@ def _command_parts(serialized) -> Optional[list[dict]]:
     """The commands of a TD Snap CommandSequence, or ``None`` when unreadable."""
     try:
         document = json.loads(serialized or "")
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         return None
     values = document.get("$values") if isinstance(document, dict) else None
     if not isinstance(values, list) or not all(isinstance(v, dict) for v in values):

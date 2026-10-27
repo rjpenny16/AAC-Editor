@@ -11,6 +11,21 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Fixed - Deeply nested JSON no longer crashes the app
+
+- **A hostile or damaged JSON file now reads as "invalid", not as a crash.** A
+  file of a few hundred thousand `[` characters fits under every size cap but
+  overflows the JSON parser's recursion limit, which raises `RecursionError`
+  rather than `ValueError`. That slipped past the handlers for the saved
+  settings file (so the app failed on every start instead of quarantining it),
+  Open Board files, session metadata, the import stash, the format inspector,
+  and local-AI replies. Each now treats it like any other malformed JSON.
+
+### Changed - CI jobs can no longer hang for hours
+
+- Every workflow job has a `timeout-minutes` limit, and a newer push to a pull
+  request cancels that PR's superseded test run.
+
 ### Fixed - Session lookups no longer crash when a session closes mid-request
 
 - **No more 500 when a session is closed while a request is using it.** Handlers

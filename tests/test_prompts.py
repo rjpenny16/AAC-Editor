@@ -27,3 +27,7 @@ def test_golden_fixture_is_not_empty():
 )
 def test_phrase_function_matches_the_shared_golden_cases(case):
     assert prompts.phrase_function(case["label"], case.get("suggested")) == case["expected"]
+
+
+def test_deeply_nested_model_reply_is_not_an_answer():
+    assert prompts.parse_items("[" * 200_000, 5) is None

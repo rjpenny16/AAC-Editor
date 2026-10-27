@@ -96,7 +96,7 @@ def load() -> dict:
                 data = json.load(handle)
         except FileNotFoundError:
             return _empty()
-        except ValueError:
+        except (ValueError, RecursionError):  # deeply nested JSON is corrupt, not fatal
             _quarantine(path)
             return _empty()
         if not isinstance(data, dict) or not isinstance(data.get("preferences"), dict):
