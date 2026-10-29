@@ -40,6 +40,11 @@ FLOORS = {
     "tdsnap/web/engines.py": 90,
     "tdsnap/web/grounding.py": 85,
     "tdsnap/web/localai.py": 75,
+    # The optional Ollama client must turn every failure into a message: a
+    # raised error here would take the whole suggestion panel down with it.
+    "tdsnap/web/ollama.py": 92,
+    # The command-line entry point; its error handling decides exit codes.
+    "tdsnap/cli.py": 84,
     # Phase 10. The Grid 3 write path; its automation half only runs on Windows
     # against Grid 3, so the floor covers the planning, verification, rollback,
     # and undo logic that the fake Edit Mode in tests/test_grid3.py exercises.

@@ -71,3 +71,26 @@ def test_cli_refuses_to_overwrite_source(seeded_source, capsys):
     assert code == 1
     assert "overwrite the original" in capsys.readouterr().err
     assert hashlib.sha256(pathlib.Path(seeded_source).read_bytes()).hexdigest() == before
+
+
+def test_list_prints_vocabulary_pages(seeded_source, capsys):
+    assert main(["list", seeded_source]) == 0
+    assert "Home Page" in capsys.readouterr().out
+
+
+def test_inspect_prints_schema_and_row_counts(seeded_source, capsys):
+    assert main(["inspect", seeded_source]) == 0
+    out = capsys.readouterr().out
+    assert "SchemaVersion:" in out and "Button" in out
+
+
+def test_verify_show_sync_survives_a_bad_timestamp(seeded_source, capsys):
+    with sqlite3.connect(seeded_source) as conn:
+        conn.execute("UPDATE Page SET Timestamp = 'garbage' WHERE PageType = 1")
+    assert main(["verify", seeded_source, "--show-sync"]) in (0, 1)
+    assert "invalid timestamp" in capsys.readouterr().out
+
+
+def test_missing_file_is_an_error_not_a_traceback(tmp_path, capsys):
+    assert main(["verify", str(tmp_path / "absent.sps")]) == 1
+    assert "Error:" in capsys.readouterr().err
