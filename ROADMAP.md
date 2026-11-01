@@ -724,6 +724,101 @@ never content.
 
 ---
 
+# Track E: Easy, dependable, finished
+
+Phases 0 to 12b built the capability. Before more reach (Phases 8, 13, 14), the app needs to be
+simpler for a clinician, behave the same way every time, and look finished. These phases are
+ordered so each makes the next safer: measure and fix failures first, then simplify the flow, then
+restyle a flow that has stopped moving. Everything here is verifiable in CI; work that needs a
+Windows machine with TD Snap and Grid 3 is collected at the end of Phase 19.
+
+## Phase 16: Know when it breaks *(~1 to 2 weeks)*
+
+Goal: every failure a person can hit produces a clear message, and the team can reproduce it.
+
+1. **Close QA_PLAN Phase 2.** Cover the click, type, and verify paths of `live.py` and `grid3.py`
+   with mocks at the `uiautomation` boundary, and extend `tests/test_fault_injection.py` to live
+   add, change, move, remove, and undo: interrupt mid-edit and assert the prior *content* returns.
+   Raise floors for `live.py`, `grid3.py`, `web/ollama.py`, and `web/desktop.py` as each earns it.
+2. **Failure catalogue** in `docs/QA_PLAN.md`: every way an edit can fail (app closed mid-edit,
+   wrong page, page changed since review, file locked, disk full, session expired, model missing,
+   port in use), with the message shown, the recovery action, and the test that pins it.
+3. **Error copy pass.** One mapping from server errors to a plain sentence plus one next step. Raw
+   exception text goes to the support report, never to the screen.
+4. **Windows browser coverage.** Run the Playwright suite on `windows-latest` with Edge, the
+   closest CI stand-in for WebView2.
+5. **Lost TD Snap, said once**: *shipped.* The live monitor used to swallow every failed or
+   "not running" poll and try again every 1.5 s forever, so a closed TD Snap or a sleeping laptop
+   showed nothing. `static/livewatch.js` now decides: three misses in a row show one banner over
+   the page ("AAC Editor can't see TD Snap right now"), planned buttons stay, polling backs off to
+   once every 15 s, and **Check again** or the first good poll closes it.
+
+**Exit:** every catalogue row has a test and a plain message · live paths have fault-injection
+tests · browser suite green on Linux Chromium and Windows Edge.
+
+## Phase 17: Fewer steps, fewer words *(~2 weeks)*
+
+Goal: a first-time clinician gets from launch to an applied change without opening help text.
+
+1. **Connect screen.** Name the cards by what the person has: "TD Snap", "Grid 3", and "A file I
+   exported" (`.sps`, `.spb`, or `.gridset`; `formats.py` works out which). Today the third card
+   says "TD Snap exported file" and is also how a Grid 3 file is opened.
+2. **Build screen, one job per area.** Word entry and the page preview stay visible. Import,
+   Templates, Open Board, and AI suggestions move behind one "More ways to add" menu, each as a
+   dialog. AI setup, Ollama, and engine choice move to Settings.
+3. **Plain language.** Add the `strings.js` Phase 1 planned and move copy there as files are
+   touched; no internal terms (session, fingerprint, UIA) in anything a person reads. This also
+   makes Phase 8 mechanical.
+4. **Result screen** leads with one sentence ("3 buttons added to Snacks. Checked and saved.") and
+   the two next actions; the checks list stays open whenever a check warns.
+5. **Guided mode** gets short first-time tips where people stall: choosing a page, the first drag,
+   and the review screen.
+6. **A moderated walkthrough with 3 to 5 SLPs** (add five words, change a button, undo, import a
+   list) feeds Phase 18.
+
+**Exit:** a new person adds five words to an existing page without opening help · no internal
+jargon on screen · the Build side column shows at most three areas at once · axe passes on every
+new dialog.
+
+## Phase 18: A design system, then a visual refresh *(~2 to 3 weeks)*
+
+1. **Tokens.** Spacing, type, radius, and elevation scales in `:root`; replace the ~60 hard-coded
+   colours; merge the two dark-mode and two forced-colours blocks; a stylelint rule keeps raw
+   colours out.
+2. **Component inventory.** A dev-only styleguide page showing every component in every state, in
+   light, dark, and forced colours.
+3. **Split `app.css`** into flat files by area so the package-data glob still ships them, with a
+   test that each is served.
+4. **Refresh Connect, Build, and Review/Result.** The page preview as the hero, a clearer
+   selected/locked/new cell language, 44 px touch targets, one primary-action position. Record
+   before and after in `design-qa.md`.
+5. **Replace the 291 KB logo PNG** with an SVG (Phase 0 item still open).
+
+**Exit:** no raw colour outside `:root` · WCAG 2.1 AA on every screen · contrast pairs re-measured.
+
+## Phase 19: Starts every time *(~1 to 2 weeks)*
+
+1. **Startup failures.** Port in use, a stale instance, and missing WebView2, each with a message
+   and a fallback to the default browser; `desktop.py` gets a coverage floor.
+2. **Version awareness.** Name the TD Snap and Grid 3 versions last verified in the README and the
+   support report; the Connect screen notes an unverified version (a message, never a block).
+3. **AI failure paths.** Timeouts, missing model, partial download, and junk replies each get one
+   sentence and one action.
+4. **Packaging check.** `pip install .` serves every static file, including the Phase 18 split.
+
+**Deferred until a Windows machine with TD Snap and Grid 3 is available:** `TDSNAP_LIVE_E2E=1`
+and `GRID3_LIVE_E2E=1` on disposable copies; the installer and `smoke_test.ps1`; the
+quarantine-user import in IMPORT_SAFETY; retiring `TDSNAP_LINK_ICON_*` / `TDSNAP_ADD_ICON_*`; and
+Phase 12d.
+
+## Phase 20: Polish and release *(~1 week)*
+
+Keyboard-only and screen-reader (NVDA, Narrator) passes with focus return on every dialog; keyed
+preview cells instead of a full rebuild on each `renderWords()`; refreshed screenshots, README,
+and CHANGELOG; a minor release.
+
+---
+
 ## Rules that apply to every phase
 
 1. Every new write operation ships with all four: a review step naming the exact change, a fingerprint

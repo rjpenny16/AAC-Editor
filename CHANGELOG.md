@@ -11,6 +11,22 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Added - AAC Editor says so when TD Snap goes away
+
+- **A closed or unresponsive TD Snap is no longer silent.** While you build on
+  a page open in TD Snap, AAC Editor checks which page is showing. If TD Snap
+  is closed, or stops answering for a few seconds in a row, a banner over the
+  page now says AAC Editor can't see TD Snap, that your planned buttons are
+  still there, and that nothing was changed. **Check again** looks straight
+  away; the banner closes by itself once TD Snap answers.
+- **Fewer checks while it is gone.** Instead of asking every 1.5 seconds
+  forever, the checks slow down to once every 15 seconds until TD Snap is back.
+
+### Changed - Roadmap
+
+- ROADMAP.md gains Track E (Phases 16 to 20): reliability, ease of use, a
+  design system and visual refresh, startup robustness, and a polish release.
+
 ### Fixed - Deeply nested JSON no longer crashes the app
 
 - **A hostile or damaged JSON file now reads as "invalid", not as a crash.** A

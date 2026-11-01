@@ -641,6 +641,8 @@ summary {
 .alert strong { display: block; }
 .alert ul { margin: 0.4rem 0 0; padding-left: 1.25rem; }
 .alert.warning { color: var(--warning); background: var(--warning-soft); }
+.alert.live-lost { margin: 0 0 0.75rem; }
+.alert.live-lost p { margin: 0.3rem 0 0.6rem; color: var(--ink); }
 
 .app-activity {
   position: fixed;

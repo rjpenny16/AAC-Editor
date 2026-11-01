@@ -1155,6 +1155,35 @@ test('a step heading is not ringed when the wizard focuses it', async ({ page })
   expect(next.boxShadow).toBe('none');
 });
 
+test('TD Snap closing mid-session shows one banner, and Check again clears it', async ({ page }) => {
+  test.setTimeout(30_000);
+  let running = true;
+  await mockTD(page, {
+    status: () => (running
+      ? defaultStatus()
+      : { ok: true, available: true, running: false, unlocked: true }),
+  });
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await expect(page.locator('#live-lost')).toBeHidden();
+
+  running = false;
+  await expect(page.locator('#live-lost')).toBeVisible({ timeout: 12_000 });
+  await expect(page.locator('#live-lost')).toContainText('can’t see TD Snap');
+  await expect(page.locator('#preview-live-text')).toHaveText('Not connected');
+  // Planned work is untouched while TD Snap is away.
+  await expect(page.locator('#chipbox')).toContainText('apple');
+  const results = await new AxeBuilder({ page }).include('#live-lost').analyze();
+  expect(results.violations).toEqual([]);
+
+  running = true;
+  await page.locator('#live-lost-retry').click();
+  await expect(page.locator('#live-lost')).toBeHidden();
+  await expect(page.locator('#preview-live-text')).toHaveText('Live · Eating');
+  await expect(page.locator('#chipbox')).toContainText('apple');
+});
+
 test('locked Windows reports a plain-language connection error', async ({ page }) => {
   let locked = true;
   await page.route('**/api/tdsnap/status', (route) =>
