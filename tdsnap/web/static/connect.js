@@ -12,6 +12,7 @@ import { renderWords } from "./chips.js";
 import { emptyEdits, reconcile } from "./edits.js";
 import { parentFilter, parentSelect, renderParents, titleOf } from "./parents.js";
 import { savePreference } from "./settings.js";
+import { createLiveWatch } from "./livewatch.js";
 import { loadVocabulary } from "./vocabulary.js";
 import { clearBuildError, setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
 
@@ -20,11 +21,17 @@ import { clearBuildError, setOperation, setPageStyle, show, showBuildError } fro
 let liveMonitor = null;
 let liveSyncing = false;
 let layoutRequest = 0;
+/* Bumped on every start and stop, so a poll that was already in flight when
+   the monitor stopped or restarted does not schedule another one. */
+let monitorGeneration = 0;
+const liveWatch = createLiveWatch();
 
 /* Stop following the page open in TD Snap (used when a session is torn down). */
 function stopLiveMonitor() {
-  clearInterval(liveMonitor);
+  clearTimeout(liveMonitor);
   liveMonitor = null;
+  monitorGeneration += 1;
+  setLiveLost(false);
 }
 
 /* ---------- step 1: choose and connect to an AAC app ---------- */
@@ -310,7 +317,7 @@ async function useFileSession(data) {
   if (!data.session_id || !Array.isArray(data.pages) || !data.pages.length) {
     throw new Error("The page set does not contain any editable pages.");
   }
-  clearInterval(liveMonitor);
+  stopLiveMonitor();
   rememberFileSession(data.session_id);
   state.fileUnsaved = false;
   state.mode = "file";
@@ -675,21 +682,55 @@ async function loadTargetLayout(pageName, currentOnly = false) {
 
 /* Every poll walks TD Snap's accessibility tree, which is not free for TD Snap
    either; once every 1.5 s still follows a page change well within the time
-   it takes somebody to look back at this window. */
-const LIVE_MONITOR_MS = 1500;
-
+   it takes somebody to look back at this window. When TD Snap stops
+   answering, livewatch.js slows the polls down and decides when to say so. */
 function startLiveMonitor() {
-  clearInterval(liveMonitor);
-  liveMonitor = setInterval(syncLivePreview, LIVE_MONITOR_MS);
+  stopLiveMonitor();
+  liveWatch.reset();
+  queueLivePoll(monitorGeneration);
+}
+
+function queueLivePoll(generation) {
+  liveMonitor = setTimeout(async () => {
+    await syncLivePreview();
+    if (generation === monitorGeneration) queueLivePoll(generation);
+  }, liveWatch.nextDelay());
+}
+
+/* The banner over the page preview that says TD Snap has gone quiet. It is
+   advisory: planned buttons stay, and review still re-reads TD Snap before
+   anything is written. */
+function setLiveLost(lost) {
+  const banner = $("live-lost");
+  if (!banner || banner.hidden === !lost) return;
+  banner.hidden = !lost;
+  $("preview-live-text").textContent = lost
+    ? "Not connected"
+    : state.currentPage ? `Live · ${state.currentPage}` : "Live";
+}
+
+function noteLiveMiss() {
+  if (liveWatch.miss()) setLiveLost(true);
+}
+
+function noteLiveOk() {
+  if (liveWatch.ok()) setLiveLost(false);
+}
+
+/* "Check again" on the banner: poll now, at full speed, instead of waiting
+   out the backoff. */
+function checkLiveAgain() {
+  liveWatch.hurry();
+  if (!liveSyncing) syncLivePreview();
 }
 
 async function syncLivePreview() {
   // Only mirror TD Snap while editing an existing page. In new-page mode the
   // builder owns the grid, parent, and word layout — following the live page
   // would overwrite the design (e.g. collapse a topic page onto a smaller grid).
-  // A hidden tab cannot show the result, and this fires every 750 ms for the
-  // whole session — no reason to keep walking TD Snap's accessibility tree
-  // while nobody is looking at it.
+  // A hidden tab cannot show the result, and this fires for the whole
+  // session — no reason to keep walking TD Snap's accessibility tree while
+  // nobody is looking at it.
   if (document.hidden) return;
   if (liveSyncing || state.targetLoading || state.mode !== "live" ||
       state.provider !== "tdsnap" || state.operation !== "existing" ||
@@ -704,7 +745,13 @@ async function syncLivePreview() {
     if (state.targetLoading || state.parentId !== selectedPage || state.operation !== "existing") return;
     // "busy": AAC Editor is already driving TD Snap for something the user
     // asked for. The next poll will look again.
-    if (status.busy || !status.running || !status.page || status.page === state.currentPage) return;
+    if (status.busy) return;
+    if (!status.running) {
+      noteLiveMiss();
+      return;
+    }
+    noteLiveOk();
+    if (!status.page || status.page === state.currentPage) return;
     const previousPage = state.currentPage;
     const layout = await loadTargetLayout("", true);
     if (!layout) return;
@@ -728,13 +775,15 @@ async function syncLivePreview() {
     renderParents(parentFilter.value);
     renderWords();
   } catch {
-    // TD Snap briefly has no page grid while navigating; the next poll retries.
+    // TD Snap briefly has no page grid while navigating, so one miss is
+    // normal; livewatch.js only reports it after several in a row.
+    noteLiveMiss();
   } finally {
     liveSyncing = false;
   }
 }
 
 export {
-  followGrid3Page, layoutSettled, loadTargetLayout, refreshDetectedPages, rememberFileSession,
+  checkLiveAgain, followGrid3Page, layoutSettled, loadTargetLayout, refreshDetectedPages, rememberFileSession,
   resumeFileSession, selectProvider, stopLiveMonitor, syncFileSave,
 };

@@ -6,7 +6,7 @@ import { $, setBusy, setActivity } from "./dom.js";
 import { configReady, api } from "./api.js";
 import { wireRadioGroups } from "./a11y.js";
 import { renderWords } from "./chips.js";
-import { resumeFileSession, selectProvider } from "./connect.js";
+import { checkLiveAgain, resumeFileSession, selectProvider } from "./connect.js";
 import { renderPreview } from "./preview.js";
 import { hasUnsavedWork } from "./support.js";
 import { getPreferences } from "./settings.js";
@@ -22,6 +22,11 @@ import "./boards.js";
 import "./queue.js";
 import "./templates.js";
 import "./settings-panel.js";
+
+
+/* ---------- live connection ---------- */
+
+$("live-lost-retry").addEventListener("click", checkLiveAgain);
 
 
 /* ---------- quit (browser mode) ---------- */
