@@ -11,6 +11,16 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Fixed - model download failures are plain and durable
+
+- **A failed model download now says what to do next.** A dropped connection,
+  a server error, or a full disk shows one plain sentence instead of a raw
+  system message that could include a local file path. The raw text is kept
+  in the download state's `detail` for the support report.
+- **The downloaded model is flushed to disk before it replaces the old one,**
+  like every other file this app writes, so a power loss cannot leave a
+  zero-length model under its final name.
+
 ### Added - AAC Editor says so when TD Snap goes away
 
 - **A closed or unresponsive TD Snap is no longer silent.** While you build on

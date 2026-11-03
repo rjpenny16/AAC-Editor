@@ -1256,3 +1256,43 @@ def test_private_description_disambiguates_sources_locally(ai_client, monkeypatc
         {"used": True, **candidates[0], "candidates": candidates, "alternatives": []},
         "The planet, not the element",
     )["title"] == "Mercury (planet)"
+
+
+# --- download failures reach the screen as plain sentences -----------------
+
+def test_a_dropped_connection_is_a_plain_sentence_and_keeps_the_raw_text(
+    isolated_model, monkeypatch
+):
+    import urllib.error
+
+    def refuse(*_args, **_kwargs):
+        raise urllib.error.URLError("[Errno 104] Connection reset by peer")
+
+    monkeypatch.setattr(localai.urllib.request, "urlopen", refuse)
+    localai.start_download()
+    state = _settle()
+    assert state["status"] == "error"
+    assert "internet connection" in state["error"]
+    assert "Errno" not in state["error"]
+    assert "Connection reset" in state["detail"]  # kept for the support report
+    assert not os.path.exists(localai.model_path() + ".part")
+
+
+def test_a_full_disk_mid_download_never_shows_the_local_path():
+    import errno
+
+    exc = OSError(errno.ENOSPC, "No space left on device", r"C:\Users\sam\x.gguf.part")
+    message = localai.plain_download_error(exc)
+    assert "disk filled up" in message
+    assert "sam" not in message
+
+
+def test_the_model_is_installed_with_the_durable_replace(isolated_model, monkeypatch):
+    calls = []
+    real = localai.replace_durably
+    monkeypatch.setattr(
+        localai, "replace_durably", lambda *a: (calls.append(a), real(*a))[1]
+    )
+    localai.start_download()
+    assert _settle()["status"] == "ready"
+    assert len(calls) == 1 and calls[0][1] == localai.model_path()

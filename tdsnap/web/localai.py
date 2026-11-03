@@ -29,14 +29,17 @@ replaces the registry with the single model it names.
 """
 
 import contextlib
+import errno
 import hashlib
 import os
 import shutil
 import threading
+import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from typing import NamedTuple, Optional
 
+from ..atomic import replace_durably
 from . import prompts
 from .settings import ensure_private_dir
 
@@ -184,7 +187,10 @@ DEFAULT_KEY = REGISTRY[0].key
 # never fill the disk and fail (or break the user's machine) at 99%.
 REQUIRED_FREE_BYTES = REGISTRY[0].required_free_bytes
 
-_download = {"status": "idle", "done": 0, "total": 0, "error": None, "model": DEFAULT_KEY}
+_download = {
+    "status": "idle", "done": 0, "total": 0, "error": None, "detail": None,
+    "model": DEFAULT_KEY,
+}
 _download_lock = threading.Lock()
 _llm = None
 _llm_path = None
@@ -391,6 +397,29 @@ def _free_disk_bytes() -> int:
         return REQUIRED_FREE_BYTES  # can't tell; let the download try
 
 
+def plain_download_error(exc: BaseException) -> str:
+    """One plain sentence and a next step for a failed download.
+
+    Raw exception text can carry a local file path or a socket error number, so
+    it goes to ``detail`` (for the support report), never to the screen. A
+    ``ValueError`` is one of this module's own checks and is already plain.
+    """
+    if isinstance(exc, ValueError):
+        return str(exc)
+    if isinstance(exc, urllib.error.HTTPError):
+        return (f"The model server answered with an error (HTTP {exc.code}). "
+                "Try again in a little while.")
+    if isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError)):
+        return ("Couldn't reach the model server. Check your internet "
+                "connection and try again.")
+    if isinstance(exc, OSError) and exc.errno in (errno.ENOSPC, errno.EDQUOT):
+        return "The disk filled up during the download. Free some space and try again."
+    if isinstance(exc, OSError):
+        return ("Couldn't save the model file. Check that the folder is "
+                "writable and try again.")
+    return "The model download failed. Try again."
+
+
 def start_download(key: Optional[str] = None) -> dict:
     """Kick off the one-time model download in a background thread."""
     choice = choice_for(key)
@@ -415,7 +444,8 @@ def start_download(key: Optional[str] = None) -> dict:
             )
             return dict(_download)
         _download.update(
-            status="downloading", done=0, total=0, error=None, model=choice.key
+            status="downloading", done=0, total=0, error=None, detail=None,
+            model=choice.key
         )
 
     def work():
@@ -458,7 +488,7 @@ def start_download(key: Optional[str] = None) -> dict:
                 raise ValueError("The model download has the wrong size.")
             if choice.sha256 and digest.hexdigest().lower() != choice.sha256.lower():
                 raise ValueError("The model download failed its integrity check.")
-            os.replace(part, model_path(choice.key))
+            replace_durably(part, model_path(choice.key))
             with _validation_lock:
                 _validations.pop(choice.key, None)
             with _download_lock:
@@ -467,7 +497,9 @@ def start_download(key: Optional[str] = None) -> dict:
             with contextlib.suppress(OSError):
                 os.remove(part)
             with _download_lock:
-                _download.update(status="error", error=str(exc))
+                _download.update(
+                    status="error", error=plain_download_error(exc), detail=str(exc)
+                )
 
     threading.Thread(target=work, daemon=True).start()
     return download_state()

@@ -212,7 +212,7 @@ def smoke_localai(tmp_path_factory):
             time.sleep(2)
         final = localai.download_state()
         if final["status"] != "ready":
-            error = str(final.get("error") or "")
+            error = str(final.get("detail") or final.get("error") or "")
             if TRANSPORT_FAILURE.search(error):
                 pytest.skip(f"could not fetch the model from the CDN: {error}")
             pytest.fail(f"model download failed: {final}")
