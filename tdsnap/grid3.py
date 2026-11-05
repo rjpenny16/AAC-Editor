@@ -1728,12 +1728,16 @@ def edit_page(items=(), changes=(), removals=(), moves=(), fingerprint=None,
                 "restored: " + "; ".join(problems) + "."
             )
     except Exception:
-        if not rollback_verified:
-            if restored():
-                _restore_unsaved(auto, undo_steps)
-            else:
-                _rollback_saved(auto, restored, max(undo_steps, len(normalized) * 4) + 8)
-        _leave_edit_mode(auto)
+        # A rollback that itself fails must still hand Grid 3 back to the
+        # viewer, or the person is left stranded in edit mode.
+        try:
+            if not rollback_verified:
+                if restored():
+                    _restore_unsaved(auto, undo_steps)
+                else:
+                    _rollback_saved(auto, restored, max(undo_steps, len(normalized) * 4) + 8)
+        finally:
+            _leave_edit_mode(auto)
         raise
     _leave_edit_mode(auto)
     plan = {"items": normalized, "changes": changes, "removals": removals, "moves": moves}
@@ -1931,12 +1935,16 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
                 "restored: " + "; ".join(problems) + "."
             )
     except Exception:
-        if not rollback_verified:
-            if restored():
-                _restore_unsaved(auto, undo_steps)
-            else:
-                _rollback_saved(auto, restored, max(undo_steps, len(normalized) * 4) + 8)
-        _leave_edit_mode(auto)
+        # A rollback that itself fails must still hand Grid 3 back to the
+        # viewer, or the person is left stranded in edit mode.
+        try:
+            if not rollback_verified:
+                if restored():
+                    _restore_unsaved(auto, undo_steps)
+                else:
+                    _rollback_saved(auto, restored, max(undo_steps, len(normalized) * 4) + 8)
+        finally:
+            _leave_edit_mode(auto)
         raise
     _leave_edit_mode(auto)
     forget_last_edit()

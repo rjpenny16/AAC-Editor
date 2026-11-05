@@ -230,3 +230,13 @@ def test_deeply_nested_json_is_quarantined_not_fatal(isolated_data_dir):
     assert settings.load() == {"version": 1, "preferences": {}, "draft": None, "templates": []}
     assert not os.path.exists(settings.settings_path())
     assert any(".corrupt-" in name for name in os.listdir(isolated_data_dir))
+
+
+def test_two_corrupt_files_in_the_same_second_are_both_kept(isolated_data_dir, monkeypatch):
+    monkeypatch.setattr(settings.time, "strftime", lambda _fmt: "20260101-000000")
+    for text in ("{first", "{second"):
+        with open(settings.settings_path(), "w", encoding="utf-8") as handle:
+            handle.write(text)
+        assert settings.load()["templates"] == []
+    kept = sorted(name for name in os.listdir(isolated_data_dir) if "corrupt" in name)
+    assert len(kept) == 2

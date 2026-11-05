@@ -75,9 +75,16 @@ def _empty() -> dict:
 
 
 def _quarantine(path: str) -> None:
+    # Two corrupt files in the same second must not overwrite each other: the
+    # earlier copy is the only evidence of what went wrong.
     stamp = time.strftime("%Y%m%d-%H%M%S")
+    target = f"{path}.corrupt-{stamp}"
+    counter = 1
+    while os.path.exists(target):
+        counter += 1
+        target = f"{path}.corrupt-{stamp}-{counter}"
     with contextlib.suppress(OSError):
-        os.replace(path, f"{path}.corrupt-{stamp}")
+        os.replace(path, target)
 
 
 def load() -> dict:
