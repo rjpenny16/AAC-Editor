@@ -11,6 +11,14 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Fixed - failed rollbacks and repeated corrupt settings files
+
+- **Grid 3 is handed back to the viewer even when a rollback fails.** If the
+  rollback after a bad save itself failed, the editor stayed in edit mode.
+  Leaving edit mode now always runs.
+- **Two corrupt settings files in the same second no longer overwrite each
+  other.** The earlier quarantined copy is kept.
+
 ### Fixed - model download failures are plain and durable
 
 - **A failed model download now says what to do next.** A dropped connection,

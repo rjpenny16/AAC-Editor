@@ -841,3 +841,17 @@ def test_explain_survives_a_status_it_cannot_read():
     assert report["state"] == "unsupported-platform"
     assert report["ready"] is False
     assert grid3.explain(None)["summary"]
+
+
+def test_edit_page_leaves_edit_mode_even_when_the_rollback_fails(grid_root, monkeypatch):
+    fake = FakeGrid3(monkeypatch, grid_root, faithful=False)
+
+    def failing_rollback(auto, restored, maximum):
+        raise PagesetError("Grid 3 could not restore the verified pre-edit content.")
+
+    monkeypatch.setattr(grid3, "_rollback_saved", failing_rollback)
+    fingerprint = grid3._fingerprint(fake.active)
+    with pytest.raises(PagesetError, match="could not restore"):
+        grid3.edit_page(items=[{"label": "one", "slot": 1}, {"label": "two", "slot": 2}],
+                        fingerprint=fingerprint)
+    assert fake.actions[-1] == "leave"
