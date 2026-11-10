@@ -2225,13 +2225,10 @@ def ai_words():
 
 
 def instance_running(port: int) -> bool:
-    try:
-        with localhttp.open_loopback(
-            urllib.request.Request(f"http://127.0.0.1:{port}/api/health"), timeout=1
-        ) as response:
-            return json.load(response).get("app") == APP_ID
-    except Exception:
-        return False
+    health = localhttp.loopback_json(
+        urllib.request.Request(f"http://127.0.0.1:{port}/api/health"), timeout=1
+    )
+    return health.get("app") == APP_ID
 
 
 def pick_port(preferred: int = DEFAULT_PORT) -> int:
@@ -2343,14 +2340,10 @@ def _exit_cleanly_on_signals() -> None:
 def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
     if instance_running(port):
         url = f"http://127.0.0.1:{port}"
-        try:
-            with localhttp.open_loopback(
-                urllib.request.Request(f"{url}/api/focus", method="POST"),  # noqa: S310
-                timeout=2,
-            ) as response:
-                focused = json.load(response).get("focused", False)
-        except Exception:
-            focused = False
+        focused = localhttp.loopback_json(
+            urllib.request.Request(f"{url}/api/focus", method="POST"),  # noqa: S310
+            timeout=2,
+        ).get("focused", False)
         if focused:
             print("Already running — brought its window to the front.")
         elif open_browser:

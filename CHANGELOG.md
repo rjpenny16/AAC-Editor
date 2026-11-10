@@ -11,6 +11,14 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Fixed - leftover downloads and startup probes
+
+- **A killed model download no longer leaves gigabytes behind.** Starting a
+  download now removes `.part` files from an earlier one that was force-quit.
+- **Startup probes of a busy port are bounded.** The "is AAC Editor already
+  running?" and "bring its window forward" checks share one capped, loopback-only
+  JSON reader, so another program on the port cannot stall or crash startup.
+
 ### Fixed - failed rollbacks and repeated corrupt settings files
 
 - **Grid 3 is handed back to the viewer even when a rollback fails.** If the

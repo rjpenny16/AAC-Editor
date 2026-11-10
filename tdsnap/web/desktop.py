@@ -16,7 +16,6 @@ falls back to the classic browser mode so the app still works.
 
 import contextlib
 import ctypes
-import json
 import os
 import subprocess
 import sys
@@ -122,13 +121,9 @@ class NativeApi:
 def _focus_running(port: int) -> None:
     """A copy is already running: raise its window, or open a tab to it."""
     url = f"http://127.0.0.1:{port}"
-    try:
-        with localhttp.open_loopback(
-            urllib.request.Request(f"{url}/api/focus", method="POST"), timeout=2  # noqa: S310
-        ) as response:
-            focused = json.load(response).get("focused", False)
-    except Exception:
-        focused = False
+    focused = localhttp.loopback_json(
+        urllib.request.Request(f"{url}/api/focus", method="POST"), timeout=2  # noqa: S310
+    ).get("focused", False)
     if not focused:
         # The running copy is in browser mode; point a tab at it.
         server._open_browser(url)
