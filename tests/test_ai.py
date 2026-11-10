@@ -1296,3 +1296,16 @@ def test_the_model_is_installed_with_the_durable_replace(isolated_model, monkeyp
     localai.start_download()
     assert _settle()["status"] == "ready"
     assert len(calls) == 1 and calls[0][1] == localai.model_path()
+
+
+def test_a_download_clears_part_files_left_by_a_killed_one(isolated_model, monkeypatch):
+    # A force-quit mid-download skips the thread's cleanup; the multi-GB .part must
+    # not sit on disk (or count against free space) once the next download starts.
+    stale = os.path.join(os.path.dirname(localai.model_path()), "other-model.gguf.part")
+    os.makedirs(os.path.dirname(stale), exist_ok=True)
+    with open(stale, "wb") as handle:
+        handle.write(b"GGUF-half-written")
+    _install(monkeypatch, _choice(isolated_model, size=None, sha256=None))
+    localai.start_download()
+    _settle()
+    assert not os.path.exists(stale)

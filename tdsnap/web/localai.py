@@ -420,6 +420,22 @@ def plain_download_error(exc: BaseException) -> str:
     return "The model download failed. Try again."
 
 
+def _remove_stale_parts() -> None:
+    """Delete ``.part`` files left by a download that was killed mid-transfer.
+
+    A crash, power loss, or force-quit skips the cleanup in the download thread,
+    and a ``.part`` file can be several gigabytes. It would otherwise sit there
+    forever (a different model never overwrites it) and eat the free space the
+    next download is checked against. Only called while no download is running.
+    """
+    directory = _models_dir()
+    with contextlib.suppress(OSError):
+        for name in os.listdir(directory):
+            if name.endswith(".part"):
+                with contextlib.suppress(OSError):
+                    os.remove(os.path.join(directory, name))
+
+
 def start_download(key: Optional[str] = None) -> dict:
     """Kick off the one-time model download in a background thread."""
     choice = choice_for(key)
@@ -433,6 +449,7 @@ def start_download(key: Optional[str] = None) -> dict:
             )
             return dict(_download)
         _models_dir(create=True)  # a download is about to write here, and only now
+        _remove_stale_parts()
         free = _free_disk_bytes()
         if free < choice.required_free_bytes:
             _download.update(

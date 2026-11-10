@@ -21,6 +21,7 @@ on a managed network they need the system proxy to work at all.
 """
 
 import ipaddress
+import json
 from typing import Optional
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -56,3 +57,25 @@ def open_loopback(request: Request, timeout: float):
     if parts.scheme.lower() not in {"http", "https"} or not is_loopback_host(parts.hostname):
         raise ValueError("Only requests to this computer are allowed here.")
     return _OPENER.open(request, timeout=timeout)
+
+
+_MAX_JSON_BYTES = 64 * 1024
+
+
+def loopback_json(request: Request, timeout: float) -> dict:
+    """A small JSON object from a loopback service, or ``{}`` for any failure.
+
+    For the "is another copy of this app already running?" probes. Whatever else
+    may be listening on the port can answer with anything: a hang, endless data,
+    a list, a redirect, or not JSON at all. Reads are capped so a stranger cannot
+    stall or balloon startup, and every such answer is treated as "not our app".
+    """
+    try:
+        with open_loopback(request, timeout) as response:
+            raw = response.read(_MAX_JSON_BYTES + 1)
+        if len(raw) > _MAX_JSON_BYTES:
+            return {}
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, RecursionError):  # URLError, timeouts, bad JSON
+        return {}
+    return data if isinstance(data, dict) else {}

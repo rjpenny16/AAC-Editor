@@ -1449,3 +1449,52 @@ def test_an_opened_file_names_its_home_page(client, seeded_source):
     assert data["home_page_id"] == home["id"]
     summary = client.get(f"/api/pageset/{data['session_id']}", headers=token_headers()).get_json()
     assert summary["home_page_id"] == home["id"]
+
+
+def _serve_once(body: bytes):
+    """A one-shot loopback server answering every request with *body*."""
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _answer(self):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        do_GET = do_POST = _answer
+
+        def log_message(self, *_args):
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"[1, 2]", b"not json", b"\xff\xfe", b'{"app": "x", "pad": "' + b"a" * 70_000 + b'"}'],
+)
+def test_loopback_json_treats_any_odd_answer_as_empty(body):
+    import urllib.request
+
+    from tdsnap.web import localhttp
+
+    httpd = _serve_once(body)
+    try:
+        request = urllib.request.Request(f"http://127.0.0.1:{httpd.server_port}/")
+        assert localhttp.loopback_json(request, timeout=2) == {}
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_instance_running_ignores_a_stranger_on_the_port():
+    httpd = _serve_once(b'{"app": "something-else"}')
+    try:
+        assert server.instance_running(httpd.server_port) is False
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
