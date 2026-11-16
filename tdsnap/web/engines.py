@@ -153,6 +153,21 @@ def readiness(
             "note": note,
             "can_download": can_download,
         }
+    if local_state.get("verifying"):
+        # REL-008: a model installed before checks were recorded is being
+        # checked once in the background; the panel says so instead of
+        # "unavailable".
+        return {
+            "ready": False,
+            "engine": None,
+            "launch_mode": launch_mode,
+            "state": DOWNLOADING,
+            "summary": "Checking the suggestion model…",
+            "detail": "This happens once. You can keep adding words meanwhile.",
+            "action": "",
+            "note": "",
+            "can_download": False,
+        }
     if _downloading(local_state):
         return {
             "ready": False,

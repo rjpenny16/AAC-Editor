@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
@@ -109,7 +110,7 @@ def test_built_in_caps_prompt_processing_and_generation(monkeypatch, cores, thre
     monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=loader))
     monkeypatch.setattr(localai, "_llm", None)
     monkeypatch.setattr(localai, "_llm_path", None)
-    monkeypatch.setattr(localai, "_validation_error", lambda key: None)
+    monkeypatch.setattr(localai, "_validation_error", lambda key, **_kw: None)
     monkeypatch.setattr(localai.os, "cpu_count", lambda: cores)
     assert localai._load_llm("qwen3") is fake
     assert localai._load_llm("qwen3") is fake
@@ -1338,3 +1339,80 @@ def test_checking_for_the_engine_does_not_import_it(monkeypatch):
     assert localai.engine_available() is True
     monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
     assert localai.engine_available() is False
+
+
+# ---------------------------------------------------------------------------
+# REL-008 / roadmap D1: no hashing on the status path
+
+
+def test_a_status_check_after_install_reads_four_bytes_not_the_whole_model(
+    isolated_model, monkeypatch,
+):
+    localai.start_download()
+    assert _settle()["status"] == "ready"
+    assert os.path.exists(localai.model_path() + ".verified.json")
+    localai._validations.clear()  # as after a restart
+
+    def no_hashing(*_args, **_kwargs):
+        raise AssertionError("the status path hashed the model")
+
+    monkeypatch.setattr(localai, "_full_check", no_hashing)
+    assert localai.is_downloaded() is True
+
+
+def test_a_model_without_a_record_is_checked_in_the_background(isolated_model, monkeypatch):
+    """A model installed by an older version has no sidecar: status answers at
+    once ("verifying") and the hash runs off the request path."""
+    target = localai.model_path()
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "wb") as handle:
+        handle.write(isolated_model.read_bytes())
+    release = threading.Event()
+    real_check = localai._full_check
+
+    def slow_check(path, choice):
+        release.wait(5)
+        return real_check(path, choice)
+
+    monkeypatch.setattr(localai, "_full_check", slow_check)
+    assert localai._validation_error() == localai.VERIFYING
+    assert localai.status()["verifying"] is True
+    release.set()
+    for _ in range(200):
+        if not localai.verifying():
+            break
+        time.sleep(0.01)
+    assert localai.is_downloaded() is True
+    assert os.path.exists(target + ".verified.json")
+
+
+def test_a_model_changed_on_disk_is_not_trusted_from_its_record(isolated_model):
+    localai.start_download()
+    assert _settle()["status"] == "ready"
+    target = localai.model_path()
+    with open(target, "r+b") as handle:
+        handle.seek(20)
+        handle.write(b"tampered")
+    os.utime(target, ns=(1, 1))
+    localai._validations.clear()
+    assert localai._validation_error(wait=True) == "The downloaded model failed its integrity check."
+
+
+def test_the_panel_says_a_model_is_being_checked():
+    from tdsnap.web import engines
+
+    report = engines.readiness({"reachable": False}, {"verifying": True, "engine_available": True})
+    assert report["state"] == "downloading"
+    assert "Checking" in report["summary"]
+
+
+def test_a_killed_downloads_leftover_is_removed_at_startup_only_with_the_lock(isolated_model):
+    """Roadmap D6."""
+    folder = localai._models_dir(create=True)
+    leftover = os.path.join(folder, "big-model.gguf.part")
+    with open(leftover, "wb") as handle:
+        handle.write(b"partial")
+    localai.cleanup_at_startup(holds_single_instance_lock=False)
+    assert os.path.exists(leftover)  # another copy may be writing it
+    localai.cleanup_at_startup(holds_single_instance_lock=True)
+    assert not os.path.exists(leftover)

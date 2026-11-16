@@ -2878,6 +2878,7 @@ def record_start(port: int, window: str) -> None:
     import platform
 
     oplog.set_port(port)
+    localai.cleanup_at_startup(instance.is_held())
     oplog.record(
         kind="app.start", version=__version__, window=window,
         launch=localai.launch_mode(), packaged=bool(getattr(sys, "frozen", False)),
