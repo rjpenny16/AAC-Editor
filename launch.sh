@@ -23,8 +23,23 @@ if ! python3 -c "import flask" 2>/dev/null; then
     fi
 fi
 
-# Replace an older copy still serving this port with the current checkout.
-python3 -c "import json,time,urllib.request as u; o=u.build_opener(u.ProxyHandler({})); b='http://127.0.0.1:8765'; c=json.load(o.open(b+'/api/config',timeout=1)); o.open(u.Request(b+'/api/quit',data=b'',headers={'X-TDSnap-Token':c['token']}),timeout=2).read(); time.sleep(1)" >/dev/null 2>&1
+# Suggestions need the AI extra (llama-cpp-python), which the installed app
+# bundles. Install a prebuilt copy if one exists for this Python; never
+# compile. If none installs, the suggestions panel says that AI is not
+# included when started this way, and everything else works as usual.
+if ! python3 -c "import llama_cpp" 2>/dev/null; then
+    echo "Installing the suggestion engine (optional)..."
+    python3 -m pip install ".[ai]" --only-binary llama-cpp-python --prefer-binary \
+        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu >/dev/null 2>&1
+    if ! python3 -c "import llama_cpp" 2>/dev/null; then
+        echo "Suggestions are not included when AAC Editor is started this way."
+        echo "Use the installed app for suggestions. Everything else works."
+    fi
+fi
+
+# If AAC Editor is already open (this checkout or the installed app), the
+# next line brings it to the front instead of starting a second copy. It is
+# never closed from here: closing it would lose unsaved work.
 
 echo ""
 echo "Opening the app in your browser..."
