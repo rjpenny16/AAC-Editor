@@ -127,6 +127,17 @@ def test_an_unknown_api_path_is_json_too(client):
 # Deadlines and cancellation (REL-011, roadmap C5)
 
 
+def _wait_until_idle(worker, limit=10.0):
+    """Wait for the abandoned job to actually finish, rather than for a fixed
+    time that a busy machine can exceed."""
+    import time
+
+    deadline = time.monotonic() + limit
+    while worker.busy_with_abandoned_job():
+        assert time.monotonic() < deadline, "the abandoned job never finished"
+        time.sleep(0.01)
+
+
 def test_a_call_past_its_deadline_is_abandoned_and_told_to_stop():
     from tdsnap import uia
 
@@ -152,8 +163,7 @@ def test_a_call_past_its_deadline_is_abandoned_and_told_to_stop():
         worker.run(lambda: "next", deadline=1)
 
     release.set()
-    deadline = threading.Event()
-    deadline.wait(0.3)
+    _wait_until_idle(worker)
     assert pressed_after_deadline == []
     # Once it has stopped, the thread takes work again.
     assert worker.run(lambda: "next", deadline=1) == "next"
@@ -180,7 +190,7 @@ def test_a_write_past_its_deadline_is_unknown_and_locks_live_editing(client, mon
     assert first["code"] == "AUTOMATION_DEADLINE" and first["outcome"] == "unknown"
 
     release.set()
-    threading.Event().wait(0.3)
+    _wait_until_idle(server._AUTOMATION)
     second = client.post("/api/tdsnap/edit-plan", json=body, headers=headers).get_json()
     assert second["code"] == "LIVE_LOCKED"
 
