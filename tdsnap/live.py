@@ -32,6 +32,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import statistics
 import sys
@@ -41,7 +42,7 @@ from contextlib import closing, suppress
 from ctypes import wintypes
 from dataclasses import dataclass
 
-from . import colors, errors, pageset, templates, uia
+from . import colors, errors, pageset, selectors, templates, uia
 from .builder import MAX_LABEL_LENGTH, MAX_MESSAGE_LENGTH, _normalize_items
 from .errors import PagesetError
 from .sqliteuri import sqlite_ro_uri
@@ -264,7 +265,7 @@ def _find_text(root, text):
 
 
 def _window(auto):
-    window = auto.WindowControl(searchDepth=1, Name="TD Snap")
+    window = auto.WindowControl(searchDepth=1, Name=selectors.WINDOW_NAME)
     if not window.Exists(1):
         raise PagesetError("Open TD Snap before using direct editing.")
     _verify_process(window)
@@ -1249,21 +1250,21 @@ def _expand_editor(window):
 
 
 def _exit_edit_mode(window):
-    done = _find(window, automation_id="DoneButton", control_type="ButtonControl")
+    done = _find(window, automation_id=selectors.DONE_BUTTON, control_type="ButtonControl")
     if done:
         _activate(done)
         _wait_for(
-            lambda: _find(window, automation_id="settings_button", control_type="ButtonControl"),
+            lambda: _find(window, automation_id=selectors.SETTINGS_BUTTON, control_type="ButtonControl"),
             "TD Snap did not leave edit mode.",
         )
 
 
 def _enter_edit_mode(window):
-    if _find(window, automation_id="DoneButton", control_type="ButtonControl"):
+    if _find(window, automation_id=selectors.DONE_BUTTON, control_type="ButtonControl"):
         return
-    _activate(_find(window, automation_id="settings_button", control_type="ButtonControl"))
+    _activate(_find(window, automation_id=selectors.SETTINGS_BUTTON, control_type="ButtonControl"))
     _wait_for(
-        lambda: _find(window, automation_id="DoneButton", control_type="ButtonControl"),
+        lambda: _find(window, automation_id=selectors.DONE_BUTTON, control_type="ButtonControl"),
         "TD Snap did not enter edit mode.",
     )
 
@@ -1369,7 +1370,7 @@ def _writes() -> int:
 
 def _undo_if_needed(window):
     global _WRITES
-    undo = _find(window, automation_id="UndoButton", control_type="ButtonControl")
+    undo = _find(window, automation_id=selectors.UNDO_BUTTON, control_type="ButtonControl")
     if undo and undo.IsEnabled:
         _activate(undo)
         oplog.note_undo()
@@ -1384,11 +1385,11 @@ def _undo_if_needed(window):
 # dialog is open, and keys or clicks would go to it.
 # CloseButton is left out on purpose: a control with that ID is common outside
 # dialogs, and a false "dialog open" would refuse every edit.
-_DIALOG_BUTTON_IDS = ("PrimaryButton", "SecondaryButton")
+_DIALOG_BUTTON_IDS = (selectors.DIALOG_PRIMARY, selectors.DIALOG_SECONDARY)
 
 
 def _in_edit_mode(window) -> bool:
-    return _find(window, automation_id="DoneButton", control_type="ButtonControl") is not None
+    return _find(window, automation_id=selectors.DONE_BUTTON, control_type="ButtonControl") is not None
 
 
 def _open_dialog(window):
@@ -1535,7 +1536,7 @@ def _named_slots(window):
 def _spoken_message(window, control):
     """Read one button's spoken message out of TD Snap's own editor."""
     _open_button_editor(window, control)
-    message_box = _find(window, automation_id="MessageBox", control_type="EditControl")
+    message_box = _find(window, automation_id=selectors.MESSAGE_BOX, control_type="EditControl")
     value = None if message_box is None else _value(message_box)
     _collapse_editor(window)
     return message_box is not None, value
@@ -1552,7 +1553,7 @@ def _open_button_editor(window, control):
         _require_foreground(window)
         _automation().Click(x, y, waitTime=0.2)
         _expand_editor(window)
-        if any(c.ControlTypeName == "EditControl" and c.AutomationId == "TextBox"
+        if any(c.ControlTypeName == "EditControl" and c.AutomationId == selectors.LABEL_TEXT_BOX
                and c.IsEnabled for c, _ in _walk(window, 12)):
             return
     raise PagesetError("TD Snap did not expose the selected button's label field.")
@@ -1693,7 +1694,7 @@ def _restore_page_state(window, baseline, content=None, maximum=0):
     while not confirmed():
         if presses >= maximum:
             break
-        undo = _find(window, automation_id="UndoButton", control_type="ButtonControl")
+        undo = _find(window, automation_id=selectors.UNDO_BUTTON, control_type="ButtonControl")
         if undo is None or not getattr(undo, "IsEnabled", False):
             break
         before = _fingerprint(_page_group(window))
@@ -1743,7 +1744,7 @@ def _rollback_new_page(auto, window, parent, parent_baseline, page_baseline, max
         if page_baseline is not None:
             _restore_page_fingerprint(window, page_baseline, maximum)
         _exit_edit_mode(window)
-        back = _find(window, automation_id="BackButton", control_type="ButtonControl")
+        back = _find(window, automation_id=selectors.BACK_BUTTON, control_type="ButtonControl")
         if back is None:
             raise PagesetError(
                 "TD Snap could not return to the parent while restoring the new page. "
@@ -1830,7 +1831,7 @@ def _choose_symbol(window, label):
             _require_foreground(window)
             content.Click(simulateMove=False)
         opener = _find(
-            window, automation_id="OpenSymbolSearchButton",
+            window, automation_id=selectors.SYMBOL_SEARCH_BUTTON,
             control_type="ButtonControl",
         )
         _activate(opener)
@@ -1844,7 +1845,7 @@ def _choose_symbol(window, label):
             "TD Snap did not open symbol search.",
         )
         _set_value(search, label)
-        query = _find(window, automation_id="QueryButton", control_type="ButtonControl")
+        query = _find(window, automation_id=selectors.SYMBOL_QUERY_BUTTON, control_type="ButtonControl")
         _activate(query)
         source = "library"
         try:
@@ -1863,17 +1864,17 @@ def _choose_symbol(window, label):
             )
             source = "web"
         _activate(results[0])
-        done = _find(window, automation_id="PrimaryButton", control_type="ButtonControl")
+        done = _find(window, automation_id=selectors.DIALOG_PRIMARY, control_type="ButtonControl")
         _activate(done)
         _wait_for(
-            lambda: _find(window, automation_id="PrimaryButton",
+            lambda: _find(window, automation_id=selectors.DIALOG_PRIMARY,
                           control_type="ButtonControl") is None,
             "TD Snap did not close symbol search.", timeout=60,
         )
         return source
     except PagesetError:
         cancel = _find(
-            window, automation_id="SecondaryButton", control_type="ButtonControl"
+            window, automation_id=selectors.DIALOG_SECONDARY, control_type="ButtonControl"
         )
         if cancel:
             _activate(cancel)
@@ -1927,23 +1928,23 @@ def _apply_border(window, border_color):
             scroll.ScrollIntoView()
         _activate(choice)
         if _find(window, name="Border Color", control_type="TextControl"):
-            _activate(_find(window, automation_id="PART_BackButton",
+            _activate(_find(window, automation_id=selectors.PART_BACK_BUTTON,
                             control_type="ButtonControl"))
 
         thickness = _find(window, name="Thickness", control_type="TextControl")
         _activate(thickness.GetParentControl())
         medium = _wait_for(
-            lambda: _find(window, automation_id="MediumItem",
+            lambda: _find(window, automation_id=selectors.MEDIUM_ITEM,
                           control_type="ListItemControl"),
             "TD Snap's border thickness choices were unavailable.",
         )
         _activate(medium)
         if _find(window, name="Border Thickness", control_type="TextControl"):
-            _activate(_find(window, automation_id="PART_BackButton",
+            _activate(_find(window, automation_id=selectors.PART_BACK_BUTTON,
                             control_type="ButtonControl"))
         return True
     except (PagesetError, AttributeError):
-        back = _find(window, automation_id="PART_BackButton",
+        back = _find(window, automation_id=selectors.PART_BACK_BUTTON,
                      control_type="ButtonControl")
         if back:
             _activate(back)
@@ -1962,7 +1963,7 @@ def _empty_label_field(window):
     for control, _ in _walk(window, 12):
         if (
             control.ControlTypeName == "EditControl"
-            and control.AutomationId == "TextBox"
+            and control.AutomationId == selectors.LABEL_TEXT_BOX
             and control.IsEnabled
         ):
             getter = getattr(control, "GetValuePattern", None)
@@ -1985,7 +1986,7 @@ def _filled_label_field(window, expected):
     for control, _ in _walk(window, 12):
         if (
             control.ControlTypeName == "EditControl"
-            and control.AutomationId == "TextBox"
+            and control.AutomationId == selectors.LABEL_TEXT_BOX
             and control.IsEnabled
             and (_value(control) or "").strip().casefold() == wanted
         ):
@@ -2022,7 +2023,7 @@ def _change_button(auto, window, cell, current, label=None, message=None):
         return
     name = label or current
     _expand_editor(window)
-    message_box = _find(window, automation_id="MessageBox", control_type="EditControl")
+    message_box = _find(window, automation_id=selectors.MESSAGE_BOX, control_type="EditControl")
     if message_box is None:
         raise PagesetError(f"TD Snap did not expose the spoken-message field for {name!r}.")
     _note_write("change")
@@ -2093,7 +2094,7 @@ def _confirm_removal(window, label, message=None):
     )
     if state == "gone":
         return
-    confirm = _find(window, automation_id="PrimaryButton", control_type="ButtonControl")
+    confirm = _find(window, automation_id=selectors.DIALOG_PRIMARY, control_type="ButtonControl")
     if confirm is None:
         raise PagesetError(
             f"TD Snap asked a question while removing {label!r} that AAC Editor does "
@@ -2252,7 +2253,7 @@ def _add_button(auto, window, cell, label, message=None,
         if message:
             _expand_editor(window)
             message_box = _find(
-                window, automation_id="MessageBox", control_type="EditControl"
+                window, automation_id=selectors.MESSAGE_BOX, control_type="EditControl"
             )
             if message_box is None:
                 raise PagesetError(
@@ -2288,6 +2289,35 @@ def _add_button(auto, window, cell, label, message=None,
         raise
 
 
+_PACKAGE_VERSION = re.compile(r"TobiiDynavox\.Snap_(\d+(?:\.\d+){1,3})_", re.IGNORECASE)
+
+
+def tdsnap_version(window):
+    """TD Snap's package version, read from its install folder name
+    (WindowsApps\\TobiiDynavox.Snap_<version>_...), or None (roadmap C10)."""
+    path = uia.process_image_path(getattr(window, "ProcessId", 0)) or ""
+    match = _PACKAGE_VERSION.search(path)
+    return match.group(1) if match else None
+
+
+def _version_facts(window) -> dict:
+    version = None
+    with suppress(Exception):
+        version = tdsnap_version(window)
+    facts = {"version": version}
+    with suppress(Exception):
+        op = oplog.current()
+        if op is not None and version:
+            op.extra["version"] = version
+    if version and version not in selectors.TESTED_TDSNAP_VERSIONS:
+        facts["compatibility_warning"] = (
+            f"TD Snap {version} has not been tested with AAC Editor on real hardware yet. "
+            "Edits are checked and refused when anything looks unexpected, but take a "
+            "backup in TD Snap before editing a client's page set."
+        )
+    return facts
+
+
 def status(include_pages=True):
     result = {
         "available": sys.platform == "win32",
@@ -2310,6 +2340,7 @@ def status(include_pages=True):
         running=True,
         page=_page_name(window, group),
         grid={"cols": len(grid.xs), "rows": len(grid.ys)},
+        **_version_facts(window),
     )
     if include_pages:
         pages = _active_pageset_pages(result["page"], _named_page_buttons(group))
@@ -3418,7 +3449,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
         _exit_edit_mode(window)
         _settled_verify(lambda: _verify_final_layout(window, placed))
 
-        back = _find(window, automation_id="BackButton", control_type="ButtonControl")
+        back = _find(window, automation_id=selectors.BACK_BUTTON, control_type="ButtonControl")
         if back is None:
             raise PagesetError("The new page was created, but its Back button was unavailable.")
         _activate(back)

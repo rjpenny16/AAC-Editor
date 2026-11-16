@@ -528,7 +528,8 @@ $("live-connect-btn").addEventListener("click", async () => {
       `${state.pages.length} pages in this page set`;
     $("preview-live-text").textContent = `Live · ${data.page}`;
     $("build-btn-label").textContent = "Review changes";
-    status.textContent = "";
+    // C10: a TD Snap version nobody has run AAC Editor against is said so.
+    status.textContent = data.compatibility_warning || "";
     button.querySelector(".btn-label").dataset.idleLabel = "Continue";
     renderParents("");
     setOperation("existing");

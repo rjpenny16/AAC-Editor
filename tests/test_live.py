@@ -2989,3 +2989,30 @@ def test_problems_from_an_earlier_edit_do_not_block_the_next_one(monkeypatch):
     report = live.apply_page_edits(
         "Eating", [{"label": "apple", "slot": 0, "symbol": False}], [], [], [], "v1")
     assert report["outcome"] == "verified"
+
+
+# ---------- version awareness (roadmap C10) ----------
+
+
+def test_the_td_snap_version_is_read_from_its_package_folder(monkeypatch):
+    monkeypatch.setattr(live.uia, "process_image_path", lambda _pid: (
+        "C:\\Program Files\\WindowsApps\\TobiiDynavox.Snap_1.42.0.1234_x64__626b2w651dr5w\\Snap.exe"))
+    window = SimpleNamespace(ProcessId=7)
+    assert live.tdsnap_version(window) == "1.42.0.1234"
+    facts = live._version_facts(window)
+    assert facts["version"] == "1.42.0.1234"
+    assert "has not been tested" in facts["compatibility_warning"]
+
+    monkeypatch.setattr(live.selectors, "TESTED_TDSNAP_VERSIONS", ("1.42.0.1234",))
+    assert "compatibility_warning" not in live._version_facts(window)
+
+    monkeypatch.setattr(live.uia, "process_image_path", lambda _pid: None)
+    assert live._version_facts(window) == {"version": None}
+
+
+def test_every_td_snap_automation_id_comes_from_one_module():
+    import inspect
+
+    source = inspect.getsource(live)
+    assert re.findall(r'automation_id="[A-Za-z_]+"', source) == []
+    assert re.findall(r'AutomationId == "[A-Za-z_]+"', source) == []

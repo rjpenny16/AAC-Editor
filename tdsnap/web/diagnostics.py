@@ -28,7 +28,7 @@ RECENT_OPERATIONS = 30
 # Keys worth reporting from live.status() / grid3.status(). Everything else
 # those functions return is user content and is dropped: TD Snap's "page" and
 # "pages", Grid 3's "grid_set", "page", and "user".
-_LIVE_KEYS = ("available", "running", "unlocked", "error")
+_LIVE_KEYS = ("available", "running", "unlocked", "error", "version")
 _GRID3_KEYS = (
     "available", "installed", "running", "unlocked", "elevated",
     "needs_elevation", "version", "compatibility_warning", "error",
