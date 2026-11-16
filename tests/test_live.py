@@ -2894,3 +2894,58 @@ def test_both_entry_points_use_the_shared_final_verification():
 
     assert "_verify_final_layout(" in inspect.getsource(live.apply_page_edits)
     assert "_verify_final_layout(" in inspect.getsource(live.add_topic_page)
+
+
+# ---------- REL-018: the fingerprint ignores where the window is (roadmap C3) ----------
+
+
+def _page_at(offset_x, offset_y, names=("apple", "pear")):
+    def button(name, column):
+        left = offset_x + column * 100
+        top = offset_y
+        return SimpleNamespace(
+            Name=name, ControlTypeName="ButtonControl",
+            BoundingRectangle=SimpleNamespace(left=left, top=top, right=left + 90, bottom=top + 90),
+        )
+
+    buttons = [button(name, column) for column, name in enumerate(names)]
+    group = SimpleNamespace(GetChildren=lambda: buttons)
+    grid = live.Grid((offset_x + 45, offset_x + 145), (offset_y + 45,), 90, 90)
+    return group, grid
+
+
+def test_moving_the_window_keeps_the_review_valid_and_is_logged(monkeypatch):
+    grids = {}
+
+    def grid_of(group):
+        return grids[id(group)]
+
+    monkeypatch.setattr(live, "_grid", grid_of)
+    reviewed, grid = _page_at(100, 200)
+    grids[id(reviewed)] = grid
+    moved, grid = _page_at(640, 380)
+    grids[id(moved)] = grid
+    before = live._fingerprint_token(reviewed)
+    after = live._fingerprint_token(moved)
+    assert before != after
+    noted = []
+    monkeypatch.setattr(live.oplog, "fallback", noted.append)
+    assert live._same_page(after, before) is True
+    assert noted == ["FINGERPRINT_MOVED"]
+
+
+def test_a_changed_or_rearranged_page_is_still_refused(monkeypatch):
+    grids = {}
+    monkeypatch.setattr(live, "_grid", lambda group: grids[id(group)])
+    reviewed, grid = _page_at(100, 200)
+    grids[id(reviewed)] = grid
+    renamed, grid = _page_at(100, 200, ("apple", "plum"))
+    grids[id(renamed)] = grid
+    swapped, grid = _page_at(100, 200, ("pear", "apple"))
+    grids[id(swapped)] = grid
+    token = live._fingerprint_token(reviewed)
+    assert live._same_page(live._fingerprint_token(renamed), token) is False
+    assert live._same_page(live._fingerprint_token(swapped), token) is False
+    # An old-style token is only ever equal to itself.
+    assert live._same_page("abc", "abc") is True
+    assert live._same_page(token, "abc") is False

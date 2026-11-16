@@ -733,10 +733,57 @@ def _fingerprint(group):
     )
 
 
+def _slot_fingerprint(group):
+    """Which button is in which grid slot: the page's content and layout,
+    independent of where the window is on screen (REL-018)."""
+    grid = _grid(group)
+    return tuple(sorted(
+        (
+            (-1 if slot is None else slot), child.Name or "",
+        )
+        for child in group.GetChildren()
+        if child.ControlTypeName == "ButtonControl"
+        for slot in [_control_slot(grid, child)]
+    ))
+
+
+def _digest(value) -> str:
+    payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
 def _fingerprint_token(group):
-    """Stable, opaque token used to reject edits against a changed page."""
-    payload = json.dumps(_fingerprint(group), ensure_ascii=False, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    """Stable, opaque token used to reject edits against a changed page.
+
+    REL-018: the token used to hash every button's absolute screen position,
+    so moving or resizing TD Snap, a display-scaling change, or the editing
+    panel opening between review and apply refused the edit as "page changed
+    after preview". It is now ``s:<slots>.p:<pixels>``: the slot part (which
+    button is in which cell) decides; the pixel part is kept for one release
+    so a disagreement between the two is logged (FINGERPRINT_MOVED) before
+    the old check is removed (roadmap C3).
+    """
+    return f"s:{_digest(_slot_fingerprint(group))}.p:{_digest(_fingerprint(group))}"
+
+
+def _token_parts(token):
+    if isinstance(token, str) and token.startswith("s:") and ".p:" in token:
+        slots, pixels = token[2:].split(".p:", 1)
+        return slots, pixels
+    return None, None
+
+
+def _same_page(current, reviewed) -> bool:
+    """Whether the page now is the page that was reviewed."""
+    if current == reviewed:
+        return True
+    current_slots, current_pixels = _token_parts(current)
+    reviewed_slots, reviewed_pixels = _token_parts(reviewed)
+    if current_slots is None or current_slots != reviewed_slots:
+        return False
+    if current_pixels != reviewed_pixels:
+        oplog.fallback("FINGERPRINT_MOVED")
+    return True
 
 
 def _page_layout(group, grid):
@@ -2667,7 +2714,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
     if _page_name(window).casefold() != requested.casefold():
         _navigate_to_parent(window, requested)
     group = _page_group(window)
-    if _fingerprint_token(group) != fingerprint:
+    if not _same_page(_fingerprint_token(group), fingerprint):
         raise PagesetError(
             "The target page changed after preview. Refresh the layout and review the edit again.",
             code="FINGERPRINT_CHANGED",
