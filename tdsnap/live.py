@@ -3570,5 +3570,5 @@ def focus_window(window):
     return _focus_window(window)
 
 
-def active_pageset_path(visible_page=None, visible_labels=()):
-    return _active_pageset_path(visible_page, visible_labels)
+def active_pageset_path(visible_page=None):
+    return _active_pageset_path(visible_page)
