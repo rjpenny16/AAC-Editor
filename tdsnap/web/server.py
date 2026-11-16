@@ -60,6 +60,7 @@ from . import (
     diagnostics,
     engines,
     grounding,
+    instance,
     localai,
     localhttp,
     ollama,
@@ -2821,7 +2822,47 @@ def record_start(port: int, window: str) -> None:
     )
 
 
+def hand_over_to_running_copy(port: int, open_browser: bool = True) -> None:
+    """Another copy holds the single-instance lock: show it, never start a second.
+
+    The running copy may be busy (a long automation call, a model check), so
+    its focus endpoint is given a few tries rather than the one-second probe
+    that used to decide a second server was needed (REL-010).
+    """
+    target = instance.running_port() or port
+    url = f"http://127.0.0.1:{target}"
+    for _ in range(10):
+        reply = localhttp.loopback_json(
+            urllib.request.Request(f"{url}/api/focus", method="POST"),  # noqa: S310
+            timeout=2,
+        )
+        if reply.get("ok"):
+            if reply.get("focused"):
+                print("Already running — brought its window to the front.")
+            elif open_browser:
+                _open_browser(url)
+                print(f"Already running at {url} — opened it in your browser.")
+            else:
+                print(f"Already running at {url}.")
+            return
+        time.sleep(1)
+    print(
+        "AAC Editor is already running but is not answering. Wait a moment and try "
+        "again, or close it from the taskbar first."
+    )
+
+
 def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
+    if not instance.acquire():
+        hand_over_to_running_copy(port, open_browser)
+        return
+    try:
+        _run_holding_lock(port, open_browser)
+    finally:
+        instance.release()
+
+
+def _run_holding_lock(port: int, open_browser: bool) -> None:
     if instance_running(port):
         url = f"http://127.0.0.1:{port}"
         focused = localhttp.loopback_json(
@@ -2839,6 +2880,7 @@ def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
 
     port = pick_port(port)
     server = make_server(port)
+    instance.record_port(port)
     record_start(port, "browser")
     url = f"http://127.0.0.1:{port}"
     if open_browser:

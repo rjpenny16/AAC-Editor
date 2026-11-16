@@ -22,7 +22,6 @@ import sqlite3
 import subprocess
 import sys
 import threading
-import time
 import urllib.request
 import zipfile
 import zlib
@@ -30,7 +29,7 @@ from ctypes import wintypes
 from typing import Optional
 
 from ..errors import PagesetError
-from . import localhttp, server
+from . import instance, localhttp, server
 
 WINDOW_TITLE = "AAC Editor"
 # What a damaged or hostile file raises while being read (doc 02, minor).
@@ -215,12 +214,21 @@ def run_desktop(
         server.run(port=port)
         return
 
-    if replace_instance:
-        deadline = time.monotonic() + 20
-        while server.instance_running(port) and time.monotonic() < deadline:
-            time.sleep(0.2)
+    # REL-010: one copy per user, decided by a lock taken before anything
+    # else. A copy restarting itself (administrator restart for Grid 3) waits
+    # for the old one to let go.
+    if not instance.acquire(wait=20 if replace_instance else 0):
+        _focus_running(instance.running_port() or port)
+        return
+    try:
+        _run_desktop_holding_lock(webview, port, initial_provider)
+    finally:
+        instance.release()
 
+
+def _run_desktop_holding_lock(webview, port, initial_provider) -> None:
     if server.instance_running(port):
+        # An older version without the lock is still serving this port.
         _focus_running(port)
         return
 
@@ -230,6 +238,7 @@ def run_desktop(
         url += "/?provider=grid3"
     server.set_native(True)
     flask_server = server.make_server(port)
+    instance.record_port(port)
     server.record_start(port, "native")
 
     serve_thread = threading.Thread(target=flask_server.serve_forever, daemon=True)
