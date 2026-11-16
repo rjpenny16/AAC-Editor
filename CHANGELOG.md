@@ -11,6 +11,42 @@ file starts tracking changes in detail from 2.2.0 onward.
 
 ## [Unreleased]
 
+### Reliability recovery (docs/reliability, roadmap phases A to E)
+
+Not a release yet: the gate in `docs/reliability/07-RELEASE-READINESS-CHECKLIST.md`
+also needs the real-hardware sessions, which have not been run.
+
+- **Live edits say exactly what happened.** Every edit ends in one outcome
+  (done, done with notes, not started, put back, partly changed, stopped
+  part-way), carried by the server and shown with what to do next and a
+  reference. A batch stops at any page that is not cleanly done or cleanly
+  refused. See `docs/WHAT_RESULTS_MEAN.md`.
+- **Rollback can no longer reach into earlier work.** TD Snap and Grid 3
+  rollbacks press Undo at most as many times as the edit wrote, wait for the
+  app to repaint before trusting what they read, and stop at the first
+  unreadable state. Grid 3 no longer saves inside the rollback, and a copy of
+  the grid set is taken before every live Grid 3 edit.
+- **Edits refuse to start on top of other work**: TD Snap already in edit
+  mode, a dialog open, the app not in front, an elevated TD Snap, or its page
+  set unreadable.
+- **Saving never overwrites the original file**, and the saved copy is checked
+  before "saved" is shown. Unsaved edited copies survive quitting and are
+  offered at the next start. Quit is refused while a live edit runs.
+- **One copy of the app at a time**; a second launch (including `launch.bat`
+  while the installed app is open) brings the first forward instead of closing
+  it.
+- **Suggestions use the built-in model by default**; Ollama only when chosen.
+  `launch.bat` installs the AI extra when it can and says plainly when it
+  cannot. When suggestions are not ready, a request to paste into a chat
+  assistant is offered.
+- **A local activity log** (codes and timings only, never words) and an
+  optional diagnostic mode make an intermittent fault traceable from one
+  support report. An edit interrupted by a crash is reported at the next start.
+- Fixed: the red CI (badge accessible name), `#`/`%` in folder names, a
+  crafted grid set exhausting memory, AI status hashing gigabytes on every
+  check, a restarted app being reported as TD Snap missing, automation calls
+  with no deadline.
+
 ### Fixed - leftover downloads and startup probes
 
 - **A killed model download no longer leaves gigabytes behind.** Starting a

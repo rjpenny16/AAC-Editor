@@ -2,7 +2,7 @@
 
 The gate for calling AAC-Editor stable enough for routine use with clients' communication systems. Every item needs evidence (a CI run, a log archive, a signed session record), not a statement. Items are split by how they can be proven.
 
-**Status on the audited commit `69ffa9d`: not ready.** Unmet items are marked with the issue that blocks them. See [06](06-RELIABILITY-RECOVERY-ROADMAP.md) for the plan.
+**Status after the November 2026 recovery work: still not ready.** The software items with automated evidence are ticked below; everything in section 2 needs the real-hardware sessions, which have not been run, and the open notes say what else remains. Original status on the audited commit `69ffa9d`: not ready. Unmet items are marked with the issue that blocks them. See [06](06-RELIABILITY-RECOVERY-ROADMAP.md) for the plan.
 
 A release must not be described as production-ready on the strength of section 1 alone. Section 1 shows the app's own logic is right. Only section 2 shows it works with TD Snap and Grid 3.
 
@@ -11,9 +11,9 @@ A release must not be described as production-ready on the strength of section 1
 ### Build and checks
 
 - [ ] All jobs in the Tests workflow pass on the release commit, with no test skipped, weakened or retried to achieve it. *Blocked: REL-026.*
-- [ ] Required status checks are enabled on `main`, confirmed at release time.
+- [ ] Required status checks are enabled on `main`, confirmed at release time. *Owner action.*
 - [ ] Browser suite passes on Linux Chromium and on Windows Edge.
-- [ ] Failed browser runs upload traces.
+- [x] Failed browser runs upload traces. *(A2: `test-results/` uploaded on failure, Linux and Edge.)*
 - [ ] `pip-audit` and `npm audit` report no known high or critical vulnerabilities.
 - [ ] Packaging smoke test passes on the release commit.
 
@@ -21,46 +21,46 @@ A release must not be described as production-ready on the strength of section 1
 
 - [ ] No open issue of severity Critical or High in the "could damage or mislead about vocabulary data" group. *Open today: REL-001, REL-002, REL-003, REL-004, REL-005, REL-006, REL-007.*
 - [ ] Every row of both failure-point tables in [04](04-DATA-INTEGRITY-AND-SAFETY.md) has a passing automated test asserting the required outcome class.
-- [ ] Single-fault sweep passes for add, change, move, remove, new page, undo and batch, on both apps' fakes.
+- [ ] Single-fault sweep passes for add, change, move, remove, new page, undo and batch, on both apps' fakes. *Open: passes for TD Snap add, change, move, remove, mixed and batch (`tests/test_live_sweep.py`); no Grid 3 fake, and new page and undo are not in the sweep yet.*
 - [ ] In the sweep: Undo presses never exceed actions performed; no input is sent after a failed precondition; a batch never continues after an outcome other than `verified` or `refused`.
 - [ ] Round trip passes for `.sps`, `.spb`, `.gridset`, `.obf`, `.obz`: open, edit, save, re-open, compare.
-- [ ] Saving over the source file is refused. *Blocked: REL-006.*
-- [ ] A saved copy is re-opened and validated before success is shown.
-- [ ] Unsaved working copies survive exit and restart. *Blocked: REL-007.*
-- [ ] No code path shows a success heading unless the outcome is `verified` or `verified_with_gaps`. *Blocked: REL-014.*
+- [x] Saving over the source file is refused. *(B2; `test_saving_over_the_opened_file_is_refused`.)*
+- [x] A saved copy is re-opened and validated before success is shown. *(B2.)*
+- [x] Unsaved working copies survive exit and restart. *(B3.)*
+- [x] No code path shows a success heading unless the outcome is `verified` or `verified_with_gaps`. *(B1/E2; `outcomes.js`.)*
 
 ### Regression protection
 
 - [ ] Every confirmed issue in [02](02-CONFIRMED-BUGS-AND-ROOT-CAUSES.md) is closed with a test that failed before its fix.
-- [ ] Seeded random-timing suite: 500 seeds per operation, zero failures.
+- [ ] Seeded random-timing suite: 500 seeds per operation, zero failures. *Open: 200 seeds across all operations today.*
 
 ### Lifecycle and connection
 
-- [ ] A second launch, by either `launch.bat` or the installed app, never starts a second server and never ends the first. *Blocked: REL-010, REL-007.*
-- [ ] Quit is refused during a live edit.
-- [ ] After a server restart the open page shows an "app restarted" state, not a TD Snap error. *Blocked: REL-009.*
-- [ ] An automation call that hangs ends in `unknown` within its deadline and does not block other requests. *Blocked: REL-011.*
+- [ ] A second launch, by either `launch.bat` or the installed app, never starts a second server and never ends the first. *Blocked: REL-010, REL-007.* *Code done (C6, A9) and tested on Linux; the Windows mutex path needs T3-5.*
+- [x] Quit is refused during a live edit. *(B3.)*
+- [x] After a server restart the open page shows an "app restarted" state, not a TD Snap error. *(C7.)*
+- [x] An automation call that hangs ends in `unknown` within its deadline and does not block other requests. *(C5.)*
 
 ### AI isolation
 
 - [ ] With the AI extra not installed, with Ollama absent, with a corrupt model file, and with the inference process killed mid-generation, every editing test still passes.
-- [ ] First AI status after a cold start returns in under 2 seconds with the shipped model installed. *Blocked: REL-008.*
+- [ ] First AI status after a cold start returns in under 2 seconds with the shipped model installed. *Blocked: REL-008.* *Code done (D1: no hashing on the status path); needs timing on the owner's machine.*
 - [ ] No AI state disables an editing control.
-- [ ] With Ollama absent, neither launch path shows an Ollama error unless the user selected Ollama. *Blocked: REL-028.*
-- [ ] When local AI is not ready, the manual fallback (compose prompt, paste list) is offered and makes no network request.
+- [x] With Ollama absent, neither launch path shows an Ollama error unless the user selected Ollama. *(A8/A9.)*
+- [x] When local AI is not ready, the manual fallback (compose prompt, paste list) is offered and makes no network request. *(D7.)*
 
 ### Errors and diagnostics
 
 - [ ] Every error code has one message answering: what happened, was anything changed, is the original safe, what next, is retry safe, reference.
 - [ ] No user-facing message is generic ("Something unexpected went wrong") without those answers.
-- [ ] Operation log exists in the packaged app. *Blocked: REL-025.*
-- [ ] Seeded-label privacy test: no label, message, page name, file name or path appears in the log or the support report.
-- [ ] "Clear saved data" removes the log.
+- [x] Operation log exists in the packaged app. *(A4; the packaged smoke test does not yet inspect the log file.)*
+- [x] Seeded-label privacy test: no label, message, page name, file name or path appears in the log or the support report. *(A5.)*
+- [x] "Clear saved data" removes the log. *(A5.)*
 
 ### Security
 
-- [ ] `/api/diagnostics` requires the token. *Blocked: REL-024.*
-- [ ] Oversized spans and coordinates in a grid set are refused. *Blocked: REL-012.*
+- [x] `/api/diagnostics` requires the token. *(A5.)*
+- [x] Oversized spans and coordinates in a grid set are refused. *(D5.)*
 - [ ] Items S-7 and P-4 of [SECURITY_AUDIT.md](../SECURITY_AUDIT.md) fully applied.
 
 ## 2. Requires Windows with real TD Snap and Grid 3
