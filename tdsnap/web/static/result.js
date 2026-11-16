@@ -409,14 +409,14 @@ function resetConnection() {
     // sweep. Not worth interrupting the user for, but worth recording so a
     // support report shows it.
     void api(`/api/pageset/${encodeURIComponent(sessionId)}/close`, { method: "POST" })
-      .catch((error) => recordError("session-close", error.message));
+      .catch((error) => recordError("session-close", error));
   }
   // Starting over may mean a different person's page set, so the retained edit
   // has to go from the server as well as from here. It would be refused by the
   // fingerprint guard anyway; still offering it would be the wrong promise.
   if (undoAvailable(state)) {
     void api(state.provider === "grid3" ? "/api/grid3/last-edit" : "/api/tdsnap/last-edit", { method: "DELETE" })
-      .catch((error) => recordError("undo-forget", error.message));
+      .catch((error) => recordError("undo-forget", error));
   }
   state.lastEdit = null;
   forgetVocabulary();

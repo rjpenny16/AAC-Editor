@@ -132,8 +132,11 @@ def test_as_text_states_the_redaction_promise():
     assert "No page-set content" in text
 
 
+TOKEN = {"X-TDSnap-Token": server.API_TOKEN}
+
+
 def test_endpoint_returns_report_and_text(client, running_apps):
-    response = client.get("/api/diagnostics")
+    response = client.get("/api/diagnostics", headers=TOKEN)
     assert response.status_code == 200
     payload = response.get_json()
     assert payload["ok"] is True
@@ -142,6 +145,50 @@ def test_endpoint_returns_report_and_text(client, running_apps):
     assert PRIVATE_PAGE not in payload["text"]
 
 
-def test_endpoint_needs_no_token(client, running_apps):
-    """Read-only and content-free, so it stays reachable when things are broken."""
-    assert client.get("/api/diagnostics").status_code == 200
+def test_endpoint_needs_the_token(client, running_apps):
+    """REL-024: it probes both AAC apps, so any web page could stall live
+    editing with an <img> pointed at it."""
+    assert client.get("/api/diagnostics").status_code == 403
+    assert client.get("/api/diagnostics", headers=TOKEN).status_code == 200
+
+
+def test_a_busy_automation_thread_does_not_hold_up_the_report(client, running_apps, monkeypatch):
+    """REL-024: a hung live edit must not stop a report being made, and a
+    report must never queue behind (or in front of) a live edit."""
+    import time
+
+    probed = []
+    monkeypatch.setattr(diagnostics, "live_report", lambda: probed.append(1) or {})
+    assert server._LIVE_LOCK.acquire(timeout=1)
+    try:
+        started = time.monotonic()
+        response = client.get("/api/diagnostics", headers=TOKEN)
+        elapsed = time.monotonic() - started
+    finally:
+        server._LIVE_LOCK.release()
+    assert response.status_code == 200
+    assert elapsed < 5
+    report = response.get_json()["report"]
+    assert report["tdsnap"] == {"probe_skipped": "busy"}
+    assert probed == []
+
+
+def test_probe_failures_report_the_class_not_the_message(monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise PagesetError(f"Could not open page {PRIVATE_PAGE}")
+
+    monkeypatch.setattr(diagnostics.live, "status", boom)
+    monkeypatch.setattr(diagnostics.grid3, "status", boom)
+    facts = diagnostics.live_report()
+    assert facts["tdsnap"] == {"probe_failed": "PagesetError"}
+    assert PRIVATE_PAGE not in str(facts)
+
+
+def test_the_report_carries_recent_operations_as_codes(running_apps):
+    from tdsnap.web import oplog
+
+    oplog.record(op="ab12", kind="post:tdsnap.edit-plan", app="tdsnap",
+                 outcome="rolled_back", code="VERIFY_MISMATCH", ms=812)
+    text = diagnostics.as_text(diagnostics.report())
+    assert "op=ab12" in text and "code=VERIFY_MISMATCH" in text
+    assert "outcome=rolled_back" in text

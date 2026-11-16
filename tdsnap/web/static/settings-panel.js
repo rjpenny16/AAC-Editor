@@ -8,6 +8,8 @@
  */
 
 import { $ } from "./dom.js";
+import { api } from "./api.js";
+import { refreshDiagnosticIndicator } from "./support.js";
 import { setDraftAutosave, syncDraftAutosave } from "./draft.js";
 import {
   clearAll, draftAutosaveOn, getDraft, getFolders, getPreferences, getTemplates,
@@ -58,6 +60,7 @@ async function renderPanel() {
   const [preferences, draft, templates, folders, keepDraft] = await Promise.all([
     getPreferences(), getDraft(), getTemplates(), getFolders(), draftAutosaveOn(),
   ]);
+  void renderDiagnosticMode();
   setFolder("settings-folder-line", folders.settings);
   setFolder("working-copies-folder-line", folders.workingCopies);
   $("draft-autosave-toggle").checked = keepDraft;
@@ -160,6 +163,41 @@ $("draft-autosave-toggle").addEventListener("change", async () => {
       status.textContent = "Couldn’t change that setting. Try again.";
       status.className = "status-line error";
     }
+  } finally {
+    toggle.disabled = false;
+  }
+});
+
+async function renderDiagnosticMode() {
+  try {
+    const status = await api("/api/diagnostic-mode", { background: true });
+    $("diagnostic-mode-toggle").checked = Boolean(status.enabled);
+    refreshDiagnosticIndicator(status);
+  } catch {
+    // The toggle keeps whatever it showed; the switch itself reports failures.
+  }
+}
+
+$("diagnostic-mode-toggle").addEventListener("change", async () => {
+  const toggle = $("diagnostic-mode-toggle");
+  const status = $("settings-panel-status");
+  toggle.disabled = true;
+  try {
+    const result = await api("/api/diagnostic-mode", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: toggle.checked }),
+    });
+    toggle.checked = Boolean(result.enabled);
+    refreshDiagnosticIndicator(result);
+    status.textContent = result.enabled
+      ? "Diagnostic mode is on for the next 24 hours."
+      : "Diagnostic mode is off.";
+    status.className = "status-line success";
+  } catch {
+    toggle.checked = !toggle.checked;
+    status.textContent = "Couldn’t change diagnostic mode. Try again.";
+    status.className = "status-line error";
   } finally {
     toggle.disabled = false;
   }

@@ -823,6 +823,14 @@ summary {
 }
 .foot p { margin: 0; }
 .foot-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.diagnostic-indicator {
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--warning);
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 0.85rem;
+}
 .quit-screen { margin: 2rem auto; }
 
 /* Unexpected failures and the draft-recovery offer. In the page flow, above

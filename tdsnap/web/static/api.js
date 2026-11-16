@@ -90,9 +90,34 @@ async function request(path, options, timeoutMs) {
   if (!response.ok || data.ok === false) {
     const error = new Error(data.error || `Request failed (${response.status}).`);
     error.problems = data.problems || null;
+    // Stable fields from the server (errors.py): what kind of failure, what
+    // it means for the page, and the operation ID the user can quote.
+    error.code = data.code || null;
+    error.outcome = data.outcome || null;
+    error.op = data.op || response.headers.get("X-AAC-Op") || null;
+    error.status = response.status;
+    noteFailure(path, error);
     throw error;
   }
   return data;
+}
+
+/* The last few failed requests, as codes and operation IDs only, for the
+   support report (support.js). Never the message: a message can name a
+   button or a page (REL-025). */
+const MAX_RECENT_FAILURES = 10;
+
+function noteFailure(path, error) {
+  const route = path.split("?")[0].replace(/\/[A-Za-z0-9_-]{16,}(?=\/|$)/g, "/x")
+    .replace(/\/\d+(?=\/|$)/g, "/x");
+  state.recentFailures.push({
+    at: new Date().toISOString(),
+    route,
+    status: error.status,
+    code: error.code || "none",
+    op: error.op || "none",
+  });
+  if (state.recentFailures.length > MAX_RECENT_FAILURES) state.recentFailures.shift();
 }
 
 export { api, configReady, fetchWithDeadline, userRequestInFlight };

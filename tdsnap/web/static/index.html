@@ -647,6 +647,7 @@
 <footer class="foot">
   <p>Your page sets and words stay on this computer. No account, no tracking.</p>
   <div class="foot-actions">
+    <span id="diagnostic-indicator" class="diagnostic-indicator" role="status" hidden>Diagnostic mode is on</span>
     <button type="button" id="settings-panel-btn" class="text-button">What AAC Editor saves</button>
     <button type="button" id="support-report-btn" class="text-button">Copy a support report</button>
     <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
@@ -795,6 +796,11 @@
           abruptly a copy can be left behind. The next time AAC Editor starts after a day it
           deletes any it finds, and Clear all saved data deletes them straight away.
           <span id="working-copies-folder-line" hidden>Folder: <code></code></span></li>
+        <li><strong>An activity log</strong> in the &ldquo;logs&rdquo; folder next to the settings
+          file: one line per edit, save or check, with when it happened, how long it took, whether
+          it worked, and a short code if it did not. It never contains button labels, spoken
+          messages, page or file names, or anything you typed. It keeps at most about 5 MB and
+          Clear all saved data deletes it. It is only ever shared if you copy a support report.</li>
         <li><strong>The suggestion model</strong>, only if you set up suggestions. It is one file of
           about 1 to 5 GB in the &ldquo;models&rdquo; folder next to the settings file. It is a public
           model with nothing about you in it, and nothing you type is ever added to it.</li>
@@ -818,6 +824,17 @@
         the Wikipedia lookup off completely.</p>
     </section>
 
+    <section class="privacy-section" aria-labelledby="diagnostic-heading">
+      <h3 id="diagnostic-heading">Diagnostic mode</h3>
+      <label class="inline-option" for="diagnostic-mode-toggle">
+        <input id="diagnostic-mode-toggle" type="checkbox">
+        Record each step of every edit in the activity log
+      </label>
+      <p id="diagnostic-mode-hint" class="field-hint">For tracking down a problem that comes and
+        goes. It adds timings and step names, still with no labels, names or words, and turns itself
+        off after 24 hours. A note at the bottom of the window shows while it is on.</p>
+    </section>
+
     <p id="settings-panel-status" class="status-line" role="status" aria-live="polite"></p>
     <div class="dialog-actions">
       <button type="button" id="settings-clear-btn" class="btn btn-danger">Clear all saved data</button>
@@ -829,8 +846,9 @@
 <dialog id="support-dialog" class="chip-dialog support-dialog" aria-labelledby="support-dialog-title">
   <form method="dialog">
     <h2 id="support-dialog-title">Support report</h2>
-    <p class="field-hint">Paste this into a bug report. It describes this computer and the
-      apps AAC Editor can see — no page names, button labels, or file names are included.</p>
+    <p class="field-hint">Paste this into a bug report. It describes this computer, the apps
+      AAC Editor can see, and the recent activity log as codes and timings — no page names,
+      button labels, or file names are included.</p>
     <pre id="support-report-text" class="support-report" tabindex="0">Collecting…</pre>
     <p id="support-copy-status" class="status-line" role="status" aria-live="polite"></p>
     <div class="dialog-actions">

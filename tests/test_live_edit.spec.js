@@ -1999,13 +1999,55 @@ test('recent errors travel with the support report', async ({ page }) => {
   }));
   await openEditor(page);
   await page.evaluate(() => {
-    Promise.reject(new Error('simulated failure'));
+    Promise.reject(new Error('could not verify Grandma Rosa on Breakfast Foods'));
   });
   await expect(page.locator('#app-error')).toBeVisible();
 
   await page.locator('#app-error-report').click();
   await expect(page.locator('#support-report-text')).toContainText('recent app errors');
-  await expect(page.locator('#support-report-text')).toContainText('simulated failure');
+  await expect(page.locator('#support-report-text')).toContainText('unhandledrejection: Error');
+  // REL-025: a message can name a button or a page, so only the kind travels.
+  await expect(page.locator('#support-report-text')).not.toContainText('Grandma');
+  await expect(page.locator('#support-report-text')).not.toContainText('Breakfast');
+});
+
+test('failed requests travel with the support report as codes and references', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/diagnostics', (route) => fulfillJson(route, {
+    ok: true, report: {}, text: 'AAC Editor support report\n',
+  }));
+  await page.route('**/api/tdsnap/launch', (route) => fulfillJson(route, {
+    ok: false, error: 'TD Snap could not open Grandma Rosa', code: 'WINDOW_NOT_FOUND',
+    outcome: 'refused', op: 'c0de',
+  }, 400));
+  await openEditor(page);
+  await page.evaluate(async () => {
+    const { api } = await import('/static/api.js');
+    await api('/api/tdsnap/launch', { method: 'POST' }).catch(() => {});
+  });
+  await page.locator('#support-report-btn').click();
+  const report = page.locator('#support-report-text');
+  await expect(report).toContainText('recent failed requests');
+  await expect(report).toContainText('code=WINDOW_NOT_FOUND op=c0de');
+  await expect(report).not.toContainText('Grandma');
+});
+
+test('diagnostic mode can be switched on, shows while on, and switched off', async ({ page }) => {
+  let enabled = false;
+  await mockTD(page);
+  await page.route('**/api/diagnostic-mode', (route) => {
+    if (route.request().method() === 'PUT') enabled = route.request().postDataJSON().enabled;
+    return fulfillJson(route, { ok: true, enabled });
+  });
+  await openEditor(page);
+  await expect(page.locator('#diagnostic-indicator')).toBeHidden();
+  await page.locator('#settings-panel-btn').click();
+  await page.locator('#diagnostic-mode-toggle').check();
+  await expect(page.locator('#settings-panel-status')).toContainText('on for the next 24 hours');
+  await expect(page.locator('#diagnostic-indicator')).toBeVisible();
+  await page.locator('#diagnostic-mode-toggle').uncheck();
+  await expect(page.locator('#diagnostic-indicator')).toBeHidden();
+  expect(enabled).toBe(false);
 });
 
 test('support dialog has no serious or critical accessibility violations', async ({ page }) => {

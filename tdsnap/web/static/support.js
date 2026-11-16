@@ -11,7 +11,9 @@ import { api } from "./api.js";
 import { countEdits } from "./edits.js";
 
 /* The last few unexpected failures, appended to the support report. Bounded so
-   a repeating error can't grow without limit. */
+   a repeating error can't grow without limit. Each is a source and an error
+   class or code, never a message: messages can name buttons, pages and files,
+   and the report promises it holds none of those (REL-025). */
 const recentErrors = [];
 const MAX_RECENT_ERRORS = 5;
 
@@ -50,8 +52,13 @@ window.addEventListener("beforeunload", (event) => {
   return "";
 });
 
-function recordError(source, detail) {
-  const entry = `${new Date().toISOString()} · ${source}: ${detail}`;
+/* *what* is an Error or a string. Only its class, code and operation ID are
+   kept: never its message. */
+function recordError(source, what) {
+  const kind = typeof what === "object" && what
+    ? [what.name || "Error", what.code, what.op && `op ${what.op}`].filter(Boolean).join(" ")
+    : "Error";
+  const entry = `${new Date().toISOString()} · ${source}: ${kind}`;
   recentErrors.push(entry);
   if (recentErrors.length > MAX_RECENT_ERRORS) recentErrors.shift();
 }
@@ -59,8 +66,8 @@ function recordError(source, detail) {
 /* An uncaught exception used to leave the wizard frozen and completely
    silent. Say so instead: the work is still in memory, and the support
    report is one click away. */
-function showAppError(source, detail) {
-  recordError(source, detail);
+function showAppError(source, detail, error) {
+  recordError(source, error || null);
   const banner = $("app-error");
   $("app-error-text").textContent = detail;
   const wasHidden = banner.hidden;
@@ -70,13 +77,13 @@ function showAppError(source, detail) {
 
 window.addEventListener("error", (event) => {
   const detail = event.error?.message || event.message || "Unknown error";
-  showAppError("error", detail);
+  showAppError("error", detail, event.error);
 });
 
 window.addEventListener("unhandledrejection", (event) => {
   const reason = event.reason;
   const detail = reason?.message || String(reason || "Unknown error");
-  showAppError("unhandledrejection", detail);
+  showAppError("unhandledrejection", detail, reason instanceof Error ? reason : null);
 });
 
 $("app-error-dismiss").addEventListener("click", () => {
@@ -97,10 +104,16 @@ async function showSupportReport() {
   } catch (error) {
     // The report is most valuable when the app is unwell, so a failed
     // collection still has to produce something pasteable.
-    text = `AAC Editor support report\n\n[app]\n  collection_failed: ${error.message}`;
+    text = "AAC Editor support report\n\n[app]\n  collection_failed: "
+      + `${error.name || "Error"} ${error.code || ""}`.trim();
   }
   if (recentErrors.length) {
     text += `\n\n[recent app errors]\n${recentErrors.map((line) => `  ${line}`).join("\n")}`;
+  }
+  if (state.recentFailures.length) {
+    const lines = state.recentFailures.map(({ at, route, status, code, op }) =>
+      `  ${at} · ${route} ${status} code=${code} op=${op}`);
+    text += `\n\n[recent failed requests]\n${lines.join("\n")}`;
   }
   output.textContent = text;
 }
@@ -126,4 +139,21 @@ $("support-copy").addEventListener("click", async () => {
   }
 });
 
-export { hasUnsavedWork, recordError };
+/* Diagnostic mode adds a record per step to the local log. While it is on,
+   a small indicator says so, so it is never left on unknowingly. */
+async function refreshDiagnosticIndicator(known) {
+  let status = known;
+  if (!status) {
+    try {
+      status = await api("/api/diagnostic-mode", { background: true });
+    } catch {
+      return;
+    }
+  }
+  const indicator = $("diagnostic-indicator");
+  if (indicator) indicator.hidden = !status.enabled;
+}
+
+refreshDiagnosticIndicator();
+
+export { hasUnsavedWork, recordError, refreshDiagnosticIndicator };

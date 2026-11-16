@@ -1051,10 +1051,11 @@ _AUTOMATION_PREFIXES = ("/api/tdsnap/", "/api/grid3/")
 #   It has no input and no effect beyond bringing a window forward.
 # * the live .obz export is a plain browser download, which cannot carry a header.
 #   It only reads, and the page that triggers a download cannot read what arrives.
-# * /api/diagnostics (a GET, so not listed here) only reads, and returns nothing
-#   about a page set; it has to keep working when things are broken, including
-#   when the token never loaded.
 _TOKEN_FREE = {"/api/focus", "/api/tdsnap/export.obz"}
+# Reads that need the token even though they are GETs. /api/diagnostics probes
+# both AAC apps; without a token any web page could trigger it with an <img>
+# and stall live editing (REL-024). The diagnostic-mode state is the user's.
+_TOKEN_READS = {"/api/diagnostics", "/api/diagnostic-mode"}
 
 
 def _needs_token() -> bool:
@@ -1062,6 +1063,8 @@ def _needs_token() -> bool:
     if request.method == "OPTIONS" or path in _TOKEN_FREE:
         return False
     if request.method in ("POST", "PUT", "DELETE") or path.startswith("/api/ai/"):
+        return True
+    if path in _TOKEN_READS:
         return True
     return path.startswith(_AUTOMATION_PREFIXES)
 
@@ -1154,13 +1157,44 @@ def config():
 
 @app.get("/api/diagnostics")
 def diagnostics_report():
-    """Environment facts for a bug report — never page-set content.
+    """Environment facts and recent operation records for a bug report —
+    never page-set content.
 
-    Probing TD Snap and Grid 3 walks their accessibility trees, so this takes
-    the same lock every other live call does.
+    REL-024: this used to run the whole report, model hashing and the Ollama
+    probe included, on the automation thread under the live lock, without a
+    token. Now it needs the token; the app and AI facts are gathered on this
+    request thread; and TD Snap and Grid 3 are only probed if the automation
+    thread is free within a moment, so a report never stalls a live edit and a
+    hung edit never stops a report being made.
     """
-    data = _drive(lambda: diagnostics.report(_runtime["native"]))
+    native = _runtime["native"]
+    if _LIVE_LOCK.acquire(timeout=2):
+        try:
+            live_facts = _AUTOMATION.run(diagnostics.live_report)
+        except Exception as exc:  # the report must still be produced
+            live_facts = {"tdsnap": {"probe_failed": type(exc).__name__},
+                          "grid3": {"probe_failed": type(exc).__name__}}
+        finally:
+            _LIVE_LOCK.release()
+    else:
+        busy = {"probe_skipped": "busy"}
+        live_facts = {"tdsnap": busy, "grid3": busy}
+    data = diagnostics.report(native, live_facts=live_facts)
     return jsonify({"ok": True, "report": data, "text": diagnostics.as_text(data)})
+
+
+@app.get("/api/diagnostic-mode")
+def get_diagnostic_mode():
+    return jsonify({"ok": True, **oplog.diagnostic_status()})
+
+
+@app.put("/api/diagnostic-mode")
+def put_diagnostic_mode():
+    """Switch diagnostic mode (step records in the log) on for 24 hours, or off."""
+    enabled = _json_payload().get("enabled")
+    if not isinstance(enabled, bool):
+        raise PagesetError("'enabled' must be true or false.")
+    return jsonify({"ok": True, **oplog.set_diagnostic(enabled)})
 
 
 @app.get("/api/settings")

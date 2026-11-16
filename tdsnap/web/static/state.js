@@ -34,6 +34,8 @@ const AI_GENERATION_TIMEOUT_MS = 150_000;
 
 const requestedProvider = new URLSearchParams(window.location.search).get("provider");
 const state = {
+  // Failed requests as {at, route, status, code, op}, for the support report.
+  recentFailures: [],
   provider: ["tdsnap", "grid3", "file"].includes(requestedProvider)
     ? requestedProvider : "tdsnap",
   mode: "live",
