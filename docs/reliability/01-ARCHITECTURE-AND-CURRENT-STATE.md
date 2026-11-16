@@ -121,7 +121,7 @@ Status meanings: **Tested (mock)** means automated tests pass against fakes. **V
 
 | Workflow | Evidence | Status | Issues |
 |---|---|---|---|
-| Model discovery / status | First check can exceed the browser deadline | **Unreliable on cold start** | REL-008 |
+| Model discovery / status | First check can exceed the browser deadline; built-in engine absent when started from `launch.bat` | **Unreliable** | REL-008, REL-028 |
 | Download and verification | Size cap, magic bytes, SHA-256, durable replace | Sound in one process; unsafe with two instances | REL-010, REL-022 |
 | Load and inference | In-process, no deadline, no cancel | Partial | REL-022 |
 | Ollama | 5 s probe, clear errors | Tested (unit) | none |

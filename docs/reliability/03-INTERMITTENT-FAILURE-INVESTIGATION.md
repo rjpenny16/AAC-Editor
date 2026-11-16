@@ -10,6 +10,17 @@ There is no single cause. The code contains at least four families of timing- an
 
 One thing the investigation did rule out: the red CI is not intermittent. It is one deterministic defect (REL-026).
 
+## Owner input received after the first draft
+
+| Question | Answer | Effect |
+|---|---|---|
+| Is Windows hardware with TD Snap and Grid 3 available? | Yes | The discovery session (T3-1) can run in Phase A. Every VERIFICATION GAP item can now be closed |
+| Which failures are seen most? | Edits failing; failing to connect to Ollama | R1 (readiness) moves to the front of Phase C. The Ollama failure is explained by REL-028 in doc 02, a new confirmed finding |
+| How is the app started? | Both `launch.bat` and the installed app | Confirms exposure to REL-007 (the launch script quits the running copy) and REL-028 (the two modes have different AI engines). Mixing the two is itself a source of run-to-run difference |
+| Current workaround when AI fails | Asks a web assistant for a comma-separated list and pastes it into the word box | The paste path already works (`web/static/chips.js:151, 214`). A guided version is added to Phase D |
+
+"Edits failing" is still a symptom, not a cause. The candidates, in the order the code makes most likely, are: input sent while TD Snap is not in front (REL-005); the editor panel read before it updates, so a correct edit fails verification and is rolled back (REL-017); "page changed after preview" because the window moved (REL-018); TD Snap's database being locked at verification time (REL-019). The Phase A log will show which, usually from one failed edit.
+
 ## Shared root causes
 
 | Root | What it is | Symptoms it would produce | Issues |

@@ -2,9 +2,19 @@
 
 Audited commit `69ffa9d`. This is the implementation plan. **Nothing in it has been started; it needs the owner's approval first.** Issue IDs refer to [02](02-CONFIRMED-BUGS-AND-ROOT-CAUSES.md) and [03](03-INTERMITTENT-FAILURE-INVESTIGATION.md). It supersedes the ordering of Track E (Phases 16 to 20) in [ROADMAP.md](../../ROADMAP.md) until the release gate in [07](07-RELEASE-READINESS-CHECKLIST.md) is met; Phases 17, 18 and most of 20 (fewer steps, design system, polish) are paused.
 
+## Revision 2 (after owner input)
+
+The owner confirmed: a Windows machine with TD Snap and Grid 3 is available; the failures seen most are failed edits and failed Ollama connections; the app is started both from `launch.bat` and from the installer. Changes made to this plan:
+
+1. **Phase A gains A8 and A9** (built-in AI by default, launch scripts stop quitting the running copy and are honest about AI). Small, and they remove failures seen daily. See REL-028 in doc 02.
+2. **Phase A7 is no longer conditional on hardware.** A step-by-step script for the session is deliverable A7a.
+3. **Phase C is reordered**: C1 (foreground), C2 (robust reads), C3 (fingerprint), C4 (database reads) come first and are to be re-ranked from the first real logs.
+4. **Phase D gains D7**, a guided "ask an assistant yourself" fallback. This is the single exception to rule 1.
+5. Until Phase B3 lands, the owner should start the app from the installer only, and not run `launch.bat` while it is open.
+
 ## Rules for the whole programme
 
-1. No new features until the release gate is met.
+1. No new features until the release gate is met. One exception, agreed with the owner: D7, a fallback for when local AI is unavailable.
 2. One issue or one tightly related group per pull request. No pull request mixes a live-automation change with anything else.
 3. Every fix lands with a test that failed before it.
 4. No merge with a red check. No test is weakened, skipped or retried to get green.
@@ -25,11 +35,14 @@ Goal: a green, gated CI that keeps its evidence, and a log on the owner's machin
 | A4 | Operation log, summary level; operation IDs through `_drive` and the file-edit routes; error-code catalogue (first version) | REL-025 | new `web/oplog.py`; `web/server.py`, `uia.py`, `live.py`, `grid3.py` (instrumentation only, no behaviour change); `packaging/launcher.py` | M |
 | A5 | Diagnostic mode (step records) and support-report changes; token on `/api/diagnostics`; privacy test | REL-025, REL-024 | `web/diagnostics.py`, `web/static/support.js`, `web/static/settings-panel.js`, `tests/test_privacy_contract.py`, `PRIVACY.md` | M |
 | A6 | Correct the docs that overstate verification | doc 02 minor | `README.md`, `docs/QA_PLAN.md`, `ROADMAP.md` | S |
-| A7 | Write and run Tier 3 session T3-1 (behaviour discovery) on disposable content; record answers in doc 03 | REL-001, 002, 004, 005, 017, 019 | docs only | hardware, about half a day |
+| A7a | Step-by-step script for session T3-1, written for the owner: creating a disposable TD Snap user and a copy of a stock grid set, taking backups, each experiment with what to click and what to note | REL-001, 002, 004, 005, 017, 019 | new `docs/reliability/T3-1-DISCOVERY-SESSION.md` | S |
+| A7 | Owner runs T3-1 with diagnostic mode on and sends the support report; answers recorded in doc 03 | same | docs only | hardware, about half a day |
+| A8 | Built-in model first by default; Ollama only when chosen in advanced settings; status sentence names the engine and launch mode | REL-028 | `web/engines.py`, `web/static/ai.js`, `web/static/index.html`, `tests/test_engines.py` | S |
+| A9 | Launch scripts: never quit a running copy (open it instead); install the AI extra or state that AI is not included in this mode | REL-028, part of REL-007 | `launch.bat`, `launch.sh`, `web/localai.py` status text | S |
 
-- **Depends on:** nothing. A7 needs A4 and A5 and a Windows machine.
+- **Depends on:** nothing. A7 needs A4, A5 and A7a. The Windows machine is available.
 - **Regression risk:** low. A4 touches the live modules but only adds calls that record; guard with a test that logging failures never affect an operation.
-- **Acceptance:** `main` green for legitimate reasons; a deliberately failing pull request cannot be merged; a failed browser test has a downloadable trace; a live edit on the owner's machine produces log records with no vocabulary in them (checked by the seeded-label test); T3-1 answers recorded.
+- **Acceptance:** `main` green for legitimate reasons; a deliberately failing pull request cannot be merged; a failed browser test has a downloadable trace; a live edit on the owner's machine produces log records with no vocabulary in them (checked by the seeded-label test); T3-1 answers recorded; started from either launch path with Ollama absent, the suggestions panel either works with the built-in model or says plainly why not, and never shows an Ollama error; starting `launch.bat` while the installed app is open leaves it running.
 
 ## Phase B. Protect user data
 
@@ -39,7 +52,7 @@ Goal: no operation can leave data changed without saying so; no path overwrites 
 |---|---|---|---|---|
 | B1 | Outcome type (`refused`, `verified`, `verified_with_gaps`, `rolled_back`, `partial`, `unknown`) from the live modules through the API to the result screen; stop rule in `apply_batch` uses it and catches every exception; cleanup failures never replace the primary error | REL-003, REL-014, REL-015 | `errors.py`, `live.py`, `grid3.py`, `web/server.py`, `web/static/result.js`, `review.js` | M |
 | B2 | Save safety: refuse source as destination, default to `.edited`, re-open and validate the saved copy | REL-006 | `web/server.py`, `web/desktop.py` | S |
-| B3 | Shutdown safety: quit refuses while a live edit runs and warns on unsaved file edits; unsaved working copies survive exit and are offered at next start; launch scripts focus the running instance instead of quitting it | REL-007, REL-021 | `web/server.py`, `web/desktop.py`, `launch.bat`, `launch.sh`, `web/static/connect.js` | M |
+| B3 | Shutdown safety: quit refuses while a live edit runs and warns on unsaved file edits; unsaved working copies survive exit and are offered at next start (launch-script half done in A9) | REL-007, REL-021 | `web/server.py`, `web/desktop.py`, `launch.bat`, `launch.sh`, `web/static/connect.js` | M |
 | B4 | Intent journal for live edits; "an edit was interrupted" notice at startup | L15 in doc 04 | `web/oplog.py`, `web/server.py`, frontend notice | S |
 | B5 | Dirty-state refusals: TD Snap already in edit mode, any dialog present | REL-002 | `live.py` | S |
 | B6 | Bounded rollback for TD Snap: condition-based waits, Undo presses capped at actions performed, stop on unreadable state, final verification before Done | REL-002 | `live.py` | M to L |
@@ -71,7 +84,7 @@ Goal: the same action in the same situation gives the same result.
 | C9 | Block navigation away from an in-flight apply; reconcile a lost response for existing-page edits using the operation ID | H-14, doc 03 | `web/static/review.js`, `web/server.py` | M |
 | C10 | Version awareness: record TD Snap and Grid 3 versions; warn on untested versions; one module holding every selector and UI string | H-04, H-05 | `live.py`, `grid3.py`, new selectors module | M |
 
-- **Depends on:** Phase B (the fake UI tree and outcome type). C1 to C4 are ordered by expected impact; reorder using the first real logs.
+- **Depends on:** Phase B (the fake UI tree and outcome type). C1 to C4 come first because failed edits are the owner's most frequent symptom; rank them against each other using the first real logs from A7.
 - **Regression risks:** C3 changes a safety guard; keep the old fingerprint in parallel for one release and log disagreements before removing it. C5 changes threading; keep the single-thread rule.
 - **Acceptance:** seeded random-timing suite passes for 500 seeds per operation; T3-3 meets the targets in doc 07; T3-5 shows 50 of 50 cold starts connect; moving the TD Snap window between review and apply no longer refuses the edit.
 
@@ -87,6 +100,7 @@ Goal: AI can fail in any way without affecting editing, and says what state it i
 | D4 | Suggestions carry the page and request they were made for; stale ones are discarded | doc 03 | `web/static/ai.js` | S |
 | D5 | Grid-set bounds; `zlib.error`; native-dialog exception mapping; settings load errors | REL-012, doc 02 minor | `grid3.py`, `gridset.py`, `obf.py`, `web/desktop.py`, `web/settings.py` | S |
 | D6 | Stale `.part` cleanup at startup, guarded by the single-instance lock | REL-022 | `web/localai.py` | S |
+| D7 | "Ask an assistant yourself" fallback, shown whenever local AI is not ready: the app composes the prompt from the topic and count ("List 20 single words about ..., separated by commas"), offers Copy and a link that opens a web assistant in the user's browser, and points at the word box for pasting the answer. The app itself sends nothing; a one-line reminder says not to include a client's name or details | owner request | `web/static/ai.js`, `web/static/index.html`, `web/prompts.py` (reuse the wording rules), `PRIVACY.md` | S |
 
 AI state model. One state at a time; every transition is logged with its code.
 
@@ -104,6 +118,7 @@ Rules: one download and one generation at a time, enforced on the server; a new 
 
 - **Depends on:** C6 (single instance) for D6; otherwise independent of B and C and can run in parallel with C if capacity allows.
 - **Regression risk:** D3 changes packaging; verify in the installer smoke test.
+- **Notes on D7:** the paste half already exists (`web/static/chips.js:151, 214` splits on commas, tabs and new lines), so D7 adds only the prompt and the pointer. It makes no network request, so the local-first promise holds and the privacy contract test must still pass. A plain search engine often does not return a clean list; the link should open a chat assistant, and the pasted text goes through the same cleaning and review as typed words.
 - **Acceptance:** killing the inference process during generation leaves the editor fully usable and shows a clear AI error; first status check after a cold start returns in under 2 seconds with a multi-gigabyte model installed; with AI disabled or absent, every editing test passes unchanged.
 
 ## Phase E. UX and maintainability
@@ -186,7 +201,7 @@ A4-A5 ──┼─> A7 (hardware) ──> B6, B7, B8
 
 | Phase | Engineering | Hardware time |
 |---|---|---|
-| A | about 1 week | half a day |
+| A | about 1.5 weeks | half a day |
 | B | about 3 weeks | 1 day |
 | C | about 3 weeks | 1 day |
 | D | about 1.5 weeks (2.5 with D3) | half a day |

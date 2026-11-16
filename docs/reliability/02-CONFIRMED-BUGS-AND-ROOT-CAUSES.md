@@ -18,6 +18,7 @@ Complexity: S = under a day, M = one to three days, L = about a week, including 
 | REL-011 | High | Automation calls have no deadline |
 | REL-025 | High | No log exists; the support report can leak vocabulary |
 | REL-026 | High | CI is red from one cause, loses its evidence and gates nothing |
+| REL-028 | High | The two ways of launching give different AI: `launch.bat` has no built-in engine |
 | REL-012 | Medium | A crafted grid set can exhaust memory |
 | REL-013 | Medium | `#` or `%` in a folder name breaks file reading |
 | REL-014 | Medium | The result screen says "Done" regardless of the checks |
@@ -175,6 +176,27 @@ Complexity: S = under a day, M = one to three days, L = about a week, including 
 - **Root cause:** diagnostics were designed as a one-off snapshot, not a record.
 - **Proposed fix:** doc 05, "Diagnostics".
 - **Complexity:** M.
+
+## REL-028. The two ways of launching give different AI: `launch.bat` has no built-in engine
+
+Found after the first version of this audit, from the owner's report that the app "fails to connect to Ollama" and that they use both `launch.bat` and the installed app.
+
+- **Severity:** High for trust (a failure the owner sees constantly); no data risk.
+- **Affected:** AI suggestions when started from `launch.bat` or `launch.sh`.
+- **Files:** `launch.bat:19-22` (`python -m pip install .`, no `[ai]` extra); `pyproject.toml:18` (`ai = ["llama-cpp-python>=0.3"]`); `tdsnap/web/localai.py:306-313` (`engine_available`), `604-605`; `packaging/tdsnap.spec:39` (the installer bundles `llama_cpp`); `tdsnap/web/engines.py:66-70` (Ollama is tried first in `auto`).
+- **Steps:** start from `launch.bat` on a machine without Ollama running; open the suggestions panel.
+- **Expected:** suggestions work with the built-in model, as they do in the installed app.
+- **Actual:** `engine_available()` is false because `llama_cpp` is not installed, so the built-in model cannot be offered and Ollama is the only engine. With Ollama absent or stopped, the user gets a connection failure. The same person using the installed app gets a working built-in model. Nothing on screen says the two modes differ.
+- **Compounding:** `launch.bat` also quits any running copy on the port, including the installed app (REL-007). And the default order in `auto` is Ollama first, so even where the built-in model is present, an Ollama that is reachable but slow or half-configured is preferred.
+- **Root cause:** the AI engine is an optional extra that one launch path installs and the other does not, with no message explaining the difference.
+- **Confidence:** high (code). The owner's symptom matches.
+- **Proposed fix:**
+  1. Built-in model first by default; Ollama only when the user chooses it in advanced settings. Nobody sees an Ollama error unless they picked Ollama.
+  2. `launch.bat` / `launch.sh` either install the AI extra or the panel says "AI is not included when started this way; use the installed app".
+  3. The status sentence names the launch mode and the engine in use.
+- **Regression risk:** low. Users who rely on Ollama must select it once; migrate an existing explicit Ollama preference.
+- **Tests:** `engines.choose` table with the new order; browser test for the "not included in this mode" state.
+- **Complexity:** S.
 
 ## REL-012. A crafted grid set can exhaust memory
 

@@ -36,7 +36,7 @@ A release must not be described as production-ready on the strength of section 1
 
 ### Lifecycle and connection
 
-- [ ] A second launch never starts a second server and never ends the first. *Blocked: REL-010, REL-007.*
+- [ ] A second launch, by either `launch.bat` or the installed app, never starts a second server and never ends the first. *Blocked: REL-010, REL-007.*
 - [ ] Quit is refused during a live edit.
 - [ ] After a server restart the open page shows an "app restarted" state, not a TD Snap error. *Blocked: REL-009.*
 - [ ] An automation call that hangs ends in `unknown` within its deadline and does not block other requests. *Blocked: REL-011.*
@@ -46,6 +46,8 @@ A release must not be described as production-ready on the strength of section 1
 - [ ] With the AI extra not installed, with Ollama absent, with a corrupt model file, and with the inference process killed mid-generation, every editing test still passes.
 - [ ] First AI status after a cold start returns in under 2 seconds with the shipped model installed. *Blocked: REL-008.*
 - [ ] No AI state disables an editing control.
+- [ ] With Ollama absent, neither launch path shows an Ollama error unless the user selected Ollama. *Blocked: REL-028.*
+- [ ] When local AI is not ready, the manual fallback (compose prompt, paste list) is offered and makes no network request.
 
 ### Errors and diagnostics
 
