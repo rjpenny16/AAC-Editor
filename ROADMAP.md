@@ -726,6 +726,12 @@ never content.
 
 # Track E: Easy, dependable, finished
 
+> **November 2026:** the reliability audit in [docs/reliability](docs/reliability/) supersedes
+> the ordering of this track until its release gate
+> ([07](docs/reliability/07-RELEASE-READINESS-CHECKLIST.md)) is met. Phases 17, 18 and most of
+> 20 are paused; Phase 16's goals are carried by the recovery roadmap
+> ([06](docs/reliability/06-RELIABILITY-RECOVERY-ROADMAP.md)).
+
 Phases 0 to 12b built the capability. Before more reach (Phases 8, 13, 14), the app needs to be
 simpler for a clinician, behave the same way every time, and look finished. These phases are
 ordered so each makes the next safer: measure and fix failures first, then simplify the flow, then
@@ -754,7 +760,9 @@ Goal: every failure a person can hit produces a clear message, and the team can 
    once every 15 s, and **Check again** or the first good poll closes it.
 
 **Exit:** every catalogue row has a test and a plain message · live paths have fault-injection
-tests · browser suite green on Linux Chromium and Windows Edge.
+tests · browser suite green on Linux Chromium and Windows Edge. *Status (November 2026): the
+Edge job exists (`browser-edge` in the Tests workflow) and the Linux suite is green again; the
+other criteria are tracked in the reliability roadmap.*
 
 ## Phase 17: Fewer steps, fewer words *(~2 weeks)*
 

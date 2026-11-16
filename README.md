@@ -87,9 +87,21 @@ so on the Grid 3 screen rather than leaving you to work it out.
   offered again.
 - Verifies the completed edit and reports anything that still needs review.
 
+**How far live editing is proven.** Live editing of TD Snap and Grid 3 is
+tested in CI against simulated versions of those apps, not the apps
+themselves; the real-hardware sessions in
+[docs/reliability](docs/reliability/05-TESTING-AND-DIAGNOSTICS.md) have not all
+been run yet. Live editing cannot be made transactional, and a failed edit
+relies on the AAC app's own Undo. Take a backup in TD Snap or Grid 3 before the
+first live edit of a session, and for large changes prefer editing an exported
+file, which has the strongest guarantees. See
+[release readiness](docs/reliability/07-RELEASE-READINESS-CHECKLIST.md).
+
 If something goes wrong, **Copy a support report** in the footer collects the
-versions and capability flags a bug report needs. It never includes page names,
-button labels, or file names, so it is safe to paste in full.
+versions, capability flags and recent activity (as codes and timings) a bug
+report needs. It never includes page names, button labels, or file names, so it
+is safe to paste in full. Each error message also shows a short reference you
+can quote.
 
 ## Private by design
 
