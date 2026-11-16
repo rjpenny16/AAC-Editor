@@ -2409,6 +2409,58 @@ def _prior_content(page, changes, removals, moves, by_slot, known=None,
     return prior
 
 
+def _accepted_names(expected) -> dict:
+    """Every accessibility name each reviewed cell may legitimately carry.
+
+    TD Snap names a button after its spoken message when it has one, and the
+    page set on disk has not necessarily caught up with an edit made seconds
+    ago, so a just-written message cannot be resolved back to its label. A
+    cell is right if its name is its label, its message, or a message it
+    carried with it on a move.
+    """
+    return {
+        item["slot"]: {
+            name.strip().casefold()
+            for name in (item["label"], item.get("message"), item.get("carried_message"))
+            if name and name.strip()
+        }
+        for item in expected
+    }
+
+
+def _verify_final_layout(window, expected, emptied=()):
+    """Re-read the page after Done and check every reviewed cell (REL-016).
+
+    One function for ``apply_page_edits`` and ``add_topic_page``: the new-page
+    path used to compare the accessibility name with the label only, so a
+    correctly created button that speaks a phrase failed verification and the
+    whole new page was rolled back. Returns the final page group.
+    """
+    final_group = _page_group(window)
+    final_grid = _grid(final_group)
+    final_slots = {
+        button["slot"]: button["label"] for button in _page_layout(final_group, final_grid)
+    }
+    accepted = _accepted_names(expected)
+    missing = [
+        item["label"] for item in expected
+        if (final_slots.get(item["slot"]) or "").strip().casefold() not in accepted[item["slot"]]
+    ]
+    if missing:
+        raise PagesetError(
+            "TD Snap did not verify the edited button(s) in their reviewed cells: "
+            + ", ".join(missing),
+            code="VERIFY_MISMATCH",
+        )
+    left_behind = [final_slots[slot] for slot in emptied if slot in final_slots]
+    if left_behind:
+        raise PagesetError(
+            "TD Snap did not verify the removal of: " + ", ".join(left_behind),
+            code="VERIFY_MISMATCH",
+        )
+    return final_group
+
+
 def _failed_edit(exc: BaseException, restore, window=None) -> PagesetError:
     """The one error an edit that failed after entering edit mode raises.
 
@@ -2626,20 +2678,6 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         for move in moves
         if move["slot"] not in changed_slots
     ]
-    # Every accessibility name a reviewed cell may legitimately carry once the
-    # edit has landed. TD Snap names a button after its spoken message when it
-    # has one, and the page set on disk has not necessarily caught up with an
-    # edit made seconds ago — so the post-edit-mode re-read below cannot
-    # resolve a just-written message back to its label the way the preview
-    # does, and would report every such button missing and roll the edit back.
-    final_names = {
-        item["slot"]: {
-            name.strip().casefold()
-            for name in (item["label"], item["message"], item.get("carried_message"))
-            if name and name.strip()
-        }
-        for item in expected
-    }
     touched = (
         set(requested_slots) | set(removals) | set(moved) | set(moved.values())
         | changed_slots
@@ -2712,28 +2750,11 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
                 "query": item.get("symbol_query") or item["label"],
             })
             styled += int(result["border"] and item["border_color"] is not None)
+        # Verified before Done (REL-002: whether Undo still works after Done
+        # is unknown), then re-read after Done.
         _verify_page_state(window, expected, emptied, untouched)
         _exit_edit_mode(window)
-        final_group = _page_group(window)
-        final_grid = _grid(final_group)
-        final_slots = {
-            button["slot"]: button["label"] for button in _page_layout(final_group, final_grid)
-        }
-        missing = [
-            item["label"] for item in expected
-            if (final_slots.get(item["slot"]) or "").strip().casefold()
-            not in final_names[item["slot"]]
-        ]
-        if missing:
-            raise PagesetError(
-                "TD Snap did not verify the edited button(s) in their reviewed cells: "
-                + ", ".join(missing)
-            )
-        left_behind = [final_slots[slot] for slot in emptied if slot in final_slots]
-        if left_behind:
-            raise PagesetError(
-                "TD Snap did not verify the removal of: " + ", ".join(left_behind)
-            )
+        final_group = _verify_final_layout(window, expected, emptied)
         settled = _fingerprint_token(final_group)
     except Exception as exc:
         failure = _failed_edit(
@@ -3173,11 +3194,13 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     symbol_results = []
     styled = 0
     placed = []
+    _reset_writes()
     try:
         _enter_edit_mode(window)
         _collapse_editor(window)
         parent_baseline = _fingerprint(_page_group(window))
         parent_cell = _empty_cell(window, _grid(_page_group(window)))
+        _note_write("page")
         _create_page_link(auto, window, title, parent_cell)
 
         _collapse_editor(window)
@@ -3203,6 +3226,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
             placed.append(placed_item)
             _collapse_editor(window)
             active_grid = _grid(_page_group(window))
+            _note_write("add")
             result = _add_button(
                 auto, window, _cell_at(active_grid, slot), item["label"],
                 item["message"], item["border_color"], item.get("symbol", True),
@@ -3219,14 +3243,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
 
         _verify_page_state(window, placed)
         _exit_edit_mode(window)
-        final_group = _page_group(window)
-        final_grid = _grid(final_group)
-        final_slots = {
-            button["slot"]: button["label"]
-            for button in _page_layout(final_group, final_grid)
-        }
-        if any(final_slots.get(item["slot"]) != item["label"] for item in placed):
-            raise PagesetError("TD Snap did not verify the new page's reviewed content.")
+        _verify_final_layout(window, placed)
 
         back = _find(window, automation_id="BackButton", control_type="ButtonControl")
         if back is None:
@@ -3253,18 +3270,22 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
         link = _find(_page_group(window), name=title, control_type="ButtonControl")
         _open_page_button(window, link, title)
     except Exception as exc:
-        try:
-            _rollback_new_page(
+        failure = _failed_edit(
+            exc,
+            lambda: _rollback_new_page(
                 auto, window, actual_parent, parent_baseline, page_baseline,
-                len(normalized) * 6 + 12,
+                # A new page and its link take several undo steps of their own.
+                _writes() + 4,
+            ),
+            window,
+        )
+        if failure.outcome == errors.ROLLED_BACK:
+            failure.args = (
+                f"{_sentence(exc)} The provisional page and parent link were restored.",
             )
-        except PagesetError as rollback_error:
-            raise PagesetError(f"{_sentence(exc)} {rollback_error}") from exc
-        raise PagesetError(
-            f"{_sentence(exc)} The provisional page and parent link were restored."
-        ) from exc
-    finally:
-        _exit_edit_mode(window)
+        _leave_edit_mode_after(window, failure)
+        raise failure from exc
+    _leave_edit_mode_after(window, PagesetError(""))
 
     symbol_results.append({
         "label": title,
@@ -3280,18 +3301,22 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
         entry["label"] for entry in symbol_results
         if entry["requested"] and not entry["applied"]
     ]
+    checks = {
+        "td_snap_edit": "pass",
+        "navigation": "pass",
+        "content": "pass",
+        "symbols": "pass" if total_symbols == expected_symbols else "partial",
+        "topic_format": "pass" if styled == expected_styles else "partial",
+    }
+    gaps = [name for name in ("symbols", "topic_format") if checks[name] != "pass"]
     return {
+        "outcome": errors.VERIFIED_WITH_GAPS if gaps else errors.VERIFIED,
+        "unverified": gaps,
         "page": title,
         "parent": parent,
         "buttons": len(normalized),
         "symbols": symbol_results,
-        "checks": {
-            "td_snap_edit": "pass",
-            "navigation": "pass",
-            "content": "pass",
-            "symbols": "pass" if total_symbols == expected_symbols else "partial",
-            "topic_format": "pass" if styled == expected_styles else "partial",
-        },
+        "checks": checks,
         "warnings": [warning for warning in [
             f"TD Snap found no symbol for {_named_list(unmatched)}. "
             f"{'It was' if len(unmatched) == 1 else 'They were'} added without one — "

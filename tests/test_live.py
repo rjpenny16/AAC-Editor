@@ -2859,3 +2859,32 @@ def test_a_successful_edit_whose_symbol_did_not_apply_is_verified_with_gaps(monk
     assert report["outcome"] == "verified_with_gaps"
     assert report["unverified"] == ["symbols"]
 
+
+
+def test_rel016_new_page_verification_accepts_a_button_named_by_its_message(monkeypatch):
+    """REL-016: add_topic_page compared the accessibility name with the label
+    only. A button with a spoken message is named by that message until TD
+    Snap writes its database, so a correct new page was rolled back. Both
+    entry points now share _verify_final_layout."""
+    monkeypatch.setattr(live, "_page_group", lambda _w: object())
+    monkeypatch.setattr(live, "_grid", lambda _g: live.Grid((10,), (20,), 8, 8))
+    monkeypatch.setattr(live, "_page_layout", lambda *_a: [
+        {"slot": 0, "label": "I would like more please"}, {"slot": 1, "label": "juice"},
+    ])
+    placed = [
+        {"slot": 0, "label": "more", "message": "I would like more please"},
+        {"slot": 1, "label": "juice", "message": None},
+    ]
+    live._verify_final_layout(object(), placed)
+
+    placed[1]["label"] = "milk"
+    with pytest.raises(PagesetError, match="milk") as caught:
+        live._verify_final_layout(object(), placed)
+    assert caught.value.code == "VERIFY_MISMATCH"
+
+
+def test_both_entry_points_use_the_shared_final_verification():
+    import inspect
+
+    assert "_verify_final_layout(" in inspect.getsource(live.apply_page_edits)
+    assert "_verify_final_layout(" in inspect.getsource(live.add_topic_page)
