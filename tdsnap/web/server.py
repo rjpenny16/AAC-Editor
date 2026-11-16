@@ -2819,6 +2819,13 @@ def make_server(port: int):
         # is not left in the temp folder just because the app stopped oddly.
         atexit.register(cleanup_sessions)
         _cleanup_registered = True
+    if os.environ.get("AAC_QUIET_HTTP_LOG") == "1":
+        # The browser suite makes thousands of requests; one access-log line
+        # each buried the test failures in CI logs. Warnings and errors,
+        # including tracebacks, still print.
+        import logging
+
+        logging.getLogger("werkzeug").setLevel(logging.WARNING)
     server = _make_server("127.0.0.1", port, app, threaded=True)
     _runtime["shutdown"] = server.shutdown
     return server
