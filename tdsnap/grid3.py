@@ -1741,7 +1741,10 @@ def edit_page(items=(), changes=(), removals=(), moves=(), fingerprint=None,
     if not fingerprint:
         raise PagesetError("The Grid 3 review fingerprint is required. Reconnect and review again.")
     if _fingerprint(active) != fingerprint:
-        raise PagesetError("The Grid 3 grid changed after preview. Reconnect and review again.")
+        raise PagesetError(
+            "The Grid 3 grid changed after preview. Reconnect and review again.",
+            code="FINGERPRINT_CHANGED",
+        )
 
     # -- plan validation, entirely before any automation ----------------------
     changed = {change["slot"] for change in changes}
@@ -1957,7 +1960,10 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
     if not fingerprint:
         raise PagesetError("The Grid 3 review fingerprint is required. Reconnect and review again.")
     if _fingerprint(active) != fingerprint:
-        raise PagesetError("The Grid 3 grid changed after preview. Reconnect and review again.")
+        raise PagesetError(
+            "The Grid 3 grid changed after preview. Reconnect and review again.",
+            code="FINGERPRINT_CHANGED",
+        )
     if title.casefold() in _grid_names(active):
         raise PagesetError(f"A grid named “{title}” already exists in this grid set.")
     if link_slot is None:

@@ -2932,17 +2932,54 @@ test.describe('moving buttons and undoing an applied edit', () => {
     await page.route('**/api/tdsnap/undo', (route) => fulfillJson(route, {
       ok: false,
       error: 'The target page changed after preview. Refresh the layout and review the edit again.',
+      code: 'FINGERPRINT_CHANGED', outcome: 'refused', op: 'b0b1',
     }, 400));
     await connect(page);
     await page.locator('#undo-last-btn').click();
     await page.locator('#confirm-update-btn').click();
 
-    await expect(page.locator('#review-error')).toContainText(
-      'TD Snap couldn’t undo the last change.',
-    );
-    await expect(page.locator('#review-error')).toContainText(
-      'the page is as it was before this undo',
-    );
+    const error = page.locator('#review-error');
+    await expect(error).toContainText('The undo was not started.');
+    await expect(error).toContainText('Nothing was changed.');
+    await expect(error).toContainText('Refresh the page and review the edit again.');
+    await expect(error).toContainText('Reference b0b1');
+  });
+
+  test('an edit whose symbols were not checked does not read as a plain success', async ({ page }) => {
+    // REL-014: the heading was "Done" whatever the checks said.
+    await mockTD(page);
+    await page.route('**/api/tdsnap/edit-plan', (route) => fulfillJson(route, {
+      ok: true, page: 'Eating', buttons: 1, warnings: [],
+      outcome: 'verified_with_gaps', unverified: ['symbols'],
+      checks: { td_snap_edit: 'pass', content: 'pass', symbols: 'partial' },
+    }));
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    await page.locator('#build-btn').click();
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-eyebrow')).toHaveText('Done — check the notes');
+    await expect(page.locator('#result-heading')).toContainText('Done, with notes');
+    await expect(page.locator('#result-warnings')).toContainText('Not checked automatically: symbols');
+  });
+
+  test('an undo that could not finish never claims the page is as it was', async ({ page }) => {
+    // It used to say "the page is as it was before this undo" whatever happened.
+    await movablePage(page);
+    await mockUndo(page, { available: APPLIED });
+    await page.route('**/api/tdsnap/undo', (route) => fulfillJson(route, {
+      ok: false,
+      error: 'TD Snap did not verify apple. TD Snap could not verify restoration of the reviewed page.',
+      code: 'VERIFY_MISMATCH', outcome: 'partial', op: 'c4fe',
+    }, 400));
+    await connect(page);
+    await page.locator('#undo-last-btn').click();
+    await page.locator('#confirm-update-btn').click();
+
+    const error = page.locator('#review-error');
+    await expect(error).toContainText('may be partly changed');
+    await expect(error).toContainText('Do not retry until you have checked the page.');
+    await expect(error).not.toContainText('as it was');
   });
 
   test('starting over stops offering an undo for a page set that may change', async ({ page }) => {

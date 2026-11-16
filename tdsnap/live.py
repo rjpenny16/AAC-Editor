@@ -2566,7 +2566,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
     if not (normalized or changes or removals or moves):
         raise PagesetError("Add at least one word or phrase.")
     if not _desktop_unlocked():
-        raise PagesetError("Unlock Windows before editing TD Snap directly.")
+        raise PagesetError("Unlock Windows before editing TD Snap directly.", code="REFUSED")
 
     auto = _automation()
     window = _window(auto)
@@ -2584,7 +2584,8 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
     group = _page_group(window)
     if _fingerprint_token(group) != fingerprint:
         raise PagesetError(
-            "The target page changed after preview. Refresh the layout and review the edit again."
+            "The target page changed after preview. Refresh the layout and review the edit again.",
+            code="FINGERPRINT_CHANGED",
         )
     baseline = _fingerprint(group)
     grid = _grid(group)
@@ -3166,7 +3167,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     if not normalized:
         raise PagesetError("Add at least one word or phrase.")
     if not _desktop_unlocked():
-        raise PagesetError("Unlock Windows before editing TD Snap directly.")
+        raise PagesetError("Unlock Windows before editing TD Snap directly.", code="REFUSED")
 
     auto = _automation()
     window = _window(auto)

@@ -20,6 +20,7 @@ import { clearQueue, renderBatchOutcome } from "./queue.js";
 import { forget as forgetVocabulary } from "./vocabulary.js";
 import { parentFilter, renderParents, titleOf } from "./parents.js";
 import { hasUnsavedWork, recordError } from "./support.js";
+import { successHeading, unverifiedText } from "./outcomes.js";
 import { setOperation, setPageStyle, show, showBuildError } from "./wizard.js";
 
 /* ---------- step 3: result ---------- */
@@ -100,14 +101,17 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
   syncFileSave();
   clearUndoHistory();
   void clearDraft();
-  $("result-eyebrow").textContent = "Complete";
   const product = state.provider === "grid3" ? "Grid 3" : "TD Snap";
   const cellWord = state.provider === "grid3" || state.fileFormat === "gridset" ? "cells" : "vocabulary";
-  $("result-heading").textContent = data.undone
+  // REL-014: the heading follows the server's outcome. A success heading is
+  // only ever shown for verified or verified_with_gaps.
+  const { eyebrow, heading } = successHeading(data.outcome, data.undone
     ? `Done — the last change was undone in ${product}`
     : state.mode === "file"
       ? "Done — save the edited copy to keep it"
-      : `Done — ${product} was updated`;
+      : `Done — ${product} was updated`);
+  $("result-eyebrow").textContent = eyebrow;
+  $("result-heading").textContent = heading;
   renderUndoControl();
   $("edit-count").textContent =
     state.edits > 1 ? `· ${state.edits} edits this session` : "";
@@ -157,7 +161,8 @@ function renderResult(title, data, operation = state.operation, parentTitle = ti
 
   const warningBox = $("result-warnings");
   warningBox.innerHTML = "";
-  const warnings = data.warnings || [];
+  const gapNote = unverifiedText(data.unverified);
+  const warnings = [...(data.warnings || []), ...(gapNote ? [gapNote] : [])];
   warningBox.hidden = warnings.length === 0;
   if (warnings.length) {
     const lead = document.createElement("strong");
@@ -204,13 +209,21 @@ function renderBatchResult(data) {
   state.applied = applied.length > 0;
   clearUndoHistory();
   void clearDraft();
-  $("result-eyebrow").textContent = unapplied.length ? "Partly complete" : "Complete";
+  const needsCheck = ["partial", "unknown"].includes(data.outcome);
+  $("result-eyebrow").textContent = needsCheck
+    ? "Check TD Snap"
+    : unapplied.length ? "Partly complete" : "Complete";
   $("result-heading").textContent = !applied.length
     ? "No pages were applied"
     : unapplied.length
       ? `${applied.length} of ${pages} pages were applied`
       : `Done — ${pages} page${pages === 1 ? " was" : "s were"} updated in TD Snap`;
-  $("result-sub").textContent = !applied.length
+  const stoppedOn = results.find((result) =>
+    ["partial", "unknown"].includes(result.outcome));
+  $("result-sub").textContent = stoppedOn
+    ? `The run stopped at “${stoppedOn.page}”, which may be changed. Look at that page in `
+      + "TD Snap before doing anything else. Every queued page is listed below."
+    : !applied.length
     ? "Nothing was changed in TD Snap. Each page below says why."
     : unapplied.length
       ? "Every queued page is listed below with what happened to it. The pages that "

@@ -19,6 +19,7 @@ import { parentFilter, renderParents, titleOf } from "./parents.js";
 import { placementSlots, renderPreview } from "./preview.js";
 import { clearQueue, syncQueueControls } from "./queue.js";
 import { renderBatchResult, renderResult } from "./result.js";
+import { failureHeading, failureLines } from "./outcomes.js";
 import { FUNCTIONS } from "./state.js";
 import { clearBuildError, clearStepError, continueWizard, setOperation, show, showStepError } from "./wizard.js";
 
@@ -509,11 +510,15 @@ $("confirm-update-btn").addEventListener("click", async () => {
     state.pendingEdit = null;
     show("result");
   } catch (error) {
+    const appName = state.mode === "file"
+      ? "the edited copy"
+      : state.provider === "grid3" ? "Grid 3" : "TD Snap";
     if (undoing) {
-      showReviewError(`${state.provider === "grid3" ? "Grid 3" : "TD Snap"} couldn’t undo the last change.`, [
-        error.message,
+      // The outcome, not a fixed sentence, says whether the page is as it was:
+      // this used to promise "nothing was left half-done" whatever happened.
+      showReviewError(failureHeading(error, appName, true), [
+        ...failureLines(error, appName),
         ...(error.problems || []),
-        "Nothing was left half-done: the page is as it was before this undo.",
       ]);
       return;
     }
@@ -556,12 +561,12 @@ $("confirm-update-btn").addEventListener("click", async () => {
         // Keep the original error if TD Snap cannot be inspected for recovery.
       }
     }
-    showReviewError(state.mode === "file"
-      ? "The edit couldn’t be made. Your exported copy is unchanged."
-      : `${state.provider === "grid3" ? "Grid 3" : "TD Snap"} couldn't complete the edit.`, [
-      error.message,
-      ...(error.problems || []),
-    ]);
+    showReviewError(
+      state.mode === "file" && error.outcome === "refused"
+        ? "The edit couldn’t be made. Your exported copy is unchanged."
+        : failureHeading(error, appName),
+      [...failureLines(error, appName), ...(error.problems || [])],
+    );
   } finally {
     setActivity();
     $("step-result").setAttribute("aria-busy", "false");
