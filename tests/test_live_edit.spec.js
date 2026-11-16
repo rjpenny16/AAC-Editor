@@ -5495,3 +5495,92 @@ test.describe('a Grid 3 grid-set file', () => {
     expect(await blockingViolations(page)).toEqual([]);
   });
 });
+
+/* Shutdown safety and recovery (REL-007, REL-021, roadmap B3). */
+test.describe('quitting and coming back', () => {
+  test('quit is refused while an edit is running, and the app stays open', async ({ page }) => {
+    await mockTD(page);
+    await page.route('**/api/quit', (route) => fulfillJson(route, {
+      ok: false, code: 'BUSY', outcome: 'refused',
+      error: 'An edit to the AAC app is running. Wait for it to finish, then quit.',
+    }, 409));
+    await openEditor(page);
+    const messages = [];
+    page.on('dialog', (dialog) => {
+      messages.push(dialog.message());
+      return dialog.accept();
+    });
+    await page.locator('#quit-btn').click();
+    await expect.poll(() => messages.length).toBe(2);
+    expect(messages[1]).toContain('Wait for it to finish');
+    await expect(page.locator('#quit-screen')).toBeHidden();
+    await expect(page.locator('main')).toBeVisible();
+  });
+
+  test('quitting with unsaved file edits asks first, then keeps them', async ({ page }) => {
+    const bodies = [];
+    await mockTD(page);
+    await page.route('**/api/quit', (route) => {
+      const body = route.request().postDataJSON();
+      bodies.push(body);
+      return body.force
+        ? fulfillJson(route, { ok: true, kept: 1 })
+        : fulfillJson(route, {
+          ok: false, code: 'UNSAVED', outcome: 'refused', unsaved: [{ filename: 'a.sps', edits: 1 }],
+          error: 'There are edits to an exported file that have not been saved. '
+            + 'They will be kept and offered the next time AAC Editor starts.',
+        }, 409);
+    });
+    await openEditor(page);
+    const messages = [];
+    page.on('dialog', (dialog) => {
+      messages.push(dialog.message());
+      return dialog.accept();
+    });
+    await page.locator('#quit-btn').click();
+    await expect(page.locator('#quit-screen')).toBeVisible();
+    expect(messages[1]).toContain('offered the next time');
+    expect(bodies).toEqual([{ force: false }, { force: true }]);
+  });
+
+  test('an unsaved copy from last time is offered, and can be discarded', async ({ page }) => {
+    let closed = 0;
+    await mockTD(page);
+    await page.route('**/api/pageset/recoverable', (route) => fulfillJson(route, {
+      ok: true,
+      sessions: [{ session_id: 'old-session', filename: 'client.sps', edits: 2,
+        modified: 1700000000 }],
+    }));
+    await page.route('**/api/pageset/old-session/close', (route) => {
+      closed += 1;
+      return fulfillJson(route, { ok: true });
+    });
+    await openEditor(page);
+    await expect(page.locator('#recover-banner')).toBeVisible();
+    await expect(page.locator('#recover-banner-text')).toContainText('client.sps');
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('#recover-discard-btn').click();
+    await expect(page.locator('#recover-banner')).toBeHidden();
+    await expect.poll(() => closed).toBe(1);
+  });
+
+  test('an unsaved copy from last time can be opened again', async ({ page }) => {
+    await mockTD(page);
+    await page.route('**/api/pageset/recoverable', (route) => fulfillJson(route, {
+      ok: true,
+      sessions: [{ session_id: 'old-session', filename: 'client.sps', edits: 2,
+        modified: 1700000000 }],
+    }));
+    await page.route('**/api/pageset/old-session', (route) => fulfillJson(route, {
+      ok: true, session_id: 'old-session', filename: 'client.sps', schema_version: '4.13',
+      grid: { cols: 3, rows: 2 }, pages: [{ id: 1, title: 'Home' }], baseline_problems: [],
+      edits: 2, unsaved: true,
+    }));
+    await page.route('**/api/pageset/old-session/pages', (route) =>
+      fulfillJson(route, { ok: true, pages: [{ id: 1, title: 'Home' }] }));
+    await openEditor(page);
+    await page.locator('#recover-open-btn').click();
+    await expect(page.locator('#file-badge')).toHaveText('client.sps · Change file');
+    await expect(page.locator('#header-save-btn')).toBeVisible();
+  });
+});

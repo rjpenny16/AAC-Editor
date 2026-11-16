@@ -16,6 +16,7 @@ falls back to the classic browser mode so the app still works.
 
 import contextlib
 import ctypes
+import json
 import os
 import sqlite3
 import subprocess
@@ -174,6 +175,33 @@ def _bring_to_front(window) -> None:
         pass
 
 
+def _closing_allowed(window) -> bool:
+    """Whether the window may close now (REL-007).
+
+    Closing the window stops the server and its daemon automation thread, so
+    closing mid-edit used to abandon TD Snap or Grid 3 wherever the sequence
+    had got to. While an edit runs the close is cancelled and the page says
+    why; it can be closed as soon as the edit finishes.
+    """
+    reason = server.busy_reason()
+    if reason is None:
+        return True
+    with contextlib.suppress(Exception):
+        window.evaluate_js(
+            "window.aacCloseBlocked && window.aacCloseBlocked(" + json.dumps(reason) + ")"
+        )
+    return False
+
+
+def _guard_closing(window) -> None:
+    events = getattr(window, "events", None)
+    closing = getattr(events, "closing", None)
+    if closing is None:
+        return
+    with contextlib.suppress(Exception):
+        closing += lambda: _closing_allowed(window)
+
+
 def run_desktop(
     port: int = server.DEFAULT_PORT,
     *,
@@ -219,6 +247,7 @@ def run_desktop(
         )
         api._window = window
         server.set_focus_handler(lambda: _bring_to_front(window))
+        _guard_closing(window)
         _lock_down_webview(webview)
         # private_mode keeps the embedded browser from leaving anything behind: no
         # cookies, no local storage, no cache. Its profile is deleted when the window

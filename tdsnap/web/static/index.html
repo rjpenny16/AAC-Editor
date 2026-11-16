@@ -66,6 +66,16 @@
   </div>
 </div>
 
+<div id="recover-banner" class="alert app-error" role="status" tabindex="-1" hidden>
+  <strong id="recover-banner-text"></strong>
+  <p class="field-hint">AAC Editor kept the edited copy on this computer because it had not been
+    saved. The original file was never changed.</p>
+  <div class="app-error-actions">
+    <button type="button" id="recover-open-btn" class="btn btn-secondary btn-compact">Open it</button>
+    <button type="button" id="recover-discard-btn" class="btn btn-ghost btn-compact">Discard it</button>
+  </div>
+</div>
+
 <main class="shell">
 
 
@@ -792,7 +802,8 @@
       <ul class="privacy-list">
         <li><strong>A working copy of an exported file</strong>, only while you edit one. It sits in
           your temporary folder, only your account and this computer&rsquo;s administrators can open
-          it, and it is deleted when you close the file or quit. If AAC Editor is shut down
+          it, and it is deleted when you close the file or quit, unless it holds edits you never saved:
+          then it is kept for up to a week so AAC Editor can offer it back next time. If AAC Editor is shut down
           abruptly a copy can be left behind. The next time AAC Editor starts after a day it
           deletes any it finds, and Clear all saved data deletes them straight away.
           <span id="working-copies-folder-line" hidden>Folder: <code></code></span></li>

@@ -6,7 +6,9 @@ import { $, setBusy, setActivity } from "./dom.js";
 import { configReady, api } from "./api.js";
 import { wireRadioGroups } from "./a11y.js";
 import { renderWords } from "./chips.js";
-import { checkLiveAgain, resumeFileSession, selectProvider } from "./connect.js";
+import {
+  checkLiveAgain, rememberFileSession, resumeFileSession, selectProvider,
+} from "./connect.js";
 import { renderPreview } from "./preview.js";
 import { hasUnsavedWork } from "./support.js";
 import { getPreferences } from "./settings.js";
@@ -39,14 +41,39 @@ $("quit-btn").addEventListener("click", async () => {
       ? "Quit AAC Editor? The buttons you have planned but not yet added will be lost."
       : "Quit AAC Editor?";
   if (!window.confirm(warning)) return;
-  state.leaving = true;
   setBusy($("quit-btn"), true, "Closing…");
   setActivity("Closing the local editor…");
+  const quit = (force) => api("/api/quit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ force }),
+  });
   try {
-    await api("/api/quit", { method: "POST" });
-  } catch {
-    /* the server may stop before the response arrives */
+    await quit(false);
+  } catch (error) {
+    // REL-007: the server refuses to stop mid-edit, and asks first when an
+    // exported file has edits that were never saved.
+    if (error.code === "BUSY") {
+      setActivity();
+      setBusy($("quit-btn"), false);
+      window.alert(error.message);
+      return;
+    }
+    if (error.code === "UNSAVED") {
+      if (!window.confirm(`${error.message} Quit anyway?`)) {
+        setActivity();
+        setBusy($("quit-btn"), false);
+        return;
+      }
+      try {
+        await quit(true);
+      } catch {
+        /* the server may stop before the response arrives */
+      }
+    }
+    /* otherwise the server may have stopped before the response arrived */
   }
+  state.leaving = true;
   setActivity();
   setBusy($("quit-btn"), false);
   document.querySelector("main").hidden = true;
@@ -92,7 +119,56 @@ configReady.then(async () => {
   // A reload in the middle of an exported file picks the same edited copy
   // back up. An explicit link to another app means the user has moved on.
   if (!linkedProvider || linkedProvider === "file") await resumeFileSession();
+  if (!state.connected) await offerRecoverableCopy();
 });
+
+/* ---------- edited copies a previous run left unsaved (REL-007, REL-021) ---------- */
+
+let recoverable = null;
+
+async function offerRecoverableCopy() {
+  let sessions = [];
+  try {
+    ({ sessions } = await api("/api/pageset/recoverable", { background: true }));
+  } catch {
+    return;
+  }
+  recoverable = sessions[0] || null;
+  if (!recoverable) return;
+  const when = new Date(recoverable.modified * 1000).toLocaleString();
+  $("recover-banner-text").textContent =
+    `An edited copy of “${recoverable.filename}” from ${when} was never saved.`;
+  $("recover-banner").hidden = false;
+}
+
+$("recover-open-btn").addEventListener("click", async () => {
+  if (!recoverable) return;
+  $("recover-banner").hidden = true;
+  rememberFileSession(recoverable.session_id);
+  if (!(await resumeFileSession())) {
+    $("live-status").textContent =
+      "That edited copy could not be opened. The original file is unchanged.";
+  }
+});
+
+$("recover-discard-btn").addEventListener("click", async () => {
+  if (!recoverable) return;
+  if (!window.confirm(`Discard the unsaved edits to “${recoverable.filename}”? The original file is not affected.`)) return;
+  $("recover-banner").hidden = true;
+  try {
+    await api(`/api/pageset/${encodeURIComponent(recoverable.session_id)}/close`, { method: "POST" });
+  } catch {
+    // Whatever is left is swept with other leftovers after a week.
+  }
+  recoverable = null;
+});
+
+/* The native window refuses to close mid-edit and calls this to say why. */
+window.aacCloseBlocked = (reason) => {
+  $("app-error-text").textContent = reason;
+  $("app-error").hidden = false;
+  $("app-error").focus();
+};
 
 
 renderWords();

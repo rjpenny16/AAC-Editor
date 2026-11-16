@@ -72,6 +72,9 @@ APP_ID = "aac-editor"
 DEFAULT_PORT = 8765
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # page sets with media can be large
 SESSION_MAX_AGE = 24 * 60 * 60  # leftover session dirs older than this are removed
+# A working copy with edits that were never saved is kept across exit and
+# offered at the next start (REL-007), for at most this long.
+UNSAVED_MAX_AGE = 7 * 24 * 60 * 60
 MAX_ACTIVE_SESSIONS = 4
 # How slow a first suggestion round may be and still earn a second one. The
 # browser gives a generation 150 seconds; two rounds have to fit inside that.
@@ -492,7 +495,16 @@ def _validated_draft(value) -> Optional[dict]:
 
 
 def _session_storage_bytes(exclude: str = "") -> int:
+    """Bytes held by this process's open sessions.
+
+    REL-021: this used to count every folder on disk, including ones left by
+    crashes or by another copy of the app, so after a few crashes with large
+    page sets every open was refused as "would exceed the storage limit".
+    Leftovers are offered back or swept separately; they do not block work.
+    """
     total = 0
+    with _sessions_lock:
+        live = {os.path.realpath(session["dir"]) for session in _sessions.values()}
     try:
         entries = os.scandir(_SESSION_ROOT)
     except OSError:
@@ -500,6 +512,8 @@ def _session_storage_bytes(exclude: str = "") -> int:
     with entries:
         for entry in entries:
             if not entry.is_dir(follow_symlinks=False) or entry.path == exclude:
+                continue
+            if os.path.realpath(entry.path) not in live:
                 continue
             for root, _, files in os.walk(entry.path):
                 for name in files:
@@ -517,6 +531,26 @@ def release_session(session_id: str) -> None:
 
 def _has_unsaved_edits(session: dict) -> bool:
     return session.get("edits", 0) > session.get("saved_edits", 0)
+
+
+def _mark_saved(session: dict) -> None:
+    """Record that everything so far was saved, on disk as well as in memory,
+    so a rebuilt session does not claim unsaved changes (REL-021)."""
+    session["saved_edits"] = session.get("edits", 0)
+    with contextlib.suppress(OSError, KeyError):
+        atomic_write(
+            os.path.join(session["dir"], "saved.json"),
+            json.dumps({"saved_edits": session["saved_edits"]}), prefix=".saved-",
+        )
+
+
+def _saved_edits_on_disk(session_dir: str) -> int:
+    try:
+        with open(os.path.join(session_dir, "saved.json"), encoding="utf-8") as handle:
+            value = json.load(handle).get("saved_edits", 0)
+        return value if isinstance(value, int) and value >= 0 else 0
+    except (OSError, ValueError, AttributeError):
+        return 0
 
 
 def _make_room_for_a_session() -> None:
@@ -541,13 +575,68 @@ def _make_room_for_a_session() -> None:
         release_session(session_id)
 
 
-def cleanup_sessions() -> None:
-    """Remove every sensitive temporary copy owned by this process."""
+def cleanup_sessions(*, keep_unsaved: bool = True) -> int:
+    """Remove this process's temporary copies at exit; return how many were kept.
+
+    REL-007: every working copy used to be deleted at exit, including ones
+    holding edits that were never saved. Those are now kept on disk and
+    offered at the next start (see ``recoverable_sessions``); everything
+    else is removed as before.
+    """
     with _sessions_lock:
         sessions = list(_sessions.values())
         _sessions.clear()
+    kept = 0
     for session in sessions:
+        if keep_unsaved and _has_unsaved_edits(session):
+            kept += 1
+            continue
         shutil.rmtree(session["dir"], ignore_errors=True)
+    return kept
+
+
+def unsaved_sessions() -> list:
+    """Open sessions with edits that have not been saved."""
+    with _sessions_lock:
+        return [
+            {"session_id": session_id, "filename": session.get("filename", ""),
+             "edits": session.get("edits", 0)}
+            for session_id, session in _sessions.items() if _has_unsaved_edits(session)
+        ]
+
+
+def recoverable_sessions() -> list:
+    """Working copies on disk, not open in this process, with unsaved edits.
+
+    What a previous run (closed, crashed or relaunched) left behind that is
+    worth offering back. Read-only: nothing is opened or changed.
+    """
+    with _sessions_lock:
+        live = {os.path.realpath(session["dir"]) for session in _sessions.values()}
+    try:
+        names = os.listdir(_SESSION_ROOT)
+    except OSError:
+        return []
+    found = []
+    for name in names:
+        path = os.path.join(_SESSION_ROOT, name)
+        if (
+            not _SESSION_ID.fullmatch(name) or os.path.islink(path)
+            or not os.path.isdir(path) or os.path.realpath(path) in live
+        ):
+            continue
+        try:
+            with open(os.path.join(path, "meta.json"), encoding="utf-8") as handle:
+                meta = json.load(handle)
+            edits = int(meta.get("edits", 0))
+            filename = meta["filename"]
+            modified = os.path.getmtime(os.path.join(path, "current"))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if edits > _saved_edits_on_disk(path) and isinstance(filename, str):
+            found.append({"session_id": name, "filename": filename, "edits": edits,
+                          "modified": modified})
+    return sorted(found, key=lambda item: -item["modified"])
 
 
 def clear_leftover_sessions() -> tuple[int, int]:
@@ -621,6 +710,7 @@ def _rehydrate_session(session_id: str):
         filename = meta["filename"]
         baseline_warnings = meta.get("baseline_warnings", [])
         edits = int(meta.get("edits", 0))
+        saved_edits = _saved_edits_on_disk(session_dir)
     except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
         return None
     # A hand-edited or truncated meta file must read as "no session", not as a
@@ -637,6 +727,7 @@ def _rehydrate_session(session_id: str):
         "filename": filename,
         "baseline_warnings": baseline_warnings,
         "edits": edits,
+        "saved_edits": min(saved_edits, edits),
         "last_access": time.time(),
         "lock": threading.Lock(),
     }
@@ -1027,7 +1118,7 @@ def save_current_as(session_id: str, dest_path: str) -> None:
     _check_saved_copy(dest_path, current)
     session = _sessions.get(session_id)
     if session is not None:
-        session["saved_edits"] = session.get("edits", 0)
+        _mark_saved(session)
 
 
 def _error_fields(exc) -> dict:
@@ -1346,13 +1437,48 @@ def delete_settings():
     return jsonify({"ok": True, "working_copies_removed": removed, "working_copies_open": in_use})
 
 
+def busy_reason() -> Optional[str]:
+    """Why quitting now would abandon work in progress, or None."""
+    if _LIVE_LOCK.locked():
+        return "An edit to the AAC app is running. Wait for it to finish, then quit."
+    return None
+
+
 @app.post("/api/quit")
 def quit_app():
+    """Stop the app, unless that would abandon work (REL-007).
+
+    The automation thread is a daemon: quitting mid-edit used to stop the
+    sequence wherever it was, leaving TD Snap or Grid 3 in edit mode with
+    part of the edit applied and no rollback. Quit is refused while an edit
+    runs. With unsaved file edits it asks first (``force``), and those
+    working copies are kept and offered at the next start.
+    """
     shutdown = _runtime.get("shutdown")
     if shutdown is None:
         raise PagesetError("The app wasn't started in a stoppable mode.")
+    busy = busy_reason()
+    if busy:
+        return jsonify({"ok": False, "error": busy, "code": "BUSY",
+                        "outcome": errors.REFUSED}), 409
+    payload = request.get_json(silent=True) or {}
+    unsaved = unsaved_sessions()
+    if unsaved and payload.get("force") is not True:
+        return jsonify({
+            "ok": False, "code": "UNSAVED", "outcome": errors.REFUSED,
+            "unsaved": [{"filename": item["filename"], "edits": item["edits"]}
+                        for item in unsaved],
+            "error": "There are edits to an exported file that have not been saved. "
+                     "They will be kept and offered the next time AAC Editor starts.",
+        }), 409
     threading.Timer(0.3, shutdown).start()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "kept": len(unsaved)})
+
+
+@app.get("/api/pageset/recoverable")
+def list_recoverable():
+    """Edited copies a previous run left unsaved, newest first."""
+    return jsonify({"ok": True, "sessions": recoverable_sessions()})
 
 
 @app.post("/api/focus")
@@ -1946,6 +2072,20 @@ def edit_cells(session_id, page_id):
 
 @app.post("/api/pageset/<session_id>/close")
 def close_pageset(session_id):
+    """Close a session, or discard a copy a previous run left unsaved."""
+    _checked_session_id(session_id)
+    with _sessions_lock:
+        open_now = session_id in _sessions
+    if not open_now:
+        # Not open in this process: a recovered copy being discarded. Only a
+        # direct child of the session root is ever removed.
+        path = os.path.join(_SESSION_ROOT, session_id)
+        if (
+            os.path.isdir(path) and not os.path.islink(path)
+            and os.path.dirname(os.path.realpath(path)) == os.path.realpath(_SESSION_ROOT)
+        ):
+            shutil.rmtree(path, ignore_errors=True)
+        return jsonify({"ok": True})
     release_session(session_id)
     return jsonify({"ok": True})
 
@@ -1956,7 +2096,7 @@ def download(session_id):
     if not os.path.exists(current):
         raise PagesetError("Nothing to download; re-upload the file.")
     session = _session_record(session_id)
-    session["saved_edits"] = session.get("edits", 0)
+    _mark_saved(session)
     base, ext = os.path.splitext(session["filename"])
     return send_file(
         current,
@@ -2498,10 +2638,13 @@ def cleanup_stale_sessions(max_age: int = SESSION_MAX_AGE) -> None:
     except OSError:
         return
     cutoff = time.time() - max_age
+    unsaved_cutoff = time.time() - UNSAVED_MAX_AGE
+    recoverable = {item["session_id"] for item in recoverable_sessions()}
     for name in entries:
         path = os.path.join(_SESSION_ROOT, name)
         try:
-            if os.path.getmtime(path) < cutoff:
+            age_limit = unsaved_cutoff if name in recoverable else cutoff
+            if os.path.getmtime(path) < age_limit:
                 with _sessions_lock:
                     expired = [
                         session_id for session_id, session in _sessions.items()

@@ -258,19 +258,32 @@ function rememberedFileSession() {
 async function resumeFileSession() {
   const sessionId = rememberedFileSession();
   if (!sessionId || state.connected) return false;
-  try {
-    const data = await api(`/api/pageset/${encodeURIComponent(sessionId)}`);
-    selectProvider("file");
-    await useFileSession(data);
-    state.edits = data.edits || 0;
-    state.fileUnsaved = Boolean(data.unsaved);
-    $("live-status").textContent = "";
-    showFileResumeNote(data);
-    return true;
-  } catch {
-    rememberFileSession("");
-    return false;
+  // REL-021: any error here used to forget the session silently, including
+  // a transient timeout. One retry for anything but "it is gone", and the
+  // person is told if the copy could not be reopened.
+  let data = null;
+  for (let attempt = 0; attempt < 2 && !data; attempt += 1) {
+    try {
+      data = await api(`/api/pageset/${encodeURIComponent(sessionId)}`);
+    } catch (error) {
+      if (error.status === 400 || attempt === 1) {
+        rememberFileSession("");
+        if (error.status !== 400) {
+          $("live-status").textContent =
+            "The edited copy you were working on could not be reopened just now. "
+            + "Reload to try again; the original file is unchanged.";
+        }
+        return false;
+      }
+    }
   }
+  selectProvider("file");
+  await useFileSession(data);
+  state.edits = data.edits || 0;
+  state.fileUnsaved = Boolean(data.unsaved);
+  $("live-status").textContent = "";
+  showFileResumeNote(data);
+  return true;
 }
 
 /* The edited copy can be saved from the header at any point, not only from the
