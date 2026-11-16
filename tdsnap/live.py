@@ -1251,6 +1251,24 @@ def _navigate_to_parent(window, parent):
 
 _WRITES = 0
 
+# How long TD Snap is given to repaint before a read is trusted for a
+# decision that cannot be taken back: "the edit failed, roll it back" or "the
+# page is restored". REL-017: a read straight after a click can still show
+# the previous state. The single-fault sweep (tests/test_live_sweep.py) found
+# that a stale read could make a rollback report "restored" while the edit
+# was still on the page. Session T3-1 measures the real repaint time.
+SETTLE_SECONDS = 0.4
+
+
+def _settled_verify(verify) -> None:
+    """Run *verify*; if it fails, give TD Snap time to repaint and verify once
+    more before treating the edit as failed."""
+    try:
+        verify()
+    except PagesetError:
+        time.sleep(SETTLE_SECONDS)
+        verify()
+
 
 def _reset_writes() -> None:
     global _WRITES
@@ -1568,8 +1586,15 @@ def _restore_page_state(window, baseline, content=None, maximum=0):
     # Never more Undo presses than this edit wrote (see "Counting what an edit
     # wrote"). A read that fails outright is not caught here: the caller
     # stops and reports the page state as unknown rather than pressing on.
+    def confirmed():
+        # "Restored" is trusted only if it still holds after a repaint.
+        if not restored():
+            return False
+        time.sleep(SETTLE_SECONDS)
+        return restored()
+
     presses = 0
-    while not restored():
+    while not confirmed():
         if presses >= maximum:
             break
         undo = _find(window, automation_id="UndoButton", control_type="ButtonControl")
@@ -1582,7 +1607,7 @@ def _restore_page_state(window, baseline, content=None, maximum=0):
         _settle_after_undo(window, before)
     else:
         return
-    if not restored():
+    if not confirmed():
         raise PagesetError(
             "TD Snap could not verify restoration of the reviewed page. "
             "Inspect the page before making another edit.",
@@ -2539,6 +2564,40 @@ def _leave_edit_mode_after(window, failure: PagesetError) -> None:
         )
 
 
+def _classified(function):
+    """Make every failure of a live write path a PagesetError with an outcome.
+
+    Found by the single-fault sweep (tests/test_live_sweep.py): a raw error
+    from UI Automation while the page was still only being read (a COM error,
+    an element that vanished) escaped unclassified, and read as "unknown"
+    although nothing had been written. Before the first write it is now a
+    refusal; after it, ``_failed_edit`` has already classified it.
+    """
+    import functools
+
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        _reset_writes()
+        try:
+            return function(*args, **kwargs)
+        except PagesetError:
+            raise
+        except Exception as exc:
+            if _writes() == 0:
+                raise PagesetError(
+                    "AAC Editor could not read the page in TD Snap, so it changed "
+                    "nothing. Check that TD Snap is open and responding, then try again.",
+                    code="AUTOMATION_FAILED", outcome=errors.REFUSED,
+                ) from exc
+            raise PagesetError(
+                "AAC Editor lost track of TD Snap during the edit. Check this page "
+                "in TD Snap before doing anything else.",
+                code="AUTOMATION_FAILED", outcome=errors.UNKNOWN, page_touched=True,
+            ) from exc
+    return wrapper
+
+
+@_classified
 def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
                      fingerprint=None, *, _known_content=None, _undoing=False):
     """Add, change, move, and remove reviewed buttons on one existing TD Snap page.
@@ -2754,9 +2813,15 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
             styled += int(result["border"] and item["border_color"] is not None)
         # Verified before Done (REL-002: whether Undo still works after Done
         # is unknown), then re-read after Done.
-        _verify_page_state(window, expected, emptied, untouched)
+        _settled_verify(lambda: _verify_page_state(window, expected, emptied, untouched))
         _exit_edit_mode(window)
-        final_group = _verify_final_layout(window, expected, emptied)
+        final_group = None
+
+        def final():
+            nonlocal final_group
+            final_group = _verify_final_layout(window, expected, emptied)
+
+        _settled_verify(final)
         settled = _fingerprint_token(final_group)
     except Exception as exc:
         failure = _failed_edit(
@@ -3160,6 +3225,7 @@ def undo_last_edit():
     )
 
 
+@_classified
 def add_topic_page(title, items, parent=DEFAULT_PARENT):
     title = str(title or "").strip()
     normalized = _normalize_items(items)
@@ -3243,9 +3309,9 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
             })
             styled += int(result["border"] and item["border_color"] is not None)
 
-        _verify_page_state(window, placed)
+        _settled_verify(lambda: _verify_page_state(window, placed))
         _exit_edit_mode(window)
-        _verify_final_layout(window, placed)
+        _settled_verify(lambda: _verify_final_layout(window, placed))
 
         back = _find(window, automation_id="BackButton", control_type="ButtonControl")
         if back is None:

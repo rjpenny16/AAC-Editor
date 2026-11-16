@@ -1501,8 +1501,14 @@ def _stub_live_page(monkeypatch, *, layouts, content, grid=None, fingerprint="v1
     monkeypatch.setattr(live, "_fingerprint", lambda _group: ("before",))
     monkeypatch.setattr(live, "_fingerprint_token", lambda _group: next(tokens))
     monkeypatch.setattr(live, "_grid", lambda _group: grid)
-    reads = iter(layouts)
-    monkeypatch.setattr(live, "_page_layout", lambda *_args: next(reads))
+    # The page as reviewed, then as it stands after the edit, which it keeps
+    # being for any later read (a settle retry reads it again).
+    remaining = list(layouts)
+
+    def read(*_args):
+        return remaining.pop(0) if len(remaining) > 1 else remaining[0]
+
+    monkeypatch.setattr(live, "_page_layout", read)
     monkeypatch.setattr(live, "_stored_page_content", lambda _page, _names=(): content)
     monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
     monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
