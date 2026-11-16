@@ -313,12 +313,23 @@ def launch_mode() -> str:
 
 
 def engine_available() -> bool:
-    """True when llama-cpp-python is importable (bundled in the packaged app)."""
-    try:
-        import llama_cpp  # noqa: F401
+    """True when llama-cpp-python is installed (bundled in the packaged app).
 
+    This used to import llama_cpp to find out, which loads its native
+    library and numpy. Once the first status check no longer waited on an
+    Ollama probe (REL-028), that import ran at the moment the window opened
+    and starved the server's other request threads; the packaged smoke
+    test's /api/config then timed out. Finding the module is enough to know
+    it is installed; it is imported when a model is actually loaded, where a
+    broken install is reported as a load failure.
+    """
+    if "llama_cpp" in sys.modules:
         return True
-    except Exception:
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec("llama_cpp") is not None
+    except (ImportError, ValueError):
         return False
 
 

@@ -1315,3 +1315,26 @@ def test_a_download_clears_part_files_left_by_a_killed_one(isolated_model, monke
     localai.start_download()
     _settle()
     assert not os.path.exists(stale)
+
+
+def test_checking_for_the_engine_does_not_import_it(monkeypatch):
+    """Importing llama_cpp loads a native library; doing that on the first
+    status check starved the server at startup (packaged smoke test)."""
+    import builtins
+    import importlib.util
+    import sys as _sys
+
+    monkeypatch.delitem(_sys.modules, "llama_cpp", raising=False)
+    real_import = builtins.__import__
+
+    def guarded(name, *args, **kwargs):
+        if name == "llama_cpp":
+            raise AssertionError("engine_available imported llama_cpp")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded)
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name: object() if name == "llama_cpp" else None)
+    assert localai.engine_available() is True
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    assert localai.engine_available() is False
