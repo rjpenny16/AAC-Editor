@@ -228,6 +228,17 @@ def smoke_localai(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_data_folder(tmp_path_factory, monkeypatch):
+    """Nothing a test does may land in the real per-user data folder
+    (settings, logs, Grid 3 backups, models). Tests that need a specific
+    folder still set these themselves."""
+    folder = tmp_path_factory.mktemp("data")
+    monkeypatch.setenv("XDG_DATA_HOME", str(folder))
+    monkeypatch.setenv("LOCALAPPDATA", str(folder))
+    return folder
+
+
+@pytest.fixture(autouse=True)
 def _isolated_operation_log(tmp_path_factory, monkeypatch):
     """Every test writes its operation log to its own folder, never the real
     per-user data folder."""

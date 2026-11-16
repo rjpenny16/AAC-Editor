@@ -1247,6 +1247,7 @@ def delete_settings():
     """
     settings.clear()
     oplog.clear()
+    grid3.clear_backups()
     removed, in_use = clear_leftover_sessions()
     return jsonify({"ok": True, "working_copies_removed": removed, "working_copies_open": in_use})
 
