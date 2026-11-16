@@ -268,6 +268,11 @@ def launch():
     return {"launched": True}
 
 
+def _require_foreground(window):
+    """Before every raw click, drag or key press (REL-005, roadmap C1)."""
+    uia.require_foreground(window, "TD Snap")
+
+
 def _focus_window(window):
     """Keep raw grid clicks from landing on a window covering TD Snap."""
     try:
@@ -1326,7 +1331,10 @@ def _require_clean_state(window) -> None:
     An edit used to start on top of an edit session the user had open in TD
     Snap: navigation pressed Done for them, committing whatever they had
     half-made, and a rollback could then undo their changes along with ours.
+    It also refuses when TD Snap runs elevated and this app does not
+    (REL-023): Windows would drop every input silently.
     """
+    uia.require_not_more_elevated(window, "TD Snap")
     if _open_dialog(window) is not None:
         raise PagesetError(
             "TD Snap has a message or dialog open. Answer or close it in TD Snap, "
@@ -1383,6 +1391,7 @@ def _click_empty_icon(auto, window, cell, x_offset, y_offset, expected_text):
         cell.x + cell.width * x_offset,
         cell.y + cell.height * y_offset,
     )
+    _require_foreground(window)
     auto.Click(x, y, waitTime=0.2)
     try:
         return _wait_for(
@@ -1394,6 +1403,7 @@ def _click_empty_icon(auto, window, cell, x_offset, y_offset, expected_text):
         if _fingerprint(_page_group(window)) != before:
             _undo_if_needed(window)
         else:
+            _require_foreground(window)
             auto.SendKeys("{Esc}", waitTime=0.1)
         raise PagesetError(
             "TD Snap's empty-cell action could not be selected."
@@ -1462,6 +1472,7 @@ def _open_button_editor(window, control):
         rect = control.BoundingRectangle
         x, y = _physical_point(window, (rect.left + rect.right) / 2,
                                (rect.top + rect.bottom) / 2)
+        _require_foreground(window)
         _automation().Click(x, y, waitTime=0.2)
         _expand_editor(window)
         if any(c.ControlTypeName == "EditControl" and c.AutomationId == "TextBox"
@@ -1640,6 +1651,7 @@ def _restore_page_fingerprint(window, baseline, maximum):
 def _rollback_new_page(auto, window, parent, parent_baseline, page_baseline, maximum):
     """Restore both a provisional child page and its parent link."""
     with suppress(AttributeError, OSError):
+        _require_foreground(window)
         auto.SendKeys("{Esc}", waitTime=0.05)
     current = _page_name(window)
     if current.casefold() != parent.casefold():
@@ -1730,6 +1742,7 @@ def _choose_symbol(window, label):
     try:
         content = _find(window, name="Content", control_type="ListItemControl")
         if content:
+            _require_foreground(window)
             content.Click(simulateMove=False)
         opener = _find(
             window, automation_id="OpenSymbolSearchButton",
@@ -1806,6 +1819,7 @@ def _apply_border(window, border_color):
         return False
     try:
         style = _find(window, name="Style", control_type="ListItemControl")
+        _require_foreground(window)
         style.Click(simulateMove=False)
         border_heading = _wait_for(
             lambda: _find(window, name="Button Border", control_type="TextControl"),
@@ -1897,6 +1911,7 @@ def _filled_label_field(window, expected):
 def _select_button(auto, window, cell, label):
     """Open TD Snap's button editor on the existing button in *cell*."""
     x, y = _physical_point(window, cell.x, cell.y)
+    _require_foreground(window)
     auto.Click(x, y, waitTime=0.2)
     return _wait_for(
         lambda: _filled_label_field(window, label),
@@ -2110,6 +2125,7 @@ def _move_button(auto, window, grid, source_slot, target_slot, label):
         )
     x1, y1 = _physical_point(window, source.x, source.y)
     x2, y2 = _physical_point(window, target.x, target.y)
+    _require_foreground(window)
     drag(x1, y1, x2, y2, moveSpeed=0.5, waitTime=0.3)
     _wait_for(
         lambda: _moved_into(window, target_slot, label, source_slot),
@@ -2125,6 +2141,7 @@ def _add_button(auto, window, cell, label, message=None,
         cell.x + cell.width * float(os.environ.get("TDSNAP_ADD_ICON_X", "0")),
         cell.y + cell.height * float(os.environ.get("TDSNAP_ADD_ICON_Y", "0")),
     )
+    _require_foreground(window)
     auto.Click(x, y, waitTime=0.2)
     opened = False
     try:

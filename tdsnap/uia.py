@@ -63,7 +63,9 @@ deliberate choice, not an oversight:
   operation implemented twice.
 """
 
+import contextlib
 import ctypes
+import os
 import queue
 import statistics
 import sys
@@ -365,3 +367,147 @@ def process_image_path(process_id: int):
     finally:
         kernel32.CloseHandle(process)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Foreground (REL-005, roadmap C1)
+#
+# Raw input (a mouse click at screen coordinates, a drag, a key press) goes
+# to whichever window is in front. TD Snap's path used to call SetFocus once
+# per edit and ignore the result; Grid 3's checked the foreground *process*
+# before every key. Both now go through require_foreground before every raw
+# input. Windows may refuse to hand the foreground to a background process;
+# nothing here tries to force it. A minimised window is restored, one
+# ordinary focus request is made, and if the AAC app is still not in front
+# the step is refused and the person is asked to click it.
+
+_GA_ROOT = 2
+_SW_RESTORE = 9
+
+
+def _user32():
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    return user32
+
+
+def foreground_state(window) -> tuple:
+    """``(window_in_front, process_in_front)`` for *window*; both True off Windows."""
+    if sys.platform != "win32":
+        return True, True
+    handle = getattr(window, "NativeWindowHandle", 0)
+    if not handle:
+        return False, False
+    user32 = _user32()
+    foreground = user32.GetForegroundWindow()
+    if not foreground:
+        return False, False
+    root = user32.GetAncestor(foreground, _GA_ROOT) or foreground
+    process_id = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(foreground, ctypes.byref(process_id))
+    same_window = int(root or 0) == int(handle) or int(foreground) == int(handle)
+    return same_window, process_id.value == getattr(window, "ProcessId", -1)
+
+
+def require_foreground(window, app_name: str, *, same_process_ok: bool = False) -> None:
+    """Refuse a raw input unless *window* is the window in front.
+
+    *same_process_ok* accepts any window of the same process: Grid 3 drives
+    its own Create Cell dialogs by keyboard, so for Grid 3 the check stays
+    per process until session T3-1 shows those dialogs' window identity.
+    """
+    window_ok, process_ok = foreground_state(window)
+    if window_ok or (same_process_ok and process_ok):
+        return
+    handle = getattr(window, "NativeWindowHandle", 0)
+    if sys.platform == "win32" and handle:
+        user32 = _user32()
+        if user32.IsIconic(handle):
+            user32.ShowWindow(handle, _SW_RESTORE)
+            time.sleep(0.3)
+    with contextlib.suppress(Exception):
+        window.SetFocus()
+        time.sleep(0.2)
+    window_ok, process_ok = foreground_state(window)
+    if window_ok or (same_process_ok and process_ok):
+        return
+    raise PagesetError(
+        f"{app_name} is not the window in front, so AAC Editor sent nothing to it. "
+        f"Click on {app_name} to bring it to the front, then try again.",
+        code="NOT_FOREGROUND",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Integrity level (REL-023)
+#
+# Windows silently drops input sent to a process running at a higher
+# integrity level (an elevated app) from a lower one. That used to show up
+# only as timeouts such as "TD Snap did not open a button in the empty cell".
+
+_TOKEN_QUERY = 0x0008
+_TOKEN_INTEGRITY_LEVEL = 25
+
+
+def process_integrity_level(process_id: int):
+    """The mandatory integrity RID of *process_id* (e.g. 0x2000 medium,
+    0x3000 high), or None when it cannot be read or off Windows."""
+    if sys.platform != "win32" or not process_id:
+        return None
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        advapi32.OpenProcessToken.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+        advapi32.GetTokenInformation.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD)]
+        advapi32.GetSidSubAuthorityCount.argtypes = [ctypes.c_void_p]
+        advapi32.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
+        advapi32.GetSidSubAuthority.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+        advapi32.GetSidSubAuthority.restype = ctypes.POINTER(wintypes.DWORD)
+        process = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, process_id)
+        if not process:
+            return None
+        try:
+            token = wintypes.HANDLE()
+            if not advapi32.OpenProcessToken(process, _TOKEN_QUERY, ctypes.byref(token)):
+                return None
+            try:
+                size = wintypes.DWORD()
+                advapi32.GetTokenInformation(
+                    token, _TOKEN_INTEGRITY_LEVEL, None, 0, ctypes.byref(size))
+                buffer = ctypes.create_string_buffer(size.value)
+                if not advapi32.GetTokenInformation(
+                        token, _TOKEN_INTEGRITY_LEVEL, buffer, size, ctypes.byref(size)):
+                    return None
+                sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+                count = advapi32.GetSidSubAuthorityCount(sid)[0]
+                return int(advapi32.GetSidSubAuthority(sid, count - 1)[0])
+            finally:
+                kernel32.CloseHandle(token)
+        finally:
+            kernel32.CloseHandle(process)
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
+def require_not_more_elevated(window, app_name: str) -> None:
+    """Refuse, at connect, when the AAC app runs above this app's integrity."""
+    theirs = process_integrity_level(getattr(window, "ProcessId", 0))
+    ours = process_integrity_level(os.getpid())
+    if theirs is not None and ours is not None and theirs > ours:
+        raise PagesetError(
+            f"{app_name} is running as administrator and AAC Editor is not, so Windows "
+            f"would silently drop every click AAC Editor sends it. Close {app_name} and "
+            "start it normally (not with Run as administrator), then try again.",
+            code="ELEVATION_MISMATCH",
+        )

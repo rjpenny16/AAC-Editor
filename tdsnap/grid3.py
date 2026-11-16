@@ -890,40 +890,17 @@ def inspect_page() -> dict:
 # Edit Mode primitives
 
 
-def _foreground_process_id() -> int:
-    user32 = ctypes.WinDLL("user32", use_last_error=True)
-    user32.GetForegroundWindow.restype = wintypes.HWND
-    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-    process_id = wintypes.DWORD()
-    user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), ctypes.byref(process_id))
-    return process_id.value
-
-
 def _require_grid3_foreground(auto) -> None:
     """Refuse to type unless Grid 3 owns the keyboard.
 
     Every keystroke below goes to whichever window is in front. If the user
     (or another app) took the foreground mid-edit, a label, an Enter or a
-    Ctrl+Z would land in their document instead; one attempt is made to
-    bring Grid 3 back, and after that the edit stops rather than typing.
+    Ctrl+Z would land in their document instead. The shared check in uia.py
+    restores a minimised Grid 3, asks once for the foreground, and refuses
+    otherwise. It stays per process for Grid 3, whose own Create Cell dialog
+    is driven by keyboard (see uia.require_foreground).
     """
-    window = _window(auto)
-    if _foreground_process_id() == getattr(window, "ProcessId", -1):
-        return
-    handle = getattr(window, "NativeWindowHandle", 0)
-    if handle:
-        # A minimised window never takes focus; restore it first.
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        if user32.IsIconic(handle):
-            user32.ShowWindow(handle, 9)  # SW_RESTORE
-            time.sleep(0.3)
-    with contextlib.suppress(PagesetError):
-        _focus_window(window)
-    if _foreground_process_id() != getattr(window, "ProcessId", -1):
-        raise PagesetError(
-            "Another window took the keyboard away from Grid 3 during the edit. "
-            "Nothing was typed into it. Bring Grid 3 to the front, then try again."
-        )
+    uia.require_foreground(_window(auto), "Grid 3", same_process_ok=True)
 
 
 def _send(auto, keys: str, wait=0.35) -> None:

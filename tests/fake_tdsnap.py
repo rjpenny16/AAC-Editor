@@ -25,6 +25,7 @@ Faults
 ``unreadable``       from this step on the page cannot be read
 ``exit_fails``       pressing Done fails
 ``undo_disabled``    Undo is disabled from this step on
+``foreground_lost``  another window takes the foreground from this step on
 ``stale``            the step's write happens, but for the next STALE_SECONDS of
                      virtual time reads still show the page as it was before
                      (TD Snap has not repainted yet)
@@ -60,6 +61,8 @@ class FakeTDSnap:
         self.damaged = 0
         self.inputs_after_dialog = 0
         self.clock = 0.0
+        self.foreground = True
+        self.inputs_without_foreground = 0
         self.stale_until = -1.0
         self.stale_snapshot = {}
 
@@ -71,6 +74,8 @@ class FakeTDSnap:
             self.unreadable = True
         elif fault == "undo_disabled":
             self.undo_disabled = True
+        elif fault == "foreground_lost":
+            self.foreground = False
         elif fault == "dialog":
             self.dialog = True
             raise PagesetError("TD Snap showed a message.")
@@ -88,6 +93,10 @@ class FakeTDSnap:
         if self.dialog:
             self.inputs_after_dialog += 1
         self.tick(write=True)
+        # The real helpers check the foreground before every raw input.
+        live._require_foreground(None)
+        if not self.foreground:
+            self.inputs_without_foreground += 1
         self.history.append((slot, self.page.get(slot)))
         if value is None:
             self.page.pop(slot, None)
@@ -200,6 +209,11 @@ def install(monkeypatch, fake: FakeTDSnap):
         live._note_write("move")
         fake.write(source, None)
 
+    def require_foreground(_window):
+        if not fake.foreground:
+            raise PagesetError("TD Snap is not the window in front.", code="NOT_FOREGROUND")
+
+    monkeypatch.setattr(live, "_require_foreground", require_foreground)
     monkeypatch.setattr(live, "_add_button", add)
     monkeypatch.setattr(live, "_change_button", change)
     monkeypatch.setattr(live, "_remove_button", remove)

@@ -35,7 +35,7 @@ OPERATIONS = {
     "mixed": dict(items=[{"label": "plum", "slot": 2, "symbol": False}],
                   changes=[{"slot": 1, "label": "pears"}], removals=[3]),
 }
-FAULTS = ("fail", "crash", "dialog", "unreadable", "undo_disabled", "stale")
+FAULTS = ("fail", "crash", "dialog", "unreadable", "undo_disabled", "stale", "foreground_lost")
 
 
 @pytest.fixture(autouse=True)
@@ -78,6 +78,7 @@ def check_invariants(fake, report, error, operation, context):
     labels = lambda page: {slot: value[0] for slot, value in page.items()}  # noqa: E731
     assert fake.undo_presses <= fake.writes, (context, "Undo pressed more than the edit wrote")
     assert fake.inputs_after_dialog == 0, (context, "input sent after a dialog opened")
+    assert fake.inputs_without_foreground == 0, (context, "input sent to another window")
     assert fake.edit_mode is False or getattr(error, "still_in_edit_mode", False), (
         context, "left in edit mode without saying so")
     if report is not None:

@@ -228,3 +228,49 @@ def test_process_helpers_return_none_off_windows(monkeypatch):
 def test_process_helpers_return_none_for_falsy_process_id():
     assert uia.process_app_user_model_id(0) is None
     assert uia.process_image_path(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Foreground and integrity (REL-005, REL-023, roadmap C1)
+
+
+def test_raw_input_is_refused_when_the_window_is_not_in_front(monkeypatch):
+    states = iter([(False, False), (False, False)])
+    monkeypatch.setattr(uia, "foreground_state", lambda _w: next(states))
+    monkeypatch.setattr(uia.time, "sleep", lambda _s: None)
+    focused = []
+    window = SimpleNamespace(NativeWindowHandle=0, SetFocus=lambda: focused.append(1))
+    with pytest.raises(PagesetError, match="Click on TD Snap") as caught:
+        uia.require_foreground(window, "TD Snap")
+    assert caught.value.code == "NOT_FOREGROUND"
+    # One ordinary request for the foreground, never a forced one.
+    assert focused == [1]
+
+
+def test_raw_input_goes_ahead_once_the_window_is_in_front(monkeypatch):
+    states = iter([(False, False), (True, True)])
+    monkeypatch.setattr(uia, "foreground_state", lambda _w: next(states))
+    monkeypatch.setattr(uia.time, "sleep", lambda _s: None)
+    uia.require_foreground(SimpleNamespace(NativeWindowHandle=0, SetFocus=lambda: None), "TD Snap")
+
+
+def test_another_window_of_the_same_process_is_only_accepted_when_asked(monkeypatch):
+    monkeypatch.setattr(uia, "foreground_state", lambda _w: (False, True))
+    monkeypatch.setattr(uia.time, "sleep", lambda _s: None)
+    window = SimpleNamespace(NativeWindowHandle=0, SetFocus=lambda: None)
+    uia.require_foreground(window, "Grid 3", same_process_ok=True)
+    with pytest.raises(PagesetError):
+        uia.require_foreground(window, "TD Snap")
+
+
+def test_an_elevated_aac_app_is_refused_at_connect(monkeypatch):
+    levels = {1234: 0x3000, uia.os.getpid(): 0x2000}
+    monkeypatch.setattr(uia, "process_integrity_level", lambda pid: levels.get(pid))
+    with pytest.raises(PagesetError) as caught:
+        uia.require_not_more_elevated(SimpleNamespace(ProcessId=1234), "TD Snap")
+    assert caught.value.code == "ELEVATION_MISMATCH"
+    levels[1234] = 0x2000
+    uia.require_not_more_elevated(SimpleNamespace(ProcessId=1234), "TD Snap")
+    # Unknown levels (off Windows, or unreadable) never refuse.
+    monkeypatch.setattr(uia, "process_integrity_level", lambda pid: None)
+    uia.require_not_more_elevated(SimpleNamespace(ProcessId=1234), "TD Snap")
