@@ -133,3 +133,24 @@ def test_a_replace_refused_for_good_still_keeps_the_original(tmp_path, monkeypat
         atomic.atomic_write(str(dest), b"new")
     assert dest.read_bytes() == b"old"
     assert litter(tmp_path) == []
+
+
+def test_a_failed_copy_keeps_the_destination_and_leaves_no_temp_file(tmp_path, monkeypatch):
+    dest = tmp_path / "saved.sps"
+    dest.write_bytes(b"old")
+    source = tmp_path / "current"
+    source.write_bytes(b"new")
+
+    def fail(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(atomic.shutil, "copyfile", fail)
+    with pytest.raises(OSError):
+        atomic.atomic_copy(str(source), str(dest))
+    assert dest.read_bytes() == b"old"
+    assert litter(tmp_path) == []
+
+
+def test_directory_flush_is_skipped_where_a_directory_cannot_be_opened(monkeypatch, tmp_path):
+    monkeypatch.setattr(atomic.os, "name", "nt")
+    atomic._fsync_directory(str(tmp_path))  # a no-op, and never raises

@@ -1688,6 +1688,10 @@ def _td_snap_starts_clean(monkeypatch):
     the dirty-state refusals (roadmap B5) override this."""
     monkeypatch.setattr(live, "_in_edit_mode", lambda _window: False)
     monkeypatch.setattr(live, "_open_dialog", lambda _window: None)
+    # The fake windows here are not real windows, so on Windows the real
+    # foreground check would ask user32 about them; tests/test_uia.py and the
+    # sweep's foreground_lost fault test that check itself.
+    monkeypatch.setattr(live, "_require_foreground", lambda _window: None)
 
 
 @pytest.fixture(autouse=True)

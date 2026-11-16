@@ -615,7 +615,9 @@ def test_the_open_page_set_is_never_opened_for_writing():
     assert not offenders, offenders
 
 
-@pytest.mark.parametrize("folder", ["plain", "with#hash", "with%41", "sp ace", "q?m"])
+# '?' cannot appear in a Windows folder name, so that case exists only elsewhere.
+@pytest.mark.parametrize("folder", ["plain", "with#hash", "with%41", "sp ace"]
+                         + ([] if sys.platform == "win32" else ["q?m"]))
 def test_the_read_only_uri_helper_is_read_only_for_any_folder_name(tmp_path, folder):
     from tdsnap.sqliteuri import sqlite_ro_uri
 

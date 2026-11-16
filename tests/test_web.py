@@ -13,6 +13,7 @@ import json
 import os
 import socket
 import sqlite3
+import sys
 import time
 import webbrowser
 from types import SimpleNamespace
@@ -1562,7 +1563,9 @@ def test_the_suggested_name_is_the_edited_copy(client, tmp_path, seeded_source):
     assert server.edited_filename(session_id) == "client.edited.sps"
 
 
-@pytest.mark.parametrize("folder", ["plain", "with#hash", "with%41pct", "sp ace", "q?mark"])
+# '?' cannot appear in a Windows folder name, so that case exists only elsewhere.
+@pytest.mark.parametrize("folder", ["plain", "with#hash", "with%41pct", "sp ace"]
+                         + ([] if sys.platform == "win32" else ["q?mark"]))
 def test_sessions_open_from_folders_with_awkward_names(tmp_path, seeded_source, monkeypatch, folder):
     """REL-013: '#' or '%' in a folder (the temp folder holds the user name)
     broke every file-mode read."""

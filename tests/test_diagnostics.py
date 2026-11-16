@@ -192,3 +192,42 @@ def test_the_report_carries_recent_operations_as_codes(running_apps):
     text = diagnostics.as_text(diagnostics.report())
     assert "op=ab12" in text and "code=VERIFY_MISMATCH" in text
     assert "outcome=rolled_back" in text
+
+
+def test_a_status_error_is_reported_as_present_never_quoted(monkeypatch):
+    """An app's own error text can name a page, so the report says only that
+    there was one."""
+    monkeypatch.setattr(diagnostics.live, "status", lambda *_a: {
+        "available": True, "running": False, "error": f"Cannot read {PRIVATE_PAGE}"})
+    monkeypatch.setattr(diagnostics.grid3, "status", lambda *_a: {
+        "running": True, "error": f"{PRIVATE_GRIDSET} is locked", "grid": "odd"})
+
+    def no_access():
+        raise OSError("token")
+
+    monkeypatch.setattr(diagnostics.grid3, "has_ui_access", no_access)
+    facts = diagnostics.live_report()
+    assert facts["tdsnap"]["error"] == "present"
+    assert facts["grid3"]["error"] == "present"
+    assert facts["grid3"]["grid"] == "unknown"
+    assert facts["grid3"]["ui_access"] == "unknown"
+    assert PRIVATE_PAGE not in str(facts) and PRIVATE_GRIDSET not in str(facts)
+
+
+def test_diagnostic_mode_adds_the_steps_of_the_last_failed_operation(running_apps):
+    from tdsnap.web import oplog
+
+    oplog.set_diagnostic(True)
+    try:
+        with pytest.raises(PagesetError), oplog.operation("post:tdsnap.edit-plan") as op:
+            oplog.count("add", 2)
+            op.step("select_cell", polls=3)
+            raise PagesetError("x", code="VERIFY_MISMATCH", outcome="rolled_back")
+        section = diagnostics.report()["operations"]
+    finally:
+        oplog.set_diagnostic(False)
+    lines = [value for key, value in section.items() if key[:2].isdigit()]
+    assert any("counts=add:2" in line for line in lines)
+    steps = [value for key, value in section.items() if key.startswith("step_")]
+    assert steps and all(f"op={op.id}" in line for line in steps)
+    assert any("name=select_cell" in line and "polls=3" in line for line in steps)
