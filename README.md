@@ -95,7 +95,9 @@ been run yet. Live editing cannot be made transactional, and a failed edit
 relies on the AAC app's own Undo. Take a backup in TD Snap or Grid 3 before the
 first live edit of a session, and for large changes prefer editing an exported
 file, which has the strongest guarantees. See
-[release readiness](docs/reliability/07-RELEASE-READINESS-CHECKLIST.md).
+[release readiness](docs/reliability/07-RELEASE-READINESS-CHECKLIST.md), and
+[what each result means](docs/WHAT_RESULTS_MEAN.md) for what to do after any
+edit that is not a plain "Done".
 
 If something goes wrong, **Copy a support report** in the footer collects the
 versions, capability flags and recent activity (as codes and timings) a bug
