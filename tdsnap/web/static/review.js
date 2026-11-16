@@ -400,9 +400,37 @@ buildForm.addEventListener("submit", (event) => {
 });
 
 $("review-back-btn").addEventListener("click", () => {
+  if (state.applyInFlight) return;
   state.pendingEdit = null;
   show("items");
 });
+
+/* While an edit is being applied, the controls that leave this screen are
+   disabled: leaving used to show a result screen for an edit still running,
+   or start over with TD Snap mid-edit (H-14). */
+function setApplyInFlight(running) {
+  state.applyInFlight = running;
+  ["review-back-btn", "file-badge", "reset-btn"].forEach((id) => {
+    const control = $(id);
+    if (control) control.disabled = running;
+  });
+}
+
+/* The response to a write was lost. Ask the server what became of it, by the
+   request ID the write carried, rather than guessing or retrying (C9). */
+async function reconcileLostWrite(requestId) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const result = await api(`/api/operation-result/${requestId}`, { background: true });
+      if (!result.known) return null;
+      if (result.done) return result;
+    } catch {
+      // The app may still be unreachable; keep asking for a little while.
+    }
+    await new Promise((resolve) => { window.setTimeout(resolve, 2000); });
+  }
+  return null;
+}
 
 $("confirm-update-btn").addEventListener("click", async () => {
   const pending = state.pendingEdit;
@@ -437,10 +465,14 @@ $("confirm-update-btn").addEventListener("click", async () => {
       : pending.operation === "existing"
         ? `Updating ${product} and checking the result…`
         : "Creating the page in TD Snap and checking the result…");
+  const requestId = window.crypto?.randomUUID?.()
+    || `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  setApplyInFlight(true);
   try {
     const data = await api(pending.path, {
       method: "POST",
       headers: {
+        "X-AAC-Request": requestId,
         "Content-Type": "application/json",
         ...(state.mode === "file"
           ? {}
@@ -510,6 +542,22 @@ $("confirm-update-btn").addEventListener("click", async () => {
     state.pendingEdit = null;
     show("result");
   } catch (error) {
+    if (["unreachable", "timeout"].includes(error.kind)) {
+      // H-14: the edit may have landed even though the answer never came.
+      setActivity("Checking what happened to the edit…");
+      const result = await reconcileLostWrite(requestId);
+      if (result) {
+        Object.assign(error, {
+          outcome: result.outcome, code: result.code, op: result.op,
+        });
+        if (result.succeeded) {
+          error.message = "The answer from AAC Editor was lost, but the edit itself "
+            + "finished. Check the page to see it.";
+        }
+      } else {
+        error.outcome = "unknown";
+      }
+    }
     const appName = state.mode === "file"
       ? "the edited copy"
       : state.provider === "grid3" ? "Grid 3" : "TD Snap";
@@ -568,6 +616,7 @@ $("confirm-update-btn").addEventListener("click", async () => {
       [...failureLines(error, appName), ...(error.problems || [])],
     );
   } finally {
+    setApplyInFlight(false);
     setActivity();
     $("step-result").setAttribute("aria-busy", "false");
     setBusy(button, false);

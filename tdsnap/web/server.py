@@ -1388,7 +1388,41 @@ def _begin_operation():
     )
     if logged:
         g.op = oplog.Operation(_operation_kind(rule), _operation_app(rule))
+        request_id = request.headers.get("X-AAC-Request", "")
+        if _REQUEST_ID.fullmatch(request_id):
+            g.request_id = request_id
+            _remember_result(request_id, {"done": False, "op": g.op.id})
     return None
+
+
+# H-14 / roadmap C9: a write whose response is lost (the connection dropped,
+# the browser gave up) used to leave the person with "isn't responding, try
+# again", although the edit may have landed. The browser names each write
+# with a random request ID; its outcome is kept here, briefly, so the browser
+# can ask what happened instead of guessing or retrying.
+_REQUEST_ID = re.compile(r"[A-Za-z0-9-]{8,64}")
+_RESULTS_KEPT = 50
+_results: dict = {}
+_results_lock = threading.Lock()
+
+
+def _remember_result(request_id: str, result: dict) -> None:
+    with _results_lock:
+        _results[request_id] = result
+        while len(_results) > _RESULTS_KEPT:
+            _results.pop(next(iter(_results)))
+
+
+@app.get("/api/operation-result/<request_id>")
+def operation_result(request_id):
+    """What became of a write whose response never arrived."""
+    if not _REQUEST_ID.fullmatch(request_id or ""):
+        raise PagesetError("Unknown request.")
+    with _results_lock:
+        result = _results.get(request_id)
+    if result is None:
+        return jsonify({"ok": True, "known": False})
+    return jsonify({"ok": True, "known": True, **result})
 
 
 @app.after_request
@@ -1405,6 +1439,12 @@ def _end_operation(response):
     if outcome is None:
         outcome = "ok" if response.status_code < 400 else errors.REFUSED
     op.finish(outcome, status=response.status_code)
+    request_id = g.get("request_id")
+    if request_id:
+        _remember_result(request_id, {
+            "done": True, "op": op.id, "outcome": outcome, "code": op.code,
+            "succeeded": response.status_code < 400,
+        })
     return response
 
 

@@ -242,3 +242,22 @@ def test_the_interrupted_endpoints(client, monkeypatch):
     assert client.get("/api/interrupted", headers=token).get_json()["edits"][0]["op"] == "dd44"
     client.post("/api/interrupted/ack", headers=token)
     assert client.get("/api/interrupted", headers=token).get_json()["edits"] == []
+
+
+def test_a_write_can_be_asked_about_after_its_response_was_lost(client, monkeypatch):
+    """H-14 / roadmap C9."""
+    from tdsnap import live
+
+    monkeypatch.setattr(live, "apply_page_edits", lambda *a, **k: {"outcome": "verified"})
+    monkeypatch.setattr(live, "last_edit", lambda: None)
+    headers = {"X-TDSnap-Token": server.API_TOKEN, "X-TDSnap-Editor": "1",
+               "X-AAC-Request": "req-0001-abcd"}
+    client.post("/api/tdsnap/edit-plan", headers=headers, json={
+        "operation": "edit_page", "page": "Eating", "fingerprint": "f",
+        "items": [{"label": "apple", "slot": 0}]})
+    token = {"X-TDSnap-Token": server.API_TOKEN}
+    result = client.get("/api/operation-result/req-0001-abcd", headers=token).get_json()
+    assert result["known"] and result["done"] and result["outcome"] == "verified"
+    assert result["succeeded"] is True and result["ok"] is True
+    assert client.get("/api/operation-result/never-sent-1", headers=token).get_json()["known"] is False
+    assert client.get("/api/operation-result/bad id!", headers=token).status_code in (400, 404)

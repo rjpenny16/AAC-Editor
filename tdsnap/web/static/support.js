@@ -35,6 +35,7 @@ function hasUnsavedWork() {
   // A queued page is reviewed work held only in this tab, and it counts
   // whatever else has already been applied this session — unlike the chip box,
   // which an applied edit legitimately empties.
+  if (state.applyInFlight) return true;
   if (state.queue.length) return true;
   // An edited exported copy that was never saved is the whole result of the
   // session, and nothing else has a copy of it.

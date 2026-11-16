@@ -68,6 +68,10 @@ function nextStep(code, outcome, app) {
 /* The lines to show under a failure heading. *error* is what api.js threw:
    message, code, outcome, op. */
 function failureLines(error, app = "TD Snap") {
+  if (["verified", "verified_with_gaps", "ok"].includes(error.outcome)) {
+    return [error.message, `Look at the page in ${app} to see it. Do not apply it again.`,
+      ...(error.op ? [`Reference ${error.op}`] : [])];
+  }
   const outcome = OUTCOME[error.outcome] ? error.outcome : "unknown";
   const facts = OUTCOME[outcome];
   const lines = [error.message];
@@ -82,6 +86,10 @@ function failureLines(error, app = "TD Snap") {
 /* A short heading for a failure, from its outcome. */
 function failureHeading(error, app = "TD Snap", undoing = false) {
   const what = undoing ? "The undo" : "The edit";
+  if (error.outcome === "verified" || error.outcome === "verified_with_gaps"
+      || error.outcome === "ok") {
+    return `${what} went through, but its answer was lost on the way back.`;
+  }
   switch (error.outcome) {
     case "refused": return `${what} was not started.`;
     case "rolled_back": return `${what} did not go through, and the page was put back.`;

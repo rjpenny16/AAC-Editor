@@ -410,6 +410,7 @@ function confirmStartOver() {
 }
 
 function startOver() {
+  if (state.applyInFlight) return;
   if (confirmStartOver()) resetConnection();
 }
 

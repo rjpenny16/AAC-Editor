@@ -5643,3 +5643,48 @@ test('a token that never loaded is fetched again and the request retried', async
   await expect(page.locator('#restart-banner')).toBeHidden();
   expect(configCalls).toBeGreaterThan(1);
 });
+
+test('a lost answer to an applied edit is checked, not guessed', async ({ page }) => {
+  // H-14: the edit may have landed even though its response never arrived.
+  let requestId = null;
+  await mockTD(page);
+  await page.route('**/api/tdsnap/edit-plan', (route) => {
+    requestId = route.request().headers()['x-aac-request'];
+    return route.abort('connectionreset');
+  });
+  await page.route('**/api/operation-result/*', (route) => fulfillJson(route, {
+    ok: true, known: true, done: true, outcome: 'verified', op: 'beef', succeeded: true,
+  }));
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await page.locator('#build-btn').click();
+  await page.locator('#confirm-update-btn').click();
+  const error = page.locator('#review-error');
+  await expect(error).toContainText('went through, but its answer was lost');
+  await expect(error).toContainText('Do not apply it again');
+  expect(requestId).toBeTruthy();
+});
+
+test('leaving the review is blocked while an edit is being applied', async ({ page }) => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await mockTD(page);
+  await page.route('**/api/tdsnap/edit-plan', async (route) => {
+    await held;
+    return fulfillJson(route, {
+      ok: true, page: 'Eating', buttons: 1, warnings: [], outcome: 'verified',
+      checks: { td_snap_edit: 'pass' },
+    });
+  });
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await page.locator('#build-btn').click();
+  await page.locator('#confirm-update-btn').click();
+  await expect(page.locator('#review-back-btn')).toBeDisabled();
+  await expect(page.locator('#file-badge')).toBeDisabled();
+  release();
+  await expect(page.locator('#result-heading')).toContainText('Done');
+  await expect(page.locator('#file-badge')).toBeEnabled();
+});
