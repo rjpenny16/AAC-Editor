@@ -443,6 +443,22 @@
                 </div>
               </div>
 
+              <section id="ai-manual" class="ai-manual" aria-labelledby="ai-manual-heading" hidden>
+                <h4 id="ai-manual-heading">Or ask an assistant yourself</h4>
+                <p class="field-hint">Copy this request into a chat assistant you already use, then paste
+                  its answer into the word box above. AAC Editor sends nothing anywhere; whatever you paste
+                  goes through the same review as typed words.</p>
+                <p id="ai-manual-prompt" class="ai-manual-prompt"></p>
+                <p class="field-hint"><strong>Do not add a client&rsquo;s name or personal details</strong> to
+                  the request: it leaves this computer when you paste it into the assistant.</p>
+                <div class="ai-actions">
+                  <button type="button" id="ai-manual-copy" class="btn btn-secondary btn-compact">Copy the request</button>
+                  <a id="ai-manual-open" class="btn btn-ghost btn-compact" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer">Open a chat assistant</a>
+                  <button type="button" id="ai-manual-paste" class="text-button">Go to the word box</button>
+                </div>
+                <p id="ai-manual-status" class="status-line" role="status" aria-live="polite"></p>
+              </section>
+
               <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
 
               <section id="ai-tray" class="ai-tray" aria-labelledby="ai-tray-heading" hidden>

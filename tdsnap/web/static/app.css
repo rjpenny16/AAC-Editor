@@ -1412,3 +1412,22 @@ body[data-step="review"] .review-actions { position: sticky; bottom: 0; padding:
   .btn[aria-disabled="true"] { color: GrayText; }
   .preview .cell.selected { border-color: Highlight; }
 }
+
+/* "Or ask an assistant yourself" (roadmap D7) */
+.ai-manual {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.ai-manual h4 {
+  margin: 0 0 0.25rem;
+}
+
+.ai-manual-prompt {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface-soft);
+  user-select: all;
+}

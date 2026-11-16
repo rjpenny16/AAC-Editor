@@ -85,6 +85,13 @@ computer.
 Where to look: the only files that can reach the network are listed in
 `tests/test_privacy_contract.py`, and that test fails if a new one appears.
 
+**Asking an assistant yourself.** When the built-in suggestions are not set up,
+the suggestions panel offers a request you can copy into a chat assistant you
+already use, then paste its answer into the word box. AAC Editor itself sends
+nothing: the request leaves your computer only when you paste it somewhere,
+under that service's own privacy terms. It contains the page title and how many
+words you asked for; do not add a client's name or details to it.
+
 ## How the AI works
 
 - The model runs on your computer, either inside AAC Editor or in your own Ollama.

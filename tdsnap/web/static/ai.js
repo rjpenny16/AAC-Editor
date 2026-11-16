@@ -126,8 +126,57 @@ function renderState(failure = "") {
   $("ai-go").disabled = !(readiness && readiness.ready);
   // Ollama steps are offered only to somebody who chose Ollama (REL-028).
   $("ai-ollama-btn-alt").hidden = !(readiness && readiness.action === "ollama");
+  // D7: whenever local AI is not ready, the manual route is offered.
+  $("ai-manual").hidden = Boolean(readiness && readiness.ready);
+  if (!$("ai-manual").hidden) $("ai-manual-prompt").textContent = manualPrompt();
   renderTray();
 }
+
+/* ---------- ask an assistant yourself (roadmap D7) ---------- */
+
+/* The request somebody can paste into any chat assistant when the local
+   model is not ready. The owner already worked this way; this composes the
+   request the same way the built-in prompt is worded (web/prompts.py:
+   simple, common words, no numbering or commentary) and asks for commas,
+   which the word box splits on (chips.js). Nothing here is sent anywhere. */
+function manualPrompt() {
+  const topic = pageCategory() || "everyday activities";
+  const count = Math.min(Math.max(Number($("ai-count")?.value) || 10, 1), 40);
+  const kind = describeKind();
+  const what = kind === "words" ? "single words or very short phrases" : kind;
+  return `List ${count} ${what} about "${topic}" for a communication board. `
+    + "Use simple, common words that a child or adult who uses AAC would say. "
+    + "Separate them with commas. No numbering, no explanations, nothing else.";
+}
+
+$("ai-manual-copy").addEventListener("click", async () => {
+  const text = manualPrompt();
+  $("ai-manual-prompt").textContent = text;
+  const status = $("ai-manual-status");
+  try {
+    await navigator.clipboard.writeText(text);
+    status.textContent = "Copied. Paste it into the assistant, then paste its answer into the word box.";
+    status.className = "status-line success";
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents($("ai-manual-prompt"));
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    status.textContent = "Couldn’t copy automatically. The request is selected, so press Ctrl+C.";
+    status.className = "status-line error";
+  }
+});
+
+// The page can change after the status check that first showed this, so
+// the request is written again whenever the panel is opened.
+$("ai-panel").addEventListener("toggle", () => {
+  if (!$("ai-manual").hidden) $("ai-manual-prompt").textContent = manualPrompt();
+});
+
+$("ai-manual-paste").addEventListener("click", () => {
+  $("word-input").focus();
+});
 
 /* Which built-in model to download and run.
  *

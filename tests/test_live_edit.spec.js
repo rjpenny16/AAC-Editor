@@ -5688,3 +5688,37 @@ test('leaving the review is blocked while an edit is being applied', async ({ pa
   await expect(page.locator('#result-heading')).toContainText('Done');
   await expect(page.locator('#file-badge')).toBeEnabled();
 });
+
+test('when local AI is not ready, a request to paste into an assistant is offered', async ({ page }) => {
+  // Roadmap D7: the owner's own workaround, made a guided path. It must
+  // make no network request of its own.
+  await mockTD(page);
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus({
+    ai: { ...AI_UNAVAILABLE },
+  })));
+  const outbound = [];
+  page.on('request', (request) => {
+    if (!request.url().startsWith('http://127.0.0.1') && !request.url().startsWith('http://localhost')) {
+      outbound.push(request.url());
+    }
+  });
+  await existingItems(page);
+  await openSuggestions(page);
+  await expect(page.locator('#ai-manual')).toBeVisible();
+  await expect(page.locator('#ai-manual-prompt')).toContainText('"Eating"');
+  await expect(page.locator('#ai-manual-prompt')).toContainText('Separate them with commas');
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.locator('#ai-manual-copy').click();
+  await expect(page.locator('#ai-manual-status')).toContainText(/Copied|Ctrl\+C/);
+  await page.locator('#ai-manual-paste').click();
+  await expect(page.locator('#word-input')).toBeFocused();
+  expect(outbound).toEqual([]);
+});
+
+test('the assistant fallback is not shown once suggestions are ready', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus()));
+  await existingItems(page);
+  await openSuggestions(page);
+  await expect(page.locator('#ai-manual')).toBeHidden();
+});

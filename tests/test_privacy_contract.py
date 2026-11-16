@@ -333,6 +333,10 @@ _CSS_EXTERNAL = re.compile(r"""(?:url\(\s*["']?|@import\s+["']?)(?:https?:)?//""
 ALLOWED_LINKS = {
     "https://ollama.com/download",
     "https://en.wikipedia.org",
+    # Roadmap D7: "Open a chat assistant" beside the copyable request, shown only
+    # when local suggestions are not ready. Nothing is sent with it; the person
+    # pastes the request themselves (PRIVACY.md, "Asking an assistant yourself").
+    "https://claude.ai/new",
 }
 
 
