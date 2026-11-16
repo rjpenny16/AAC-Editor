@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from . import colors, pageset, templates, uia
 from .builder import MAX_LABEL_LENGTH, MAX_MESSAGE_LENGTH, _normalize_items
 from .errors import PagesetError
+from .web import oplog
 
 DEFAULT_PARENT = "Topics Menu Page"
 TD_SNAP_APP = r"shell:AppsFolder\TobiiDynavox.Snap_626b2w651dr5w!App"
@@ -76,6 +77,13 @@ class Cell:
     y: int
     width: int
     height: int
+
+
+def _db_fallback(exc: BaseException) -> None:
+    """Note in the operation log that a read of TD Snap's page set failed and a
+    fallback was taken (REL-019). Records a code, never the message."""
+    text = str(exc).lower()
+    oplog.fallback("DB_LOCKED" if "locked" in text or "busy" in text else "DB_UNREADABLE")
 
 
 def _desktop_unlocked() -> bool:
@@ -327,7 +335,8 @@ def _has_column(conn, table, column) -> bool:
             row[1] == column
             for row in conn.execute(f"PRAGMA table_info({quoted})")
         )
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        _db_fallback(exc)
         return False
 
 
@@ -368,7 +377,8 @@ def _pageset_matches_visible_page(path, page, labels):
                     value.strip().casefold() for value in row if value and value.strip()
                 )
         return {label.strip().casefold() for label in labels if label.strip()} <= visible
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as exc:
+        _db_fallback(exc)
         return False
 
 
@@ -397,7 +407,8 @@ def _active_pageset_path(visible_page=None, visible_labels=()):
             )
             if os.path.isfile(pageset_path):
                 candidates.append(pageset_path)
-        except (OSError, sqlite3.Error):
+        except (OSError, sqlite3.Error) as exc:
+            _db_fallback(exc)
             continue
     candidates = list(dict.fromkeys(
         os.path.realpath(path) for path in candidates
@@ -427,7 +438,8 @@ def _active_pageset_pages(visible_page=None, visible_labels=()):
                 "FROM Page WHERE PageType = 1 ORDER BY Title COLLATE NOCASE"
             ).fetchall()
         return list(dict.fromkeys(row[0] for row in rows))
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as exc:
+        _db_fallback(exc)
         return []
 
 
@@ -450,7 +462,8 @@ def _page_route(start, target, visible_labels=()):
                 "WHERE target.PageType = 1 AND source.Title IS NOT NULL "
                 "AND button.Label IS NOT NULL AND target.Title IS NOT NULL"
             ).fetchall()
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as exc:
+        _db_fallback(exc)
         return None
 
     graph = {}
@@ -520,7 +533,8 @@ def _stored_sparse_grid(group, buttons, width, height):
                                      (rect.top + rect.bottom) // 2, column, row))
                 if observed:
                     candidates.append((cols, rows, observed))
-    except (OSError, sqlite3.Error, TypeError, ValueError):
+    except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
+        _db_fallback(exc)
         return None
 
     if not candidates:
@@ -609,7 +623,8 @@ def _stored_empty_grid(group):
             tuple(int(value) for value in setting.split(",")[:2])
             for setting, in settings if setting
         }
-    except (OSError, sqlite3.Error, TypeError, ValueError):
+    except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
+        _db_fallback(exc)
         return None
     if len(dimensions) != 1:
         return None
@@ -784,7 +799,8 @@ def _hidden_page_buttons(page, grid):
                     hidden.append({"slot": row * cols + col,
                                    "label": label or "Hidden button", "hidden": True})
         return hidden
-    except (OSError, sqlite3.Error, TypeError, ValueError):
+    except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
+        _db_fallback(exc)
         return []
 
 
@@ -931,7 +947,8 @@ def _stored_page_content(page, visible_names=()):
                 "WHERE ref.PageId = ?",
                 (pages[0]["Id"],),
             ).fetchall()
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as exc:
+        _db_fallback(exc)
         return None
 
     content = {}
@@ -1472,6 +1489,7 @@ def _restore_page_state(window, baseline, content=None, maximum=0):
         if undo is None or not getattr(undo, "IsEnabled", False):
             break
         _activate(undo)
+        oplog.note_undo()
         time.sleep(0.12)
     if not restored():
         raise PagesetError(
@@ -2070,7 +2088,8 @@ def vocabulary(visible_page=None, visible_labels=()):
                 "labels": pageset.labels_by_page(conn),
                 "samples": pageset.label_samples(conn),
             }
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as exc:
+        _db_fallback(exc)
         return {"available": False, "labels": {}, "samples": []}
 
 

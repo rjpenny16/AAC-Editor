@@ -35,12 +35,13 @@ import urllib.request
 import zipfile
 from typing import Optional
 
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, g, jsonify, request, send_file, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 from .. import (
     __version__,
     builder,
+    errors,
     formats,
     grid3,
     gridset,
@@ -61,6 +62,7 @@ from . import (
     localai,
     localhttp,
     ollama,
+    oplog,
     prompts,
     settings,
 )
@@ -96,9 +98,26 @@ _AUTOMATION = uia.AutomationThread()
 
 
 def _drive(call):
-    """Run one TD Snap or Grid 3 automation call, alone, on the automation thread."""
+    """Run one TD Snap or Grid 3 automation call, alone, on the automation thread.
+
+    The request's operation (see oplog) is bound on the automation thread too,
+    so live.py and grid3.py can note fallbacks, steps and Undo presses on it.
+    """
+    op = _current_op()
+
+    def bound_call():
+        with oplog.bound(op):
+            return call()
+
     with _LIVE_LOCK:
-        return _AUTOMATION.run(call)
+        return _AUTOMATION.run(bound_call)
+
+
+def _current_op():
+    try:
+        return g.get("op")
+    except RuntimeError:  # outside a request
+        return None
 
 def _session_root_name() -> str:
     """One folder per user, so two people on one computer never share a folder.
@@ -917,16 +936,35 @@ def save_current_as(session_id: str, dest_path: str) -> None:
         session["saved_edits"] = session.get("edits", 0)
 
 
+def _error_fields(exc) -> dict:
+    """Code, outcome and operation ID for an error reply.
+
+    The code and outcome come from the exception (errors.code_of and
+    errors.outcome_of), never from its message, so the browser can choose a
+    message and the user can quote the reference.
+    """
+    op = _current_op()
+    if op is not None:
+        op.fail(exc)
+    return {
+        "code": errors.code_of(exc),
+        "outcome": errors.outcome_of(exc),
+        "op": op.id if op is not None else None,
+    }
+
+
 @app.errorhandler(PagesetError)
 def _pageset_error(exc):
-    return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": False, "error": str(exc), **_error_fields(exc)}), 400
 
 
 @app.errorhandler(HTTPException)
 def _http_error(exc):
     if not request.path.startswith("/api/"):
         return exc
-    return jsonify({"ok": False, "error": exc.description}), exc.code
+    op = _current_op()
+    return jsonify({"ok": False, "error": exc.description, "code": "REFUSED",
+                    "outcome": errors.REFUSED, "op": op.id if op else None}), exc.code
 
 
 @app.errorhandler(Exception)
@@ -945,6 +983,7 @@ def _unexpected_error(exc):
             f"Something unexpected went wrong ({detail[:200]}). Try again. If it keeps "
             "happening, restart AAC Editor and copy a support report from the footer."
         ),
+        **_error_fields(exc),
     }), 500
 
 
@@ -1033,10 +1072,71 @@ def _require_api_token():
         return None
     supplied = request.headers.get("X-TDSnap-Token", "")
     if not secrets.compare_digest(supplied.encode("utf-8"), API_TOKEN.encode("utf-8")):
+        oplog.record(kind="request.token", outcome=errors.REFUSED, code="TOKEN_STALE")
         return jsonify(
-            {"ok": False, "error": "Missing or invalid API token; reload the page."}
+            {"ok": False, "error": "Missing or invalid API token; reload the page.",
+             "code": "TOKEN_STALE", "outcome": errors.REFUSED}
         ), 403
     return None
+
+
+# Requests recorded as operations in the local log (REL-025). Every write is
+# one, and so are the reads a person waits on. Background polls and the
+# settings autosave are not: they would bury the operations that matter.
+_LOGGED_READS = {
+    "/api/tdsnap/page-layout", "/api/grid3/page-layout", "/api/tdsnap/vocabulary",
+    "/api/pageset/<session_id>/vocabulary", "/api/pageset/<session_id>/download",
+    "/api/grid3/status",
+}
+_UNLOGGED_WRITES = {"/api/settings", "/api/focus", "/api/diagnostic-mode"}
+
+
+def _operation_kind(rule: str) -> str:
+    """"post:pageset.x.page.x.buttons" from a route template: no IDs, no names."""
+    shape = re.sub(r"<[^>]+>", "x", rule).strip("/").replace("/", ".")
+    if shape.startswith("api."):
+        shape = shape[4:]
+    return f"{request.method.lower()}:{shape}"[:64]
+
+
+def _operation_app(rule: str) -> Optional[str]:
+    for app_name in ("tdsnap", "grid3", "pageset", "obf", "ai"):
+        if rule.startswith(f"/api/{app_name}"):
+            return app_name
+    return None
+
+
+@app.before_request
+def _begin_operation():
+    rule = request.url_rule.rule if request.url_rule is not None else ""
+    if not rule.startswith("/api/"):
+        return None
+    logged = (
+        (request.method in ("POST", "PUT", "DELETE") and rule not in _UNLOGGED_WRITES)
+        or rule in _LOGGED_READS
+        # A status read the person asked for (connect), not the live poll.
+        or (rule == "/api/tdsnap/status" and not request.headers.get("X-TDSnap-Brief"))
+    )
+    if logged:
+        g.op = oplog.Operation(_operation_kind(rule), _operation_app(rule))
+    return None
+
+
+@app.after_request
+def _end_operation(response):
+    op = _current_op()
+    if op is None:
+        return response
+    response.headers["X-AAC-Op"] = op.id
+    outcome = op.outcome
+    if outcome is None and response.is_json and response.status_code < 400:
+        body = response.get_json(silent=True) or {}
+        reported = body.get("outcome") if isinstance(body, dict) else None
+        outcome = reported if reported in errors.OUTCOMES else None
+    if outcome is None:
+        outcome = "ok" if response.status_code < 400 else errors.REFUSED
+    op.finish(outcome, status=response.status_code)
+    return response
 
 
 @app.get("/api/health")
@@ -1112,6 +1212,7 @@ def delete_settings():
     in use, so it stays until it is closed; the reply says how many.
     """
     settings.clear()
+    oplog.clear()
     removed, in_use = clear_leftover_sessions()
     return jsonify({"ok": True, "working_copies_removed": removed, "working_copies_open": in_use})
 
@@ -2347,6 +2448,19 @@ def _exit_cleanly_on_signals() -> None:
             signal.signal(number, stop)
 
 
+def record_start(port: int, window: str) -> None:
+    """One log record per start: which copy, on which port, in which mode."""
+    import platform
+
+    oplog.set_port(port)
+    oplog.record(
+        kind="app.start", version=__version__, window=window,
+        launch=localai.launch_mode(), packaged=bool(getattr(sys, "frozen", False)),
+        python=platform.python_version(), platform=platform.system() + "-" + platform.release(),
+        elevated=bool(grid3.is_elevated()),
+    )
+
+
 def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
     if instance_running(port):
         url = f"http://127.0.0.1:{port}"
@@ -2365,6 +2479,7 @@ def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
 
     port = pick_port(port)
     server = make_server(port)
+    record_start(port, "browser")
     url = f"http://127.0.0.1:{port}"
     if open_browser:
         threading.Timer(1.0, lambda: _open_browser(url)).start()

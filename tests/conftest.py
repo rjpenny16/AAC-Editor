@@ -225,3 +225,14 @@ def smoke_localai(tmp_path_factory):
                 os.environ[name] = value
         with contextlib.suppress(Exception):
             importlib.reload(localai)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_operation_log(tmp_path_factory, monkeypatch):
+    """Every test writes its operation log to its own folder, never the real
+    per-user data folder."""
+    from tdsnap.web import oplog
+
+    folder = tmp_path_factory.mktemp("oplog")
+    monkeypatch.setattr(oplog, "log_dir", lambda: str(folder))
+    return folder

@@ -275,16 +275,33 @@ def wait_for(callback, message, timeout=WAIT_DEFAULT_TIMEOUT, ignore=()):
     failure — see the module docstring for why this is a caller-supplied
     parameter rather than a hard-coded default.
     """
-    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    deadline = started + timeout
+    polls = 0
     while time.monotonic() < deadline:
+        polls += 1
         try:
             value = callback()
         except ignore:
             value = None
         if value:
+            _note_wait(started, polls, "ok")
             return value
         time.sleep(0.15)
+    _note_wait(started, polls, "timeout")
     raise PagesetError(message)
+
+
+def _note_wait(started: float, polls: int, result: str) -> None:
+    """A step record for diagnostic mode: how long a wait took and how many
+    polls it got. That is the evidence for or against REL-017."""
+    try:
+        from .web import oplog
+
+        oplog.step("wait", polls=polls, ms=int((time.monotonic() - started) * 1000),
+                   result=result)
+    except Exception:  # noqa: S110 - logging must never change what a wait does
+        pass
 
 
 # ---------------------------------------------------------------------------

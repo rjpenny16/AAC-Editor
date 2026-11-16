@@ -183,6 +183,7 @@ def run_desktop(
         url += "/?provider=grid3"
     server.set_native(True)
     flask_server = server.make_server(port)
+    server.record_start(port, "native")
 
     serve_thread = threading.Thread(target=flask_server.serve_forever, daemon=True)
     serve_thread.start()

@@ -25,6 +25,7 @@ from . import uia
 from .builder import _normalize_items
 from .errors import PagesetError
 from .live import _desktop_unlocked, _focus_window
+from .web import oplog
 
 GRID3_EXE = os.path.join(
     # the real Windows variable is spelled ProgramFiles(x86)
@@ -1135,6 +1136,7 @@ def _undo_once(auto) -> None:
         time.sleep(0.12)
     else:
         _send(auto, "{Ctrl}z", wait=0.12)
+    oplog.note_undo()
 
 
 def _restore_unsaved(auto, maximum: int) -> None:
@@ -1166,7 +1168,7 @@ def _rollback_saved(auto, restored, maximum: int) -> None:
             if restored():
                 return
         except (OSError, zipfile.BadZipFile, PagesetError):
-            pass
+            oplog.fallback("DB_UNREADABLE")
     raise PagesetError("Grid 3 could not restore the verified pre-edit content.")
 
 
