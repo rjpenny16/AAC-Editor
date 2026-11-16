@@ -108,7 +108,16 @@ def _drive(call):
     so live.py and grid3.py can note fallbacks, steps and Undo presses on it.
     """
     op = _current_op()
-    journaled = op is not None and _is_live_write()
+    writing = _is_live_write()
+    journaled = op is not None and writing
+    if writing and _live_lock_state["op"] is not None:
+        raise PagesetError(
+            "The last edit stopped part-way because the AAC app stopped responding "
+            f"(reference {_live_lock_state['op']}). Check that page in the AAC app, then "
+            "choose Reconnect before making another edit.",
+            code="LIVE_LOCKED",
+        )
+    deadline = WRITE_DEADLINE_SECONDS if writing else READ_DEADLINE_SECONDS
 
     def bound_call():
         with oplog.bound(op):
@@ -119,16 +128,42 @@ def _drive(call):
             oplog.journal_begin(op.id, op.app, op.kind)
         outcome = errors.UNKNOWN
         try:
-            result = _AUTOMATION.run(bound_call)
+            result = _AUTOMATION.run(bound_call, deadline=deadline)
             if isinstance(result, dict):
                 outcome = result.get("outcome") or "ok"
             return result
+        except PagesetError as exc:
+            outcome = errors.outcome_of(exc)
+            if writing and getattr(exc, "code", None) == "AUTOMATION_DEADLINE" \
+                    and not isinstance(exc, uia.Cancelled):
+                # REL-011: a write past its deadline leaves the page in an
+                # unknown state; live editing stays locked until the person
+                # has checked it and reconnected.
+                _live_lock_state["op"] = op.id if op is not None else "?"
+                outcome = errors.UNKNOWN
+                raise PagesetError(
+                    "The AAC app stopped responding during the edit, so AAC Editor "
+                    "stopped. Check this page in the AAC app before doing anything else, "
+                    "then choose Reconnect.",
+                    code="AUTOMATION_DEADLINE", outcome=errors.UNKNOWN, page_touched=True,
+                ) from exc
+            raise
         except BaseException as exc:
             outcome = errors.outcome_of(exc)
             raise
         finally:
             if journaled:
                 oplog.journal_end(op.id, outcome)
+
+
+# REL-011: automation calls used to have no deadline, so one hung call into an
+# unresponsive app held the live lock for ever. Reads give up just before the
+# browser does; writes get long enough for a batch of several pages.
+READ_DEADLINE_SECONDS = 55
+WRITE_DEADLINE_SECONDS = 600
+# Set when a write passed its deadline: live writes are refused until the
+# person reconnects (POST /api/live/reconnect).
+_live_lock_state = {"op": None}
 
 
 # Requests that send input to TD Snap or Grid 3 and so are written to the
@@ -1503,6 +1538,18 @@ def quit_app():
         }), 409
     threading.Timer(0.3, shutdown).start()
     return jsonify({"ok": True, "kept": len(unsaved)})
+
+
+@app.post("/api/live/reconnect")
+def live_reconnect():
+    """The person has checked the page after a stopped edit; allow edits again."""
+    if _AUTOMATION.busy_with_abandoned_job():
+        raise PagesetError(
+            "The AAC app is still not responding. Close it, open it again, then reconnect.",
+            code="AUTOMATION_DEADLINE",
+        )
+    _live_lock_state["op"] = None
+    return jsonify({"ok": True})
 
 
 @app.get("/api/interrupted")

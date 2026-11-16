@@ -121,3 +121,70 @@ def test_an_unknown_api_path_is_json_too(client):
     response = client.get("/api/does-not-exist", headers=token_headers())
     assert response.status_code == 404
     assert response.get_json()["ok"] is False
+
+
+# ---------------------------------------------------------------------------
+# Deadlines and cancellation (REL-011, roadmap C5)
+
+
+def test_a_call_past_its_deadline_is_abandoned_and_told_to_stop():
+    from tdsnap import uia
+
+    worker = AutomationThread(initialize=lambda: None)
+    release = threading.Event()
+    pressed_after_deadline = []
+
+    def hangs_then_continues():
+        release.wait(5)  # stuck inside the AAC app
+        try:
+            uia.check_cancelled()  # the next wait or input
+        except uia.Cancelled:
+            return "stopped"
+        pressed_after_deadline.append(True)
+        return "pressed"
+
+    with pytest.raises(PagesetError) as caught:
+        worker.run(hangs_then_continues, deadline=0.1)
+    assert caught.value.code == "AUTOMATION_DEADLINE"
+
+    # Nothing is queued behind a call that is still stuck.
+    with pytest.raises(PagesetError, match="still not responding"):
+        worker.run(lambda: "next", deadline=1)
+
+    release.set()
+    deadline = threading.Event()
+    deadline.wait(0.3)
+    assert pressed_after_deadline == []
+    # Once it has stopped, the thread takes work again.
+    assert worker.run(lambda: "next", deadline=1) == "next"
+
+
+def test_a_write_past_its_deadline_is_unknown_and_locks_live_editing(client, monkeypatch):
+    from tdsnap import live
+
+    monkeypatch.setattr(server, "WRITE_DEADLINE_SECONDS", 0.1)
+    monkeypatch.setattr(server, "_AUTOMATION", AutomationThread(initialize=lambda: None))
+    monkeypatch.setitem(server._live_lock_state, "op", None)
+    release = threading.Event()
+
+    def hangs(*_args, **_kwargs):
+        release.wait(5)
+        return {"outcome": "verified"}
+
+    monkeypatch.setattr(live, "apply_page_edits", hangs)
+    monkeypatch.setattr(live, "last_edit", lambda: None)
+    body = {"operation": "edit_page", "page": "Eating", "fingerprint": "f",
+            "items": [{"label": "apple", "slot": 0}]}
+    headers = token_headers(**{"X-TDSnap-Editor": "1"})
+    first = client.post("/api/tdsnap/edit-plan", json=body, headers=headers).get_json()
+    assert first["code"] == "AUTOMATION_DEADLINE" and first["outcome"] == "unknown"
+
+    release.set()
+    threading.Event().wait(0.3)
+    second = client.post("/api/tdsnap/edit-plan", json=body, headers=headers).get_json()
+    assert second["code"] == "LIVE_LOCKED"
+
+    assert client.post("/api/live/reconnect", headers=headers).get_json()["ok"]
+    monkeypatch.setattr(live, "apply_page_edits", lambda *a, **k: {"outcome": "verified"})
+    third = client.post("/api/tdsnap/edit-plan", json=body, headers=headers).get_json()
+    assert third["ok"] is True

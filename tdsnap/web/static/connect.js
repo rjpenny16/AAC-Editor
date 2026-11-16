@@ -421,6 +421,11 @@ $("live-connect-btn").addEventListener("click", async () => {
   setActivity(`Checking for ${product}…`);
   setBusy(button, true, "Connecting…");
   try {
+    if (state.provider !== "file") {
+      // Connecting is the person's "I have checked the page" after an edit
+      // that stopped because the app stopped responding (REL-011).
+      await api("/api/live/reconnect", { method: "POST" }).catch(() => {});
+    }
     if (state.provider === "file") {
       if (state.native && window.pywebview?.api?.open_pageset) {
         await useFileSession(await window.pywebview.api.open_pageset());

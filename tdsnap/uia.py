@@ -99,6 +99,31 @@ def _initialize_com():
     return auto.UIAutomationInitializerInThread()
 
 
+# ---------------------------------------------------------------------------
+# Cancellation (REL-011, roadmap C5)
+#
+# A job that passes its deadline is abandoned by its caller but may still be
+# running on the automation thread, blocked in a call into an unresponsive
+# app. It is told to stop: every wait and every raw input checks the flag and
+# raises, so an abandoned read cannot go on to navigate TD Snap after the
+# person has moved on, and an abandoned write presses nothing more.
+
+_current_job = threading.local()
+
+
+class Cancelled(PagesetError):
+    """Raised inside an abandoned job at its next wait or input."""
+
+
+def check_cancelled() -> None:
+    flag = getattr(_current_job, "cancel", None)
+    if flag is not None and flag.is_set():
+        raise Cancelled(
+            "The operation was stopped because the AAC app took too long to respond.",
+            code="AUTOMATION_DEADLINE",
+        )
+
+
 class AutomationThread:
     """Run every TD Snap and Grid 3 automation call on one long-lived thread.
 
@@ -113,6 +138,9 @@ class AutomationThread:
         self._jobs = queue.SimpleQueue()
         self._thread = None
         self._start_lock = threading.Lock()
+        # The cancel flag of the job running now, if any. Set while a job
+        # whose caller gave up is still stuck inside the AAC app.
+        self._running = None
 
     def _loop(self):
         initializer = None
@@ -123,7 +151,9 @@ class AutomationThread:
         else:
             startup_error = None
         while True:
-            call, outcome, done = self._jobs.get()
+            call, outcome, done, cancel = self._jobs.get()
+            _current_job.cancel = cancel
+            self._running = cancel
             try:
                 if startup_error is not None:
                     raise PagesetError(
@@ -133,6 +163,8 @@ class AutomationThread:
             except BaseException as exc:  # handed back to the waiting caller
                 outcome["error"] = exc
             finally:
+                _current_job.cancel = None
+                self._running = None
                 done.set()
         del initializer  # pragma: no cover - the loop never exits
 
@@ -144,15 +176,38 @@ class AutomationThread:
                 )
                 self._thread.start()
 
-    def run(self, call):
-        """Run *call* on the automation thread and return what it returns."""
+    def busy_with_abandoned_job(self) -> bool:
+        running = self._running
+        return running is not None and running.is_set()
+
+    def run(self, call, deadline=None):
+        """Run *call* on the automation thread and return what it returns.
+
+        With *deadline* (seconds), a call that has not finished in time is
+        abandoned: it is told to stop at its next wait or input, and the
+        caller gets AUTOMATION_DEADLINE. While an abandoned call is still
+        stuck in the AAC app, nothing new is queued behind it (REL-011:
+        every later live request used to wait for ever).
+        """
         if threading.current_thread() is self._thread:
             return call()
+        if self.busy_with_abandoned_job():
+            raise PagesetError(
+                "The AAC app is still not responding to the last request. Check it is "
+                "running normally, then try again.",
+                code="AUTOMATION_DEADLINE",
+            )
         self._ensure_started()
         outcome = {}
         done = threading.Event()
-        self._jobs.put((call, outcome, done))
-        done.wait()
+        cancel = threading.Event()
+        self._jobs.put((call, outcome, done, cancel))
+        if not done.wait(deadline):
+            cancel.set()
+            raise PagesetError(
+                "The AAC app stopped responding, so AAC Editor stopped waiting for it.",
+                code="AUTOMATION_DEADLINE",
+            )
         if "error" in outcome:
             raise outcome["error"]
         return outcome.get("result")
@@ -240,6 +295,7 @@ def activate(
     *missing_message* and *busy_message* let each product name itself in the
     two errors this can raise; the activation logic itself is identical.
     """
+    check_cancelled()
     if control is None:
         raise PagesetError(missing_message)
     getter = getattr(control, "GetInvokePattern", None)
@@ -302,6 +358,7 @@ def wait_for(callback, message, timeout=WAIT_DEFAULT_TIMEOUT, ignore=(),
     polls = 0
     tolerated = (*VANISHED, *tuple(ignore or ()))
     while True:
+        check_cancelled()
         polls += 1
         try:
             value = callback()
@@ -444,6 +501,7 @@ def require_foreground(window, app_name: str, *, same_process_ok: bool = False) 
     its own Create Cell dialogs by keyboard, so for Grid 3 the check stays
     per process until session T3-1 shows those dialogs' window identity.
     """
+    check_cancelled()
     window_ok, process_ok = foreground_state(window)
     if window_ok or (same_process_ok and process_ok):
         return
