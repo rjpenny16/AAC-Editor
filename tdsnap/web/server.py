@@ -833,6 +833,21 @@ def _current_path(session_id: str) -> str:
     return os.path.join(_session_dir(session_id), "current")
 
 
+def _read_current(session_id: str, read):
+    """Run *read(current)* holding the session lock (REL-020, roadmap C8).
+
+    The vocabulary and layout reads run in the background while the person
+    works. On Windows, replacing a file that any handle has open fails, so a
+    read that overlapped an edit's replace made the edit fail with "another
+    program is using the file". Reads and replaces of one session's working
+    copy now take turns.
+    """
+    session = _session_record(session_id)
+    current = os.path.join(session["dir"], "current")
+    with session["lock"]:
+        return read(current)
+
+
 def _ro_uri(path: str) -> str:
     """A read-only SQLite URI for *path* that survives '#', '%', '?' and spaces
     in folder names (REL-013)."""
@@ -1884,20 +1899,22 @@ def pageset_summary(session_id):
 
 @app.get("/api/pageset/<session_id>/pages")
 def pages(session_id):
-    current = _current_path(session_id)
-    return jsonify({"ok": True, "pages": _list_pages(current)})
+    return jsonify({"ok": True, "pages": _read_current(session_id, _list_pages)})
 
 
 @app.get("/api/pageset/<session_id>/page/<int:page_id>/capacity")
 def capacity(session_id, page_id):
-    current = _current_path(session_id)
-    return jsonify({"ok": True, "free_cells": _free_cells(current, page_id)})
+    free = _read_current(session_id, lambda current: _free_cells(current, page_id))
+    return jsonify({"ok": True, "free_cells": free})
 
 
 @app.get("/api/pageset/<session_id>/vocabulary")
 def pageset_vocabulary(session_id):
     """The exported-file counterpart of ``/api/tdsnap/vocabulary``."""
-    current = _current_path(session_id)
+    return _read_current(session_id, _vocabulary_of)
+
+
+def _vocabulary_of(current):
     if _is_gridset(current):
         with gridset.GridsetFile(current) as source:
             return jsonify({"ok": True, "available": True,
@@ -1920,8 +1937,8 @@ def pageset_vocabulary(session_id):
 @app.get("/api/pageset/<session_id>/page/<int:page_id>/layout")
 def page_layout(session_id, page_id):
     """The exported-file counterpart of ``/api/tdsnap/page-layout``."""
-    current = _current_path(session_id)
-    return jsonify({"ok": True, **_page_state(current, page_id)})
+    return jsonify({"ok": True, **_read_current(
+        session_id, lambda current: _page_state(current, page_id))})
 
 
 def _validated_file_edit(session, build, specific, fingerprint_check=None):

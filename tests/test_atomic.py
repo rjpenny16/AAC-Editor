@@ -99,3 +99,37 @@ def test_a_failure_while_writing_the_data_keeps_the_original(tmp_path, monkeypat
         atomic.atomic_write(str(dest), "new")
     assert dest.read_text(encoding="utf-8") == "old"
     assert [p.name for p in tmp_path.iterdir()] == ["settings.json"]
+
+
+def test_a_replace_refused_for_a_moment_is_retried(tmp_path, monkeypatch):
+    """REL-020: Windows refuses to rename over a file another handle has open."""
+    dest = tmp_path / "current"
+    dest.write_bytes(b"old")
+    real_replace = os.replace
+    refusals = {"left": 3}
+
+    def busy_replace(src, dst):
+        if refusals["left"]:
+            refusals["left"] -= 1
+            raise PermissionError(13, "The process cannot access the file")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(atomic.os, "replace", busy_replace)
+    monkeypatch.setattr(atomic.time, "sleep", lambda _s: None)
+    atomic.atomic_write(str(dest), b"new")
+    assert dest.read_bytes() == b"new"
+
+
+def test_a_replace_refused_for_good_still_keeps_the_original(tmp_path, monkeypatch):
+    dest = tmp_path / "current"
+    dest.write_bytes(b"old")
+
+    def always_busy(_src, _dst):
+        raise PermissionError(13, "busy")
+
+    monkeypatch.setattr(atomic.os, "replace", always_busy)
+    monkeypatch.setattr(atomic.time, "sleep", lambda _s: None)
+    with pytest.raises(PermissionError):
+        atomic.atomic_write(str(dest), b"new")
+    assert dest.read_bytes() == b"old"
+    assert litter(tmp_path) == []

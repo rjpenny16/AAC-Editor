@@ -1703,3 +1703,22 @@ def test_two_identical_submissions_cannot_both_apply(client, seeded_source, monk
         thread.join()
     assert sorted(statuses) == [200, 400]
     assert server._session_record(session_id)["edits"] == 1
+
+
+def test_reads_of_a_working_copy_wait_for_an_edit_to_finish(client, seeded_source):
+    """REL-020: a background read used to hold the file open while an edit
+    replaced it, which Windows refuses. Reads now take the session lock."""
+    import threading
+
+    session_id = upload(client, seeded_source).get_json()["session_id"]
+    record = server._session_record(session_id)
+    finished = []
+    assert record["lock"].acquire(timeout=1)  # an edit is replacing the copy
+    reader = threading.Thread(target=lambda: finished.append(
+        server.app.test_client().get(f"/api/pageset/{session_id}/vocabulary").status_code))
+    reader.start()
+    reader.join(0.3)
+    assert finished == []  # still waiting
+    record["lock"].release()
+    reader.join(5)
+    assert finished == [200]
