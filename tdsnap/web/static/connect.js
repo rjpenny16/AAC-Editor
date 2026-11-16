@@ -258,19 +258,32 @@ function rememberedFileSession() {
 async function resumeFileSession() {
   const sessionId = rememberedFileSession();
   if (!sessionId || state.connected) return false;
-  try {
-    const data = await api(`/api/pageset/${encodeURIComponent(sessionId)}`);
-    selectProvider("file");
-    await useFileSession(data);
-    state.edits = data.edits || 0;
-    state.fileUnsaved = Boolean(data.unsaved);
-    $("live-status").textContent = "";
-    showFileResumeNote(data);
-    return true;
-  } catch {
-    rememberFileSession("");
-    return false;
+  // REL-021: any error here used to forget the session silently, including
+  // a transient timeout. One retry for anything but "it is gone", and the
+  // person is told if the copy could not be reopened.
+  let data = null;
+  for (let attempt = 0; attempt < 2 && !data; attempt += 1) {
+    try {
+      data = await api(`/api/pageset/${encodeURIComponent(sessionId)}`);
+    } catch (error) {
+      if (error.status === 400 || attempt === 1) {
+        rememberFileSession("");
+        if (error.status !== 400) {
+          $("live-status").textContent =
+            "The edited copy you were working on could not be reopened just now. "
+            + "Reload to try again; the original file is unchanged.";
+        }
+        return false;
+      }
+    }
   }
+  selectProvider("file");
+  await useFileSession(data);
+  state.edits = data.edits || 0;
+  state.fileUnsaved = Boolean(data.unsaved);
+  $("live-status").textContent = "";
+  showFileResumeNote(data);
+  return true;
 }
 
 /* The edited copy can be saved from the header at any point, not only from the
@@ -350,7 +363,6 @@ async function useFileSession(data) {
   setOperation("existing");
   renderParents("");
   $("file-badge").textContent = `${state.filename} · Change file`;
-  $("file-badge").setAttribute("aria-label", `Change exported file (currently ${state.filename})`);
   $("file-badge").hidden = false;
   $("build-sub").textContent =
     `${state.filename} · ${state.grid.cols}×${state.grid.rows} grid · ${state.pages.length} pages`;
@@ -409,6 +421,11 @@ $("live-connect-btn").addEventListener("click", async () => {
   setActivity(`Checking for ${product}…`);
   setBusy(button, true, "Connecting…");
   try {
+    if (state.provider !== "file") {
+      // Connecting is the person's "I have checked the page" after an edit
+      // that stopped because the app stopped responding (REL-011).
+      await api("/api/live/reconnect", { method: "POST" }).catch(() => {});
+    }
     if (state.provider === "file") {
       if (state.native && window.pywebview?.api?.open_pageset) {
         await useFileSession(await window.pywebview.api.open_pageset());
@@ -472,7 +489,6 @@ $("live-connect-btn").addEventListener("click", async () => {
       });
       state.connected = true;
       $("file-badge").textContent = "Grid 3 · Change app";
-      $("file-badge").setAttribute("aria-label", "Change app (currently Grid 3)");
       $("file-badge").hidden = false;
       setProviderState("grid3", "Ready", "ready");
       status.textContent = data.compatibility_warning || "";
@@ -507,13 +523,13 @@ $("live-connect-btn").addEventListener("click", async () => {
     state.placementAdjusted = false;
 
     $("file-badge").textContent = "TD Snap · Change app";
-    $("file-badge").setAttribute("aria-label", "Change app (currently TD Snap)");
     $("build-sub").textContent =
       `Connected to “${data.page}” · ${data.grid.cols}×${data.grid.rows} grid · ` +
       `${state.pages.length} pages in this page set`;
     $("preview-live-text").textContent = `Live · ${data.page}`;
     $("build-btn-label").textContent = "Review changes";
-    status.textContent = "";
+    // C10: a TD Snap version nobody has run AAC Editor against is said so.
+    status.textContent = data.compatibility_warning || "";
     button.querySelector(".btn-label").dataset.idleLabel = "Continue";
     renderParents("");
     setOperation("existing");
@@ -774,7 +790,10 @@ async function syncLivePreview() {
     $("preview-live-text").textContent = `Live · ${layout.page}`;
     renderParents(parentFilter.value);
     renderWords();
-  } catch {
+  } catch (error) {
+    // REL-009: only a failure to reach TD Snap counts against TD Snap. The
+    // app itself restarting, or not answering, is said as what it is.
+    if (["restarted", "unauthorised", "unreachable"].includes(error.kind)) return;
     // TD Snap briefly has no page grid while navigating, so one miss is
     // normal; livewatch.js only reports it after several in a row.
     noteLiveMiss();

@@ -21,10 +21,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from . import uia
+from . import errors, uia
 from .builder import _normalize_items
 from .errors import PagesetError
-from .live import _desktop_unlocked, _focus_window
+from .live import desktop_unlocked as _desktop_unlocked
+from .live import focus_window as _focus_window
+from .web import oplog
 
 GRID3_EXE = os.path.join(
     # the real Windows variable is spelled ProgramFiles(x86)
@@ -49,6 +51,9 @@ PROTECTED_MESSAGE = (
     "its contents, so AAC Editor cannot read the grid to verify an edit and does "
     "not support it. Edit it in Grid 3 directly."
 )
+
+# No real Grid 3 grid has this many rows or columns (REL-012).
+MAX_GRID_SIDE = 100
 
 
 @dataclass(frozen=True)
@@ -529,6 +534,17 @@ class Grid3Package:
             row_span = int(node.get("RowSpan", "1"))
         except ValueError as exc:
             raise PagesetError("The active Grid 3 grid has invalid cell coordinates.") from exc
+        # REL-012: spans and positions were accepted as any integer, and a
+        # crafted 3000x3000 span took 29 s and 1.3 GB to read. No real grid
+        # comes near MAX_GRID_SIDE in either direction.
+        if not (
+            0 <= x < MAX_GRID_SIDE and 0 <= y < MAX_GRID_SIDE
+            and 0 <= column_span <= MAX_GRID_SIDE and 0 <= row_span <= MAX_GRID_SIDE
+        ):
+            raise PagesetError(
+                "This grid has a cell whose position or size is outside any real grid, "
+                "so AAC Editor will not read it. The file may be damaged."
+            )
         safe_blank = (
             not label and not image and not commands and not content_type and not content_subtype
             and all(child.tag in allowed_blank_nodes for child in content)
@@ -889,40 +905,17 @@ def inspect_page() -> dict:
 # Edit Mode primitives
 
 
-def _foreground_process_id() -> int:
-    user32 = ctypes.WinDLL("user32", use_last_error=True)
-    user32.GetForegroundWindow.restype = wintypes.HWND
-    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-    process_id = wintypes.DWORD()
-    user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), ctypes.byref(process_id))
-    return process_id.value
-
-
 def _require_grid3_foreground(auto) -> None:
     """Refuse to type unless Grid 3 owns the keyboard.
 
     Every keystroke below goes to whichever window is in front. If the user
     (or another app) took the foreground mid-edit, a label, an Enter or a
-    Ctrl+Z would land in their document instead; one attempt is made to
-    bring Grid 3 back, and after that the edit stops rather than typing.
+    Ctrl+Z would land in their document instead. The shared check in uia.py
+    restores a minimised Grid 3, asks once for the foreground, and refuses
+    otherwise. It stays per process for Grid 3, whose own Create Cell dialog
+    is driven by keyboard (see uia.require_foreground).
     """
-    window = _window(auto)
-    if _foreground_process_id() == getattr(window, "ProcessId", -1):
-        return
-    handle = getattr(window, "NativeWindowHandle", 0)
-    if handle:
-        # A minimised window never takes focus; restore it first.
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        if user32.IsIconic(handle):
-            user32.ShowWindow(handle, 9)  # SW_RESTORE
-            time.sleep(0.3)
-    with contextlib.suppress(PagesetError):
-        _focus_window(window)
-    if _foreground_process_id() != getattr(window, "ProcessId", -1):
-        raise PagesetError(
-            "Another window took the keyboard away from Grid 3 during the edit. "
-            "Nothing was typed into it. Bring Grid 3 to the front, then try again."
-        )
+    uia.require_foreground(_window(auto), "Grid 3", same_process_ok=True)
 
 
 def _send(auto, keys: str, wait=0.35) -> None:
@@ -1135,18 +1128,28 @@ def _undo_once(auto) -> None:
         time.sleep(0.12)
     else:
         _send(auto, "{Ctrl}z", wait=0.12)
+    oplog.note_undo()
 
 
 def _restore_unsaved(auto, maximum: int) -> None:
-    """Undo only until Grid 3 reports the originally clean document again."""
+    """Undo only until Grid 3 reports the originally clean document again,
+    and never more times than this edit performed steps (REL-001)."""
     try:
-        for _ in range(maximum + 3):
+        for _ in range(maximum):
             if not _dirty(auto):
                 return
             _undo_once(auto)
+        if not _dirty(auto):
+            return
     except PagesetError as exc:
-        raise PagesetError(str(exc) + _UNSAVED_LEFT) from exc
-    raise PagesetError("Grid 3 could not restore the clean pre-edit state." + _UNSAVED_LEFT)
+        raise PagesetError(
+            str(exc) + _UNSAVED_LEFT, code="ROLLBACK_INCOMPLETE", outcome=errors.UNKNOWN,
+            page_touched=True,
+        ) from exc
+    raise PagesetError(
+        "Grid 3 could not restore the clean pre-edit state." + _UNSAVED_LEFT,
+        code="ROLLBACK_INCOMPLETE", outcome=errors.PARTIAL, page_touched=True,
+    )
 
 
 def _save(auto) -> None:
@@ -1155,19 +1158,148 @@ def _save(auto) -> None:
 
 
 def _rollback_saved(auto, restored, maximum: int) -> None:
-    """Undo and save one history step at a time, stopping exactly when *restored()*."""
+    """Undo exactly the steps this edit performed, save once, check once (REL-001).
+
+    This used to undo, save and re-read one step at a time for up to
+    ``max(steps, n*4)+8`` rounds, treating an unreadable file as "not yet
+    restored". If the read kept failing (file still being written, or held by
+    a sync client) it undid past the baseline into the user's own earlier
+    work, saving every step to disk. Now:
+
+    - Undo is pressed at most *maximum* times, the steps this edit counted;
+    - nothing is saved inside the loop, and the result is saved once;
+    - a saved file that cannot be read is ``unknown``, not "keep going";
+    - one attempt only: a rollback that does not restore is ``partial``.
+    """
     for _ in range(maximum):
         _undo_once(auto)
-        _send(auto, "{Ctrl}s", wait=0.35)
-        _wait_for(
-            lambda: not _dirty(auto), "Grid 3 did not finish saving the rollback.", timeout=4,
+    _save(auto)
+    try:
+        ok = restored()
+    except (OSError, zipfile.BadZipFile, PagesetError) as exc:
+        oplog.fallback("DB_UNREADABLE")
+        raise PagesetError(
+            "Grid 3 saved the rollback, but AAC Editor could not read the grid set back "
+            "to check it. Check this grid in Grid 3 before doing anything else.",
+            code="VERIFY_UNREADABLE", outcome=errors.UNKNOWN, page_touched=True,
+        ) from exc
+    if not ok:
+        raise PagesetError(
+            "Grid 3 could not restore the verified pre-edit content. Check this grid "
+            "in Grid 3 before doing anything else.",
+            code="ROLLBACK_INCOMPLETE", outcome=errors.PARTIAL, page_touched=True,
         )
-        try:
-            if restored():
-                return
-        except (OSError, zipfile.BadZipFile, PagesetError):
-            pass
-    raise PagesetError("Grid 3 could not restore the verified pre-edit content.")
+
+
+def _failed_grid3_edit(auto, exc, restored, undo_steps, rollback_attempted):
+    """The single error a failed Grid 3 edit raises, with its outcome (B1, B7).
+
+    Shared by edit_page and create_linked_grid, which used to carry two copies
+    of this block (the pattern behind REL-015). Grid 3 is always handed back
+    to the viewer, and a failure to do that never replaces the error.
+    """
+    outcome = errors.outcome_of(exc)
+    try:
+        if rollback_attempted:
+            pass  # one attempt only; its own error is *exc*
+        elif not undo_steps:
+            outcome = errors.REFUSED
+        elif restored():
+            _restore_unsaved(auto, undo_steps)
+            outcome = errors.ROLLED_BACK
+        else:
+            _rollback_saved(auto, restored, undo_steps)
+            outcome = errors.ROLLED_BACK
+    except PagesetError as rollback_error:
+        exc = PagesetError(
+            f"{str(exc).rstrip('.')}. {rollback_error}",
+            code=errors.code_of(exc), page_touched=True,
+            outcome=getattr(rollback_error, "outcome", None) or errors.UNKNOWN,
+        )
+        outcome = exc.outcome
+    except Exception:
+        outcome = errors.UNKNOWN
+    finally:
+        with contextlib.suppress(Exception):
+            _leave_edit_mode(auto)
+    if isinstance(exc, PagesetError):
+        exc.outcome = outcome
+        exc.page_touched = outcome != errors.REFUSED
+        if not getattr(exc, "code", None):
+            exc.code = "VERIFY_MISMATCH" if outcome == errors.ROLLED_BACK else errors.code_of(exc)
+        return exc
+    return PagesetError(
+        "AAC Editor lost track of Grid 3 during the edit. Check this grid in Grid 3 "
+        "before doing anything else.",
+        code="AUTOMATION_FAILED", outcome=outcome if outcome != errors.REFUSED else
+        errors.UNKNOWN, page_touched=True,
+    )
+
+
+def clear_backups() -> int:
+    """Delete every Grid 3 backup (part of "Clear all saved data")."""
+    removed = 0
+    for name in glob.glob(os.path.join(_backup_dir(), "*.gridset")):
+        with contextlib.suppress(OSError):
+            os.remove(name)
+            removed += 1
+    return removed
+
+
+def _take_backup(path: str) -> str:
+    """Back the grid set up, or refuse the edit if that is not possible."""
+    try:
+        return backup_gridset(path)
+    except OSError as exc:
+        raise PagesetError(
+            "AAC Editor could not make a backup copy of this grid set before editing, "
+            "so it changed nothing. Check there is free disk space, then try again.",
+            code="REFUSED",
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Backups before a live edit (doc 04, plan item 6)
+
+MAX_BACKUPS = 20
+
+
+def _backup_dir() -> str:
+    from .web import settings
+
+    return os.path.join(settings._data_dir(), "backups", "grid3")
+
+
+def backup_gridset(path: str) -> str:
+    """Copy the grid set to a timestamped file before the first key is sent.
+
+    Grid 3 saves as it goes, so the only copy that can put a grid back after
+    a rollback that did not work is one taken before the edit. The newest
+    MAX_BACKUPS are kept. Returns the backup's path.
+    """
+    import shutil
+
+    from .web import settings
+
+    folder = _backup_dir()
+    settings.ensure_private_dir(folder)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    target = os.path.join(folder, f"{Path(path).stem}.{stamp}.gridset")
+    index = 1
+    while os.path.exists(target):
+        target = os.path.join(folder, f"{Path(path).stem}.{stamp}-{index}.gridset")
+        index += 1
+    # copyfile, not copy2: the backup's own modification time is when it was
+    # taken, which is what decides which ones are oldest.
+    shutil.copyfile(path, target)
+    backups = sorted(
+        glob.glob(os.path.join(folder, "*.gridset")),
+        key=lambda name: os.stat(name).st_mtime_ns,
+    )
+    for old in backups[:-MAX_BACKUPS]:
+        with contextlib.suppress(OSError):
+            os.remove(old)
+    return target
 
 
 def _label_cell(auto, editor, label: str) -> None:
@@ -1412,8 +1544,15 @@ def probe_accessibility() -> dict:
         if _fingerprint(active) != before:
             raise PagesetError("The Grid 3 file changed during the compatibility check.")
     except Exception:
-        _restore_unsaved(auto, undo_steps)
-        _leave_edit_mode(auto)
+        # REL-015: the same protection as an edit's failure path. A failing
+        # restore must neither skip leaving Edit Mode nor replace the error.
+        try:
+            _restore_unsaved(auto, undo_steps)
+        except Exception:  # noqa: S110 - the original error is what matters
+            pass
+        finally:
+            with contextlib.suppress(Exception):
+                _leave_edit_mode(auto)
         raise
     _leave_edit_mode(auto)
     return {
@@ -1594,7 +1733,10 @@ def edit_page(items=(), changes=(), removals=(), moves=(), fingerprint=None,
     if not fingerprint:
         raise PagesetError("The Grid 3 review fingerprint is required. Reconnect and review again.")
     if _fingerprint(active) != fingerprint:
-        raise PagesetError("The Grid 3 grid changed after preview. Reconnect and review again.")
+        raise PagesetError(
+            "The Grid 3 grid changed after preview. Reconnect and review again.",
+            code="FINGERPRINT_CHANGED",
+        )
 
     # -- plan validation, entirely before any automation ----------------------
     changed = {change["slot"] for change in changes}
@@ -1635,6 +1777,7 @@ def edit_page(items=(), changes=(), removals=(), moves=(), fingerprint=None,
     baseline = _semantic(grid)
     positions = _positions(grid)
     _live_cells(window, positions)
+    backup = _take_backup(active.path)
     editor = _enter_edit_mode(auto, window, active)
     undo_steps = 0
     symbols = 0
@@ -1721,24 +1864,26 @@ def edit_page(items=(), changes=(), removals=(), moves=(), fingerprint=None,
                     f" speaking “{item['message'] or item['label']}”"
                 )
         if problems:
-            _rollback_saved(auto, restored, max(undo_steps, len(normalized) * 4) + 8)
             rollback_verified = True
+            try:
+                _rollback_saved(auto, restored, undo_steps)
+            except PagesetError as rollback_error:
+                raise PagesetError(
+                    "Grid 3 did not save what was reviewed: " + "; ".join(problems)
+                    + f". {rollback_error}",
+                    code="VERIFY_MISMATCH", page_touched=True,
+                    outcome=getattr(rollback_error, "outcome", None) or errors.UNKNOWN,
+                ) from rollback_error
             raise PagesetError(
                 "Grid 3 did not save what was reviewed, so the original grid was "
-                "restored: " + "; ".join(problems) + "."
+                "restored: " + "; ".join(problems) + ".",
+                code="VERIFY_MISMATCH", outcome=errors.ROLLED_BACK, page_touched=True,
             )
-    except Exception:
-        # A rollback that itself fails must still hand Grid 3 back to the
-        # viewer, or the person is left stranded in edit mode.
-        try:
-            if not rollback_verified:
-                if restored():
-                    _restore_unsaved(auto, undo_steps)
-                else:
-                    _rollback_saved(auto, restored, max(undo_steps, len(normalized) * 4) + 8)
-        finally:
-            _leave_edit_mode(auto)
-        raise
+    except Exception as exc:
+        failure = _failed_grid3_edit(auto, exc, restored, undo_steps, rollback_verified)
+        if failure is exc:
+            raise
+        raise failure from exc
     _leave_edit_mode(auto)
     plan = {"items": normalized, "changes": changes, "removals": removals, "moves": moves}
     if _undoing:
@@ -1759,7 +1904,11 @@ def edit_page(items=(), changes=(), removals=(), moves=(), fingerprint=None,
         checks["removed_buttons"] = "pass"
     if normalized:
         checks["symbols"] = "pass" if symbols == expected_symbols else "partial"
+    gaps = ["symbols"] if checks.get("symbols") == "partial" else []
     return {
+        "outcome": errors.VERIFIED_WITH_GAPS if gaps else errors.VERIFIED,
+        "unverified": gaps,
+        "backup": bool(backup),
         "page": grid.name,
         "grid_set": Path(active.path).stem,
         "buttons": len(normalized),
@@ -1803,7 +1952,10 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
     if not fingerprint:
         raise PagesetError("The Grid 3 review fingerprint is required. Reconnect and review again.")
     if _fingerprint(active) != fingerprint:
-        raise PagesetError("The Grid 3 grid changed after preview. Reconnect and review again.")
+        raise PagesetError(
+            "The Grid 3 grid changed after preview. Reconnect and review again.",
+            code="FINGERPRINT_CHANGED",
+        )
     if title.casefold() in _grid_names(active):
         raise PagesetError(f"A grid named “{title}” already exists in this grid set.")
     if link_slot is None:
@@ -1833,6 +1985,7 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
     baseline = _semantic(grid)
     positions = _positions(grid)
     _live_cells(window, positions)
+    backup = _take_backup(active.path)
     editor = _enter_edit_mode(auto, window, active)
     undo_steps = 0
     symbols = 0
@@ -1928,28 +2081,34 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
             if (cell.x, cell.y) not in filled and (cell.x, cell.y) != (0, 0) and not cell.safe_blank
         )
         if problems:
-            _rollback_saved(auto, restored, max(undo_steps, len(normalized) * 4) + 8)
             rollback_verified = True
+            try:
+                _rollback_saved(auto, restored, undo_steps)
+            except PagesetError as rollback_error:
+                raise PagesetError(
+                    "Grid 3 did not save what was reviewed: " + "; ".join(problems)
+                    + f". {rollback_error}",
+                    code="VERIFY_MISMATCH", page_touched=True,
+                    outcome=getattr(rollback_error, "outcome", None) or errors.UNKNOWN,
+                ) from rollback_error
             raise PagesetError(
                 "Grid 3 did not save what was reviewed, so the original grid was "
-                "restored: " + "; ".join(problems) + "."
+                "restored: " + "; ".join(problems) + ".",
+                code="VERIFY_MISMATCH", outcome=errors.ROLLED_BACK, page_touched=True,
             )
-    except Exception:
-        # A rollback that itself fails must still hand Grid 3 back to the
-        # viewer, or the person is left stranded in edit mode.
-        try:
-            if not rollback_verified:
-                if restored():
-                    _restore_unsaved(auto, undo_steps)
-                else:
-                    _rollback_saved(auto, restored, max(undo_steps, len(normalized) * 4) + 8)
-        finally:
-            _leave_edit_mode(auto)
-        raise
+    except Exception as exc:
+        failure = _failed_grid3_edit(auto, exc, restored, undo_steps, rollback_verified)
+        if failure is exc:
+            raise
+        raise failure from exc
     _leave_edit_mode(auto)
     forget_last_edit()
     expected_symbols = sum(item.get("symbol", True) for item in normalized)
     return {
+        "outcome": (errors.VERIFIED_WITH_GAPS if symbols < expected_symbols
+                    else errors.VERIFIED),
+        "unverified": ["symbols"] if symbols < expected_symbols else [],
+        "backup": bool(backup),
         "page": title,
         "parent": grid.name,
         "grid_set": Path(active.path).stem,
@@ -1964,3 +2123,13 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
             f"Grid 3 could not choose a verified symbol for {expected_symbols - symbols} cell(s)."
         ] if symbols < expected_symbols else []),
     }
+
+
+# ---------------------------------------------------------------------------
+# Public interface for gridset.py (roadmap E5)
+
+cell_kind = _cell_kind
+describe_cell = _describe_cell
+semantic = _semantic
+spoken_after_change = _spoken_after_change
+xml_text = _text

@@ -24,6 +24,7 @@ from typing import Optional
 from . import builder, formats, gridset, obf, schema, validate
 from .errors import PagesetError
 from .pageset import Pageset, is_sqlite_file
+from .sqliteuri import sqlite_ro_uri
 from .ticks import ticks_to_datetime
 
 
@@ -31,7 +32,7 @@ def _open_readonly(path: str) -> sqlite3.Connection:
     """Open *path* directly but read-only (verify/inspect never copy or write)."""
     if not is_sqlite_file(path):
         raise PagesetError(f"{path!r} is not a SQLite database.")
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = sqlite3.connect(sqlite_ro_uri(path), uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 

@@ -57,6 +57,7 @@ import posixpath
 import re
 import sqlite3
 import zipfile
+import zlib
 from collections import deque
 from typing import Optional, Union
 
@@ -483,7 +484,8 @@ def read(source: Source) -> dict:
                 raise PagesetError(f"This .obz could not be opened: {exc}") from exc
             try:
                 return _read_zip(archive)
-            except (zipfile.BadZipFile, OSError, EOFError) as exc:
+            except (zipfile.BadZipFile, OSError, EOFError, zlib.error) as exc:
+                # zlib.error (corrupt deflate data) used to escape as a 500.
                 raise PagesetError(f"This .obz is damaged: {exc}") from exc
         data = handle.read(MAX_BOARD_BYTES + 1)
         return _read_single(data)

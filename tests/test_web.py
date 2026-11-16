@@ -13,6 +13,7 @@ import json
 import os
 import socket
 import sqlite3
+import sys
 import time
 import webbrowser
 from types import SimpleNamespace
@@ -292,8 +293,17 @@ def test_ai_status_requires_token_and_rejects_invalid_hosts(client, monkeypatch)
     assert response.status_code == 400
     assert calls == []
 
+    # Ollama is not probed unless it was chosen (REL-028)...
     response = client.get(
         "/api/ai/status?host=http://localhost:11434/",
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    assert calls == []
+
+    # ... and when it was, the normalised host is what is probed.
+    response = client.get(
+        "/api/ai/status?host=http://localhost:11434/&engine=ollama",
         headers=token_headers(),
     )
     assert response.status_code == 200
@@ -1498,3 +1508,220 @@ def test_instance_running_ignores_a_stranger_on_the_port():
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+# ---------------------------------------------------------------------------
+# Save safety (REL-006, roadmap B2)
+
+
+def _native_session(tmp_path, seeded_source):
+    source = tmp_path / "client.sps"
+    source.write_bytes(open(seeded_source, "rb").read())
+    opened = server.open_path(str(source))
+    return opened["session_id"], source
+
+
+def test_saving_over_the_opened_file_is_refused(client, tmp_path, seeded_source):
+    """The audit's reproduction: save_current_as with the source path replaced
+    the original's contents."""
+    session_id, source = _native_session(tmp_path, seeded_source)
+    before = source.read_bytes()
+    with pytest.raises(PagesetError) as caught:
+        server.save_current_as(session_id, str(source))
+    assert caught.value.code == "SAVE_SAME_AS_SOURCE"
+    assert "client.edited.sps" in str(caught.value)
+    assert source.read_bytes() == before
+
+
+def test_a_saved_copy_reopens_and_matches_the_working_copy(client, tmp_path, seeded_source):
+    session_id, _source = _native_session(tmp_path, seeded_source)
+    target = tmp_path / "client.edited.sps"
+    server.save_current_as(session_id, str(target))
+    assert target.read_bytes() == open(server._current_path(session_id), "rb").read()
+    reopened = server.open_path(str(target))
+    assert reopened["ok"] is True
+
+
+def test_a_saved_copy_that_does_not_match_is_reported(client, tmp_path, seeded_source, monkeypatch):
+    session_id, _source = _native_session(tmp_path, seeded_source)
+    real_copy = server.atomic_copy
+
+    def corrupting_copy(src, dest, **kwargs):
+        real_copy(src, dest, **kwargs)
+        with open(dest, "r+b") as handle:
+            handle.seek(200)
+            handle.write(b"\x00garbage\x00")
+
+    monkeypatch.setattr(server, "atomic_copy", corrupting_copy)
+    with pytest.raises(PagesetError) as caught:
+        server.save_current_as(session_id, str(tmp_path / "out.sps"))
+    assert caught.value.code == "SAVE_INVALID"
+
+
+def test_the_suggested_name_is_the_edited_copy(client, tmp_path, seeded_source):
+    session_id, _source = _native_session(tmp_path, seeded_source)
+    assert server.edited_filename(session_id) == "client.edited.sps"
+
+
+# '?' cannot appear in a Windows folder name, so that case exists only elsewhere.
+@pytest.mark.parametrize("folder", ["plain", "with#hash", "with%41pct", "sp ace"]
+                         + ([] if sys.platform == "win32" else ["q?mark"]))
+def test_sessions_open_from_folders_with_awkward_names(tmp_path, seeded_source, monkeypatch, folder):
+    """REL-013: '#' or '%' in a folder (the temp folder holds the user name)
+    broke every file-mode read."""
+    root = tmp_path / folder / "sessions"
+    root.mkdir(parents=True)
+    monkeypatch.setattr(server, "_SESSION_ROOT", str(root))
+    monkeypatch.setattr(server, "_sessions", {})
+    session_id, _source = _native_session(tmp_path / folder, seeded_source)
+    assert server._list_pages(server._current_path(session_id))
+
+
+# ---------------------------------------------------------------------------
+# Shutdown safety and recovery (REL-007, REL-021, roadmap B3)
+
+
+def _edited_session(client, seeded_source):
+    session_id = upload(client, seeded_source).get_json()["session_id"]
+    record = server._session_record(session_id)
+    record["edits"] = 1
+    server._write_session_meta(record["dir"], record["filename"], [], 1)
+    return session_id, record
+
+
+def test_quit_is_refused_while_an_edit_is_running(client, monkeypatch):
+    monkeypatch.setitem(server._runtime, "shutdown", lambda: None)
+    assert server._LIVE_LOCK.acquire(timeout=1)
+    try:
+        response = client.post("/api/quit", headers=token_headers())
+    finally:
+        server._LIVE_LOCK.release()
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "BUSY"
+
+
+def test_quit_with_unsaved_file_edits_asks_first_and_keeps_them(client, monkeypatch, seeded_source):
+    calls = []
+    monkeypatch.setitem(server._runtime, "shutdown", lambda: calls.append(1))
+    session_id, record = _edited_session(client, seeded_source)
+
+    response = client.post("/api/quit", headers=token_headers(), json={})
+    assert response.status_code == 409
+    body = response.get_json()
+    assert body["code"] == "UNSAVED" and body["unsaved"][0]["edits"] == 1
+
+    assert client.post("/api/quit", headers=token_headers(), json={"force": True}).get_json()["ok"]
+    # Exit keeps the edited working copy and removes the rest.
+    assert server.cleanup_sessions() == 1
+    assert os.path.isdir(record["dir"])
+    found = server.recoverable_sessions()
+    assert [item["session_id"] for item in found] == [session_id]
+    assert found[0]["filename"] == "test.sps"
+
+
+def test_a_saved_session_is_removed_at_exit_and_not_offered(client, seeded_source):
+    session_id, record = _edited_session(client, seeded_source)
+    client.get(f"/api/pageset/{session_id}/download", headers=token_headers())
+    assert server.cleanup_sessions() == 0
+    assert not os.path.isdir(record["dir"])
+    assert server.recoverable_sessions() == []
+
+
+def test_the_saved_flag_survives_a_rebuilt_session(client, seeded_source):
+    """REL-021: a rebuilt session always claimed unsaved changes."""
+    session_id, _record = _edited_session(client, seeded_source)
+    client.get(f"/api/pageset/{session_id}/download", headers=token_headers())
+    server._sessions.clear()
+    rebuilt = client.get(f"/api/pageset/{session_id}", headers=token_headers()).get_json()
+    assert rebuilt["unsaved"] is False
+
+
+def test_leftovers_do_not_count_against_the_storage_cap(client, seeded_source, monkeypatch):
+    """REL-021: crash leftovers used to block opening files for up to a day."""
+    leftover = os.path.join(server._SESSION_ROOT, "leftoverleftoverleftover")
+    os.makedirs(leftover)
+    with open(os.path.join(leftover, "current"), "wb") as handle:
+        handle.write(b"x" * 4096)
+    monkeypatch.setattr(
+        server, "MAX_SESSION_STORAGE_BYTES", os.path.getsize(seeded_source) * 2 + 1000,
+    )
+    assert server._session_storage_bytes() == 0
+    assert upload(client, seeded_source).status_code == 200
+
+
+def test_the_stale_sweep_keeps_unsaved_copies_for_a_week(client, seeded_source):
+    _session_id, record = _edited_session(client, seeded_source)
+    server._sessions.clear()
+    two_days = time.time() - 2 * 24 * 3600
+    os.utime(record["dir"], (two_days, two_days))
+    server.cleanup_stale_sessions()
+    assert os.path.isdir(record["dir"])
+    eight_days = time.time() - 8 * 24 * 3600
+    os.utime(record["dir"], (eight_days, eight_days))
+    server.cleanup_stale_sessions()
+    assert not os.path.isdir(record["dir"])
+
+
+def test_discarding_a_recovered_copy_removes_it(client, seeded_source):
+    session_id, record = _edited_session(client, seeded_source)
+    server._sessions.clear()
+    assert client.post(f"/api/pageset/{session_id}/close", headers=token_headers()).status_code == 200
+    assert not os.path.isdir(record["dir"])
+
+
+def test_two_identical_submissions_cannot_both_apply(client, seeded_source, monkeypatch):
+    """The fingerprint check for TD Snap file edits ran outside the session
+    lock, so two identical submissions racing could both pass it and the
+    buttons were added twice (doc 02, minor findings). It now runs inside."""
+    import threading
+
+    from tdsnap import builder
+
+    session = upload(client, seeded_source).get_json()
+    session_id = session["session_id"]
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+    layout = client.get(f"/api/pageset/{session_id}/page/{page['id']}/layout").get_json()
+    body = {"items": [{"label": "chips", "slot": layout["free_slots"][0]}],
+            "fingerprint": layout["fingerprint"]}
+    real_add = builder.add_buttons_to_page
+
+    def slow_add(*args, **kwargs):
+        time.sleep(0.3)  # widen the window between check and write
+        return real_add(*args, **kwargs)
+
+    monkeypatch.setattr(builder, "add_buttons_to_page", slow_add)
+    statuses = []
+
+    def submit():
+        response = server.app.test_client().post(
+            f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+            json=body, headers=token_headers(),
+        )
+        statuses.append(response.status_code)
+
+    threads = [threading.Thread(target=submit) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(statuses) == [200, 400]
+    assert server._session_record(session_id)["edits"] == 1
+
+
+def test_reads_of_a_working_copy_wait_for_an_edit_to_finish(client, seeded_source):
+    """REL-020: a background read used to hold the file open while an edit
+    replaced it, which Windows refuses. Reads now take the session lock."""
+    import threading
+
+    session_id = upload(client, seeded_source).get_json()["session_id"]
+    record = server._session_record(session_id)
+    finished = []
+    assert record["lock"].acquire(timeout=1)  # an edit is replacing the copy
+    reader = threading.Thread(target=lambda: finished.append(
+        server.app.test_client().get(f"/api/pageset/{session_id}/vocabulary").status_code))
+    reader.start()
+    reader.join(0.3)
+    assert finished == []  # still waiting
+    record["lock"].release()
+    reader.join(5)
+    assert finished == [200]

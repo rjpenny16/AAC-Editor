@@ -163,3 +163,50 @@ jobs:
 
       - name: Run browser tests
         run: npm run test:e2e
+
+      # Playwright records a trace and screenshot for every failed test; without
+      # this step they were discarded with the runner (REL-026).
+      - name: Keep traces and screenshots of failed browser tests
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-test-results-linux
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The desktop window is Edge WebView2, so the suite also runs in Edge on
+  # Windows (ROADMAP Phase 16 exit criterion; doc 07 section 1).
+  browser-edge:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          pip install .
+          npm ci
+
+      - name: Run browser tests in Edge
+        env:
+          PW_CHANNEL: msedge
+        run: npm run test:e2e
+
+      - name: Keep traces and screenshots of failed browser tests
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-test-results-edge
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -4,9 +4,8 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-from _pytest.outcomes import Failed
 
-from tdsnap import live, templates
+from tdsnap import errors, live, templates
 from tdsnap.errors import PagesetError
 
 
@@ -1502,13 +1501,22 @@ def _stub_live_page(monkeypatch, *, layouts, content, grid=None, fingerprint="v1
     monkeypatch.setattr(live, "_fingerprint", lambda _group: ("before",))
     monkeypatch.setattr(live, "_fingerprint_token", lambda _group: next(tokens))
     monkeypatch.setattr(live, "_grid", lambda _group: grid)
-    reads = iter(layouts)
-    monkeypatch.setattr(live, "_page_layout", lambda *_args: next(reads))
+    # The page as reviewed, then as it stands after the edit, which it keeps
+    # being for any later read (a settle retry reads it again).
+    remaining = list(layouts)
+
+    def read(*_args):
+        return remaining.pop(0) if len(remaining) > 1 else remaining[0]
+
+    monkeypatch.setattr(live, "_page_layout", read)
     monkeypatch.setattr(live, "_stored_page_content", lambda _page, _names=(): content)
     monkeypatch.setattr(live, "_enter_edit_mode", lambda _window: None)
     monkeypatch.setattr(live, "_collapse_editor", lambda _window: None)
     monkeypatch.setattr(live, "_exit_edit_mode", lambda _window: None)
     monkeypatch.setattr(live, "_verify_page_state", lambda *_args, **_kwargs: None)
+    # TD Snap is in normal mode with no dialog open when the edit starts.
+    monkeypatch.setattr(live, "_in_edit_mode", lambda _window: False)
+    monkeypatch.setattr(live, "_open_dialog", lambda _window: None)
     return grid
 
 
@@ -1672,6 +1680,18 @@ def test_a_failed_move_restores_the_content_it_captured(monkeypatch):
 
 # ---------------------------------------------------------------------------
 # Phase 4b: undo my last change
+
+
+@pytest.fixture(autouse=True)
+def _td_snap_starts_clean(monkeypatch):
+    """By default TD Snap is in normal mode with no dialog open; the tests of
+    the dirty-state refusals (roadmap B5) override this."""
+    monkeypatch.setattr(live, "_in_edit_mode", lambda _window: False)
+    monkeypatch.setattr(live, "_open_dialog", lambda _window: None)
+    # The fake windows here are not real windows, so on Windows the real
+    # foreground check would ask user32 about them; tests/test_uia.py and the
+    # sweep's foreground_lost fault test that check itself.
+    monkeypatch.setattr(live, "_require_foreground", lambda _window: None)
 
 
 @pytest.fixture(autouse=True)
@@ -2047,11 +2067,14 @@ def test_a_page_that_was_edited_and_restored_stops_the_batch(monkeypatch):
     # Swimming was never attempted, and says so rather than being left out.
     assert seen == ["Eating", "Games"]
     assert result["results"] == [
-        {"page": "Eating", "status": "applied", "report": _report("Eating")},
-        {"page": "Games", "status": "failed",
+        {"page": "Eating", "status": "applied", "outcome": "verified",
+         "report": _report("Eating")},
+        {"page": "Games", "status": "failed", "outcome": "unknown",
+         "code": "AUTOMATION_FAILED",
          "error": "TD Snap did not verify it. The original page was restored."},
         {"page": "Swimming", "status": "skipped"},
     ]
+    assert result["outcome"] == "unknown"
     assert result["applied"] == 1
     assert result["undo_page"] == "Eating"
 
@@ -2173,58 +2196,88 @@ def test_a_grid_button_is_found_by_label_message_or_resolved_name():
     assert live._grid_button(group, "") is None
 
 
-def test_a_removal_answers_the_confirmation_for_a_button_that_speaks(monkeypatch):
-    """The prompt used to be skipped, leaving TD Snap's dialog open.
-
-    ``_confirm_removal`` asked "is the button still there?" by its label. For
-    a button named after its message the answer was always "no", so it
-    returned without answering — and the next step clicked into the dialog
-    that was still on screen.
-    """
-    group = SimpleNamespace(
-        ControlTypeName="GroupControl",
-        GetChildren=lambda: [_spoken_button("I am all done now")],
-    )
-    confirm = SimpleNamespace(Name="Delete")
-    answered = []
-    monkeypatch.setattr(live, "_page_group", lambda _window: group)
-    monkeypatch.setattr(live, "_accessible_labels", lambda _group: {})
-    monkeypatch.setattr(live, "_find", lambda *_args, **_kwargs: confirm)
-    monkeypatch.setattr(live, "_activate", lambda control: answered.append(control))
-
-    live._confirm_removal(object(), "all done", "I am all done now")
-    assert answered == [confirm]
-
-    # A button that really is gone still answers nothing.
-    answered.clear()
-    monkeypatch.setattr(
-        live, "_page_group",
-        lambda _window: SimpleNamespace(
-            ControlTypeName="GroupControl", GetChildren=lambda: [],
-        ),
-    )
-    live._confirm_removal(object(), "all done", "I am all done now")
-    assert answered == []
-
-
-def test_a_removal_waits_for_a_button_that_speaks_to_actually_go(monkeypatch):
-    """The wait used to pass before the delete had happened at all."""
-    present = [_spoken_button("I am all done now")]
+def _removal_page(monkeypatch, present, dialog):
+    """A page whose buttons are *present* and whose dialog is *dialog*; every
+    wait polls once, as if its deadline had already passed."""
     group = SimpleNamespace(
         ControlTypeName="GroupControl", GetChildren=lambda: list(present),
     )
     monkeypatch.setattr(live, "_page_group", lambda _window: group)
     monkeypatch.setattr(live, "_accessible_labels", lambda _group: {})
+    monkeypatch.setattr(live, "_open_dialog", lambda _window: dialog[0])
+    monkeypatch.setattr(live, "_wait_for", _immediate_wait_for)
+
+
+def test_a_removal_answers_the_confirmation_for_a_button_that_speaks(monkeypatch):
+    """The prompt used to be skipped, leaving TD Snap's dialog open.
+
+    A button named after its spoken message must still count as "still on the
+    page", so the dialog TD Snap shows for it is answered.
+    """
+    present = [_spoken_button("I am all done now")]
+    primary = SimpleNamespace(Name="Delete", AutomationId="PrimaryButton")
+    dialog = [primary]
+    _removal_page(monkeypatch, present, dialog)
+    monkeypatch.setattr(live, "_find", lambda *_args, **kwargs: (
+        primary if kwargs.get("automation_id") == "PrimaryButton" else None
+    ))
+    answered = []
+
+    def press(control):
+        answered.append(control)
+        present.clear()
+        dialog[0] = None
+
+    monkeypatch.setattr(live, "_activate", press)
+    live._confirm_removal(object(), "all done", "I am all done now")
+    assert answered == [primary]
+
+    # A button that really is gone answers nothing.
+    answered.clear()
+    live._confirm_removal(object(), "all done", "I am all done now")
+    assert answered == []
+
+
+def test_a_removal_never_presses_a_control_outside_a_dialog(monkeypatch):
+    """REL-004: when TD Snap had not repainted yet, the first enabled control
+    named Delete could be the editor's own delete button, deleting whatever
+    was selected next. Now nothing is pressed unless a dialog is open."""
+    present = [_spoken_button("I am all done now")]
+    _removal_page(monkeypatch, present, [None])
+    editor_delete = SimpleNamespace(Name="Delete", AutomationId="DeleteButton")
+    monkeypatch.setattr(live, "_find", lambda *_args, **_kwargs: editor_delete)
+    pressed = []
+    monkeypatch.setattr(live, "_activate", pressed.append)
+
+    with pytest.raises(PagesetError, match="did not remove"):
+        live._confirm_removal(object(), "all done", "I am all done now")
+    assert pressed == []
+
+
+def test_an_unrecognised_dialog_during_a_removal_stops_with_unknown(monkeypatch):
+    present = [_spoken_button("I am all done now")]
+    _removal_page(monkeypatch, present, [SimpleNamespace(AutomationId="SecondaryButton")])
+    monkeypatch.setattr(live, "_find", lambda *_args, **_kwargs: None)
+    pressed = []
+    monkeypatch.setattr(live, "_activate", pressed.append)
+
+    with pytest.raises(PagesetError) as caught:
+        live._confirm_removal(object(), "all done", "I am all done now")
+    assert caught.value.outcome == "unknown"
+    assert caught.value.code == "DIALOG_OPEN"
+    assert pressed == []
+
+
+def test_a_removal_waits_for_a_button_that_speaks_to_actually_go(monkeypatch):
+    """The wait used to pass before the delete had happened at all."""
+    present = [_spoken_button("I am all done now")]
+    _removal_page(monkeypatch, present, [None])
     monkeypatch.setattr(live, "_select_button", lambda *_args: object())
     monkeypatch.setattr(live, "_expand_editor", lambda _window: None)
     monkeypatch.setattr(live, "_delete_action", lambda _window: SimpleNamespace())
     monkeypatch.setattr(live, "_activate", lambda _control: None)
-    monkeypatch.setattr(live, "_confirm_removal", lambda *_args: None)
-    monkeypatch.setattr(live, "_wait_for", lambda callback, message, **_kw: (
-        callback() or pytest.fail(f"waited past a button still on the page: {message}")
-    ))
 
-    with pytest.raises(Failed):
+    with pytest.raises(PagesetError, match="did not remove"):
         live._remove_button(
             object(), object(), live.Cell(1, 2, 3, 4),
             "all done", "I am all done now",
@@ -2598,3 +2651,368 @@ def test_a_failed_removal_still_reports_when_the_label_cannot_be_resolved(monkey
 
     with pytest.raises(PagesetError, match="did not verify the removal of"):
         live._verify_page_state(object(), [], [0], {})
+
+
+
+# ---------- REL-003 and the outcome of a failed edit (roadmap B1, B5, B6) ----------
+
+
+def test_rel003_a_failure_leaving_edit_mode_never_replaces_the_real_error(monkeypatch):
+    """The audit's scratch reproduction, made permanent.
+
+    An add fails, the rollback fails, and leaving edit mode fails. The old
+    ``finally`` replaced the in-flight error (page touched, rollback result)
+    with "TD Snap did not leave edit mode.", which said the page was untouched,
+    so a batch carried on to the next page.
+    """
+    _stub_live_page(monkeypatch, layouts=[[], []], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+
+    def add(*_args, **_kwargs):
+        raise PagesetError("TD Snap did not save the 'apple' button.")
+
+    def rollback(*_args, **_kwargs):
+        raise PagesetError("TD Snap could not verify restoration of the reviewed page.",
+                           outcome="partial")
+
+    def stuck(_window):
+        raise PagesetError("TD Snap did not leave edit mode.")
+
+    monkeypatch.setattr(live, "_add_button", add)
+    monkeypatch.setattr(live, "_restore_page_state", rollback)
+    monkeypatch.setattr(live, "_exit_edit_mode", stuck)
+
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits("Eating", [{"label": "apple", "slot": 0}], [], [], [], "v1")
+    error = caught.value
+    assert error.page_touched is True
+    assert error.outcome == "partial"
+    assert "did not save the 'apple' button" in str(error)
+    assert "could not verify restoration" in str(error)
+    assert "still in edit mode" in str(error)
+    assert error.still_in_edit_mode is True
+    assert live._batch_stop(error) is True
+
+
+def test_rel003b_a_raw_exception_stops_the_batch_and_keeps_earlier_results(monkeypatch):
+    """The second scratch reproduction: a non-PagesetError on page 2 used to
+    abort the whole request, losing the result for page 1, which had been
+    applied."""
+    seen = _fake_apply(monkeypatch, {
+        "One": _report("One"),
+        "Two": RuntimeError("(-2147220991, 'An event was unable to invoke any subscribers')"),
+        "Three": _report("Three"),
+    })
+    result = live.apply_batch([_batch_entry("One"), _batch_entry("Two"), _batch_entry("Three")])
+    assert seen == ["One", "Two"]
+    assert [r["status"] for r in result["results"]] == ["applied", "failed", "skipped"]
+    assert result["results"][1]["outcome"] == "unknown"
+    assert result["results"][1]["code"] == "UNEXPECTED"
+    # The raw COM text is not shown; the page is named by the result itself.
+    assert "subscribers" not in result["results"][1]["error"]
+    assert result["applied"] == 1 and result["undo_page"] == "One"
+
+
+@pytest.mark.parametrize("outcome", ["rolled_back", "partial", "unknown", "verified_with_gaps"])
+def test_a_batch_stops_on_every_outcome_but_verified_and_refused(monkeypatch, outcome):
+    if outcome == "verified_with_gaps":
+        assert live._batch_stop(PagesetError("x", outcome=outcome)) is True
+        return
+    seen = _fake_apply(monkeypatch, {
+        "One": PagesetError("failed", outcome=outcome, page_touched=True),
+        "Two": _report("Two"),
+    })
+    result = live.apply_batch([_batch_entry("One"), _batch_entry("Two")])
+    assert seen == ["One"]
+    assert result["results"][0]["outcome"] == outcome
+    assert result["results"][1] == {"page": "Two", "status": "skipped"}
+
+
+def test_a_failure_before_anything_was_written_is_a_refusal_with_no_undo(monkeypatch):
+    _stub_live_page(monkeypatch, layouts=[[], []], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+    restored = []
+    monkeypatch.setattr(live, "_restore_page_state", lambda *a, **k: restored.append(a))
+
+    def collapse_fails(_window):
+        raise PagesetError("TD Snap's editing panel did not collapse.")
+
+    monkeypatch.setattr(live, "_collapse_editor", collapse_fails)
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits("Eating", [{"label": "apple", "slot": 0}], [], [], [], "v1")
+    assert caught.value.outcome == "refused"
+    assert caught.value.page_touched is False
+    assert "Nothing on the page was changed" in str(caught.value)
+    assert restored == []
+
+
+def test_a_dialog_open_after_a_failure_stops_without_pressing_undo(monkeypatch):
+    """L12: Undo with a dialog open would go to the dialog."""
+    _stub_live_page(monkeypatch, layouts=[[], []], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+    dialog = [None]
+    monkeypatch.setattr(live, "_open_dialog", lambda _window: dialog[0])
+    restored = []
+    monkeypatch.setattr(live, "_restore_page_state", lambda *a, **k: restored.append(a))
+
+    def add(*_args, **_kwargs):
+        dialog[0] = SimpleNamespace(AutomationId="PrimaryButton")
+        raise PagesetError("TD Snap did not save the 'apple' button.")
+
+    monkeypatch.setattr(live, "_add_button", add)
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits("Eating", [{"label": "apple", "slot": 0}], [], [], [], "v1")
+    assert caught.value.outcome == "unknown"
+    assert caught.value.code == "DIALOG_OPEN"
+    assert restored == []
+
+
+def test_a_rollback_that_cannot_read_the_page_reports_unknown(monkeypatch):
+    _stub_live_page(monkeypatch, layouts=[[], []], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+
+    def add(*_args, **_kwargs):
+        raise PagesetError("TD Snap did not save the 'apple' button.")
+
+    def unreadable(*_args, **_kwargs):
+        raise OSError("COM: element not available")
+
+    monkeypatch.setattr(live, "_add_button", add)
+    monkeypatch.setattr(live, "_restore_page_state", unreadable)
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits("Eating", [{"label": "apple", "slot": 0}], [], [], [], "v1")
+    assert caught.value.outcome == "unknown"
+    assert "could not read the page" in str(caught.value)
+
+
+@pytest.mark.parametrize(("edit_mode", "dialog", "code"), [
+    (True, None, "EDIT_MODE_BUSY"),
+    (False, SimpleNamespace(AutomationId="PrimaryButton"), "DIALOG_OPEN"),
+])
+def test_an_edit_is_refused_when_td_snap_is_already_busy(monkeypatch, edit_mode, dialog, code):
+    """REL-002 / L3: an edit used to start on top of an edit session the user
+    had open, and navigation pressed Done for them."""
+    _stub_live_page(monkeypatch, layouts=[[], []], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+    monkeypatch.setattr(live, "_in_edit_mode", lambda _window: edit_mode)
+    monkeypatch.setattr(live, "_open_dialog", lambda _window: dialog)
+    pressed = []
+    monkeypatch.setattr(live, "_navigate_to_parent", lambda *a: pressed.append("navigate"))
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _w: pressed.append("edit"))
+    monkeypatch.setattr(live, "_exit_edit_mode", lambda _w: pressed.append("done"))
+    monkeypatch.setattr(live, "_page_name", lambda *_a: "Other page")
+
+    for run in (
+        lambda: live.apply_page_edits("Eating", [{"label": "a", "slot": 0}], [], [], [], "v1"),
+        lambda: live.add_topic_page("Snacks", [{"label": "chips"}], "Eating"),
+    ):
+        with pytest.raises(PagesetError) as caught:
+            run()
+        assert caught.value.code == code
+        assert errors.outcome_of(caught.value) == "refused"
+        assert "Nothing was changed" in str(caught.value)
+    assert pressed == []
+
+
+class _UndoPage:
+    """A page that needs *needed* Undo presses to get back to its baseline."""
+
+    def __init__(self, needed):
+        self.needed = needed
+        self.presses = 0
+        self.undo = SimpleNamespace(IsEnabled=True, AutomationId="UndoButton")
+
+    def fingerprint(self, _group):
+        return ("baseline",) if self.presses >= self.needed else ("changed", self.presses)
+
+    def press(self, _control):
+        self.presses += 1
+
+
+@pytest.mark.parametrize(("needed", "maximum", "restored"), [
+    (0, 3, True), (2, 3, True), (3, 3, True), (5, 3, False), (1, 0, False),
+])
+def test_rollback_never_presses_undo_more_than_the_edit_wrote(
+    monkeypatch, needed, maximum, restored,
+):
+    """REL-002 / B6: Undo presses are capped at the writes this edit made,
+    so a rollback can never reach back into somebody's earlier work."""
+    page = _UndoPage(needed)
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _w: None)
+    monkeypatch.setattr(live, "_collapse_editor", lambda _w: None)
+    monkeypatch.setattr(live, "_page_group", lambda _w: object())
+    monkeypatch.setattr(live, "_fingerprint", page.fingerprint)
+    monkeypatch.setattr(live, "_find", lambda *_a, **_k: page.undo)
+    monkeypatch.setattr(live, "_activate", page.press)
+    monkeypatch.setattr(live, "_wait_for", _immediate_wait_for)
+    monkeypatch.setattr(live.time, "sleep", lambda _s: None)
+
+    if restored:
+        live._restore_page_state(object(), ("baseline",), None, maximum)
+    else:
+        with pytest.raises(PagesetError) as caught:
+            live._restore_page_state(object(), ("baseline",), None, maximum)
+        assert caught.value.outcome == "partial"
+        assert caught.value.code == "ROLLBACK_INCOMPLETE"
+    assert page.presses <= maximum
+    assert page.presses == min(needed, maximum)
+
+
+def test_a_successful_edit_whose_symbol_did_not_apply_is_verified_with_gaps(monkeypatch):
+    """REL-014: symbols are not read back, so a missing one is a gap, not a pass."""
+    _stub_live_page(monkeypatch, layouts=[[], [{"slot": 0, "label": "apple"}]], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+    monkeypatch.setattr(live, "_add_button", lambda *_a, **_k: {
+        "symbol": False, "symbol_source": None, "border": True})
+    report = live.apply_page_edits(
+        "Eating", [{"label": "apple", "slot": 0, "symbol": True}], [], [], [], "v1")
+    assert report["outcome"] == "verified_with_gaps"
+    assert report["unverified"] == ["symbols"]
+
+
+
+def test_rel016_new_page_verification_accepts_a_button_named_by_its_message(monkeypatch):
+    """REL-016: add_topic_page compared the accessibility name with the label
+    only. A button with a spoken message is named by that message until TD
+    Snap writes its database, so a correct new page was rolled back. Both
+    entry points now share _verify_final_layout."""
+    monkeypatch.setattr(live, "_page_group", lambda _w: object())
+    monkeypatch.setattr(live, "_grid", lambda _g: live.Grid((10,), (20,), 8, 8))
+    monkeypatch.setattr(live, "_page_layout", lambda *_a: [
+        {"slot": 0, "label": "I would like more please"}, {"slot": 1, "label": "juice"},
+    ])
+    placed = [
+        {"slot": 0, "label": "more", "message": "I would like more please"},
+        {"slot": 1, "label": "juice", "message": None},
+    ]
+    live._verify_final_layout(object(), placed)
+
+    placed[1]["label"] = "milk"
+    with pytest.raises(PagesetError, match="milk") as caught:
+        live._verify_final_layout(object(), placed)
+    assert caught.value.code == "VERIFY_MISMATCH"
+
+
+def test_both_entry_points_use_the_shared_final_verification():
+    import inspect
+
+    assert "_verify_final_layout(" in inspect.getsource(live.apply_page_edits)
+    assert "_verify_final_layout(" in inspect.getsource(live.add_topic_page)
+
+
+# ---------- REL-018: the fingerprint ignores where the window is (roadmap C3) ----------
+
+
+def _page_at(offset_x, offset_y, names=("apple", "pear")):
+    def button(name, column):
+        left = offset_x + column * 100
+        top = offset_y
+        return SimpleNamespace(
+            Name=name, ControlTypeName="ButtonControl",
+            BoundingRectangle=SimpleNamespace(left=left, top=top, right=left + 90, bottom=top + 90),
+        )
+
+    buttons = [button(name, column) for column, name in enumerate(names)]
+    group = SimpleNamespace(GetChildren=lambda: buttons)
+    grid = live.Grid((offset_x + 45, offset_x + 145), (offset_y + 45,), 90, 90)
+    return group, grid
+
+
+def test_moving_the_window_keeps_the_review_valid_and_is_logged(monkeypatch):
+    grids = {}
+
+    def grid_of(group):
+        return grids[id(group)]
+
+    monkeypatch.setattr(live, "_grid", grid_of)
+    reviewed, grid = _page_at(100, 200)
+    grids[id(reviewed)] = grid
+    moved, grid = _page_at(640, 380)
+    grids[id(moved)] = grid
+    before = live._fingerprint_token(reviewed)
+    after = live._fingerprint_token(moved)
+    assert before != after
+    noted = []
+    monkeypatch.setattr(live.oplog, "fallback", noted.append)
+    assert live._same_page(after, before) is True
+    assert noted == ["FINGERPRINT_MOVED"]
+
+
+def test_a_changed_or_rearranged_page_is_still_refused(monkeypatch):
+    grids = {}
+    monkeypatch.setattr(live, "_grid", lambda group: grids[id(group)])
+    reviewed, grid = _page_at(100, 200)
+    grids[id(reviewed)] = grid
+    renamed, grid = _page_at(100, 200, ("apple", "plum"))
+    grids[id(renamed)] = grid
+    swapped, grid = _page_at(100, 200, ("pear", "apple"))
+    grids[id(swapped)] = grid
+    token = live._fingerprint_token(reviewed)
+    assert live._same_page(live._fingerprint_token(renamed), token) is False
+    assert live._same_page(live._fingerprint_token(swapped), token) is False
+    # An old-style token is only ever equal to itself.
+    assert live._same_page("abc", "abc") is True
+    assert live._same_page(token, "abc") is False
+
+
+# ---------- REL-019: an unreadable page set is not guessed around (roadmap C4) ----------
+
+
+@pytest.mark.parametrize(("message", "code"), [
+    ("database is locked", "DB_LOCKED"),
+    ("file is not a database", "DB_UNREADABLE"),
+])
+def test_an_edit_whose_page_set_read_failed_is_refused_before_writing(monkeypatch, message, code):
+    _stub_live_page(monkeypatch, layouts=[[], []], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+    entered = []
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _w: entered.append(1))
+
+    def measuring_grid(_group):
+        live._db_fallback(sqlite3.OperationalError(message))
+        return live.Grid((10, 20), (30,), 8, 8)
+
+    monkeypatch.setattr(live, "_grid", measuring_grid)
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits("Eating", [{"label": "apple", "slot": 0}], [], [], [], "v1")
+    assert caught.value.code == code
+    assert errors.outcome_of(caught.value) == "refused"
+    assert entered == []
+
+
+def test_problems_from_an_earlier_edit_do_not_block_the_next_one(monkeypatch):
+    live._db_fallback(sqlite3.OperationalError("database is locked"))
+    _stub_live_page(monkeypatch, layouts=[[], [{"slot": 0, "label": "apple"}]], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+    monkeypatch.setattr(live, "_add_button", lambda *_a, **_k: {
+        "symbol": False, "symbol_source": None, "border": True})
+    report = live.apply_page_edits(
+        "Eating", [{"label": "apple", "slot": 0, "symbol": False}], [], [], [], "v1")
+    assert report["outcome"] == "verified"
+
+
+# ---------- version awareness (roadmap C10) ----------
+
+
+def test_the_td_snap_version_is_read_from_its_package_folder(monkeypatch):
+    monkeypatch.setattr(live.uia, "process_image_path", lambda _pid: (
+        "C:\\Program Files\\WindowsApps\\TobiiDynavox.Snap_1.42.0.1234_x64__626b2w651dr5w\\Snap.exe"))
+    window = SimpleNamespace(ProcessId=7)
+    assert live.tdsnap_version(window) == "1.42.0.1234"
+    facts = live._version_facts(window)
+    assert facts["version"] == "1.42.0.1234"
+    assert "has not been tested" in facts["compatibility_warning"]
+
+    monkeypatch.setattr(live.selectors, "TESTED_TDSNAP_VERSIONS", ("1.42.0.1234",))
+    assert "compatibility_warning" not in live._version_facts(window)
+
+    monkeypatch.setattr(live.uia, "process_image_path", lambda _pid: None)
+    assert live._version_facts(window) == {"version": None}
+
+
+def test_every_td_snap_automation_id_comes_from_one_module():
+    import inspect
+
+    source = inspect.getsource(live)
+    assert re.findall(r'automation_id="[A-Za-z_]+"', source) == []
+    assert re.findall(r'AutomationId == "[A-Za-z_]+"', source) == []

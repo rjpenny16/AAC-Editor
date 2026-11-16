@@ -77,9 +77,17 @@ const AI_DOWNLOADING = {
 };
 
 const AI_UNAVAILABLE = {
-  ready: false, engine: null, state: 'unavailable',
-  summary: "Suggestions aren't available in this installation.",
-  detail: 'Suggestions need Ollama running on this computer instead.',
+  ready: false, engine: null, state: 'unavailable', launch_mode: 'source',
+  summary: "Suggestions aren't included in this copy of AAC Editor.",
+  detail: 'Suggestions are not included when AAC Editor is started from launch.bat '
+    + 'or launch.sh without the AI extra. Use the installed app.',
+  action: '', note: '', can_download: false,
+};
+
+const AI_OLLAMA_OFF = {
+  ready: false, engine: null, state: 'unavailable', launch_mode: 'installed',
+  summary: "Your Ollama server isn't answering.",
+  detail: 'You chose Ollama in the suggestion settings. Start Ollama and choose Check again.',
   action: 'ollama', note: '', can_download: false,
 };
 
@@ -200,6 +208,36 @@ async function openSuggestions(page) {
   if (!(await panel.evaluate((node) => node.open))) await panel.locator('> summary').click();
 }
 
+// Two autosave ticks (draft.js AUTOSAVE_INTERVAL_MS is 2000). Used with
+// page.clock.runFor, which runs every timer due in the span, so the ticks are
+// guaranteed to have fired rather than probably.
+const AUTOSAVE_TICKS = 4000;
+
+/* Advance the page's fake clock by *ms*, running every timer due in that
+   span, then wait until every request those timers started has finished.
+   Needs page.clock.install() before the page loads. This replaces "sleep N ms
+   and assert nothing happened", which proves nothing when N is close to the
+   interval being tested. */
+async function runClock(page, ms) {
+  const pending = new Set();
+  const start = (request) => pending.add(request);
+  const end = (request) => pending.delete(request);
+  page.on('request', start);
+  page.on('requestfinished', end);
+  page.on('requestfailed', end);
+  try {
+    await page.clock.runFor(ms);
+    // Two round trips let anything the timers queued reach the network.
+    await page.evaluate(() => Promise.resolve());
+    await page.evaluate(() => Promise.resolve());
+    await expect.poll(() => pending.size).toBe(0);
+  } finally {
+    page.off('request', start);
+    page.off('requestfinished', end);
+    page.off('requestfailed', end);
+  }
+}
+
 async function blockingViolations(page) {
   const results = await new AxeBuilder({ page }).analyze();
   return results.violations
@@ -269,6 +307,7 @@ test.describe('beginner word-adding regressions', () => {
   });
 
   test('the draft survives time spent reviewing and choosing a destination', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page, { preferences: { draft_autosave: true } });
     await mockTD(page);
     await existingItems(page);
@@ -276,11 +315,14 @@ test.describe('beginner word-adding regressions', () => {
     await page.locator('#word-input').press('Enter');
     await expect.poll(() => store.draft?.items.length).toBe(1);
     await page.locator('#build-btn').click();
-    await page.waitForTimeout(2200);
+    // runFor fires every autosave tick due in that span, so at least one tick
+    // is guaranteed to have run (a 2200 ms sleep against a 2000 ms interval
+    // was not).
+    await runClock(page, AUTOSAVE_TICKS);
     expect(store.draft.items[0].label).toBe('apple');
     await page.locator('#review-back-btn').click();
     await page.locator('#choose-page-btn').click();
-    await page.waitForTimeout(2200);
+    await runClock(page, AUTOSAVE_TICKS);
     expect(store.draft.items[0].label).toBe('apple');
   });
 
@@ -369,6 +411,26 @@ test.describe('accessibility past the first screen', () => {
     await page.locator('#word-input').fill('apple');
     await page.locator('#word-add-btn').click();
     await expect(page.locator('#layout-field')).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  // A modal makes everything behind it inert to axe, so a scan taken with a
+  // dialog open says nothing about the header. These scan each connected
+  // state with no dialog, which is how the badge's Label in Name defect hid.
+  test('the TD Snap connected screen is clean with no dialog open', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await expect(page.locator('#file-badge')).toBeVisible();
+    await expect(page.locator('[role="dialog"]:visible, dialog[open]')).toHaveCount(0);
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test('the Grid 3 connected screen is clean with no dialog open', async ({ page }) => {
+    mockGrid3(page);
+    await connectGrid3(page);
+    await expect(page.locator('#file-badge')).toHaveText('Grid 3 · Change app');
+    await expect(page.locator('#file-badge')).toHaveAccessibleName('Grid 3 · Change app');
+    await expect(page.locator('[role="dialog"]:visible, dialog[open]')).toHaveCount(0);
     expect(await blockingViolations(page)).toEqual([]);
   });
 
@@ -909,9 +971,10 @@ test('open-page path goes straight to Add and edits only after confirmation', as
   await expect(page.locator('#parent-select')).toHaveValue('Eating');
   await expect(page.locator('#current-page-label')).toHaveText('Eating');
   await expect(page.locator('#file-badge')).toHaveText('TD Snap · Change app');
-  await expect(page.locator('#file-badge')).toHaveAttribute(
-    'aria-label', 'Change app (currently TD Snap)',
-  );
+  // WCAG 2.5.3 (Label in Name): a voice-control user says what they see, so
+  // the accessible name is the visible text and nothing else.
+  await expect(page.locator('#file-badge')).toHaveAccessibleName('TD Snap · Change app');
+  await expect(page.locator('#file-badge')).not.toHaveAttribute('aria-label', /.*/);
   await page.locator('#choose-page-btn').click();
   await expect(page.locator('#wizard-destination')).toBeVisible();
   await expect(page.locator('#parent-select')).toHaveValue('Eating');
@@ -1327,6 +1390,7 @@ test('page suggestions are visible while typing', async ({ page }) => {
 });
 
 test('a new topic page is not changed by live page monitoring', async ({ page }) => {
+  await page.clock.install();
   let statusCalls = 0;
   await mockTD(page, {
     status: () => {
@@ -1349,7 +1413,17 @@ test('a new topic page is not changed by live page monitoring', async ({ page })
   await page.locator('#word-input').fill('Roar, Stomp, Chomp, Sleep, Run, Hide');
   await page.locator('#word-input').press('Enter');
   await expect(page.locator('#preview .cell.used')).toHaveCount(6);
-  await page.waitForTimeout(1200);
+  // Run three live-poll intervals (1.5 s each in livewatch.js) on the page's
+  // clock, so the poll timer is guaranteed to have fired, rather than sleeping
+  // for less than one interval and proving nothing.
+  let polled = 0;
+  page.on('request', (request) => {
+    if (request.url().includes('/api/tdsnap/status')) polled += 1;
+  });
+  await runClock(page, 4500);
+  // In new-page mode the builder owns the grid, so the monitor must not even
+  // ask TD Snap which page is open.
+  expect(polled).toBe(0);
   await expect(page.locator('#preview .cell.used')).toHaveCount(6);
   await expect(page.locator('#parent-select')).toHaveValue('Topics Menu Page');
 });
@@ -1925,13 +1999,55 @@ test('recent errors travel with the support report', async ({ page }) => {
   }));
   await openEditor(page);
   await page.evaluate(() => {
-    Promise.reject(new Error('simulated failure'));
+    Promise.reject(new Error('could not verify Grandma Rosa on Breakfast Foods'));
   });
   await expect(page.locator('#app-error')).toBeVisible();
 
   await page.locator('#app-error-report').click();
   await expect(page.locator('#support-report-text')).toContainText('recent app errors');
-  await expect(page.locator('#support-report-text')).toContainText('simulated failure');
+  await expect(page.locator('#support-report-text')).toContainText('unhandledrejection: Error');
+  // REL-025: a message can name a button or a page, so only the kind travels.
+  await expect(page.locator('#support-report-text')).not.toContainText('Grandma');
+  await expect(page.locator('#support-report-text')).not.toContainText('Breakfast');
+});
+
+test('failed requests travel with the support report as codes and references', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/diagnostics', (route) => fulfillJson(route, {
+    ok: true, report: {}, text: 'AAC Editor support report\n',
+  }));
+  await page.route('**/api/tdsnap/launch', (route) => fulfillJson(route, {
+    ok: false, error: 'TD Snap could not open Grandma Rosa', code: 'WINDOW_NOT_FOUND',
+    outcome: 'refused', op: 'c0de',
+  }, 400));
+  await openEditor(page);
+  await page.evaluate(async () => {
+    const { api } = await import('/static/api.js');
+    await api('/api/tdsnap/launch', { method: 'POST' }).catch(() => {});
+  });
+  await page.locator('#support-report-btn').click();
+  const report = page.locator('#support-report-text');
+  await expect(report).toContainText('recent failed requests');
+  await expect(report).toContainText('code=WINDOW_NOT_FOUND op=c0de');
+  await expect(report).not.toContainText('Grandma');
+});
+
+test('diagnostic mode can be switched on, shows while on, and switched off', async ({ page }) => {
+  let enabled = false;
+  await mockTD(page);
+  await page.route('**/api/diagnostic-mode', (route) => {
+    if (route.request().method() === 'PUT') enabled = route.request().postDataJSON().enabled;
+    return fulfillJson(route, { ok: true, enabled });
+  });
+  await openEditor(page);
+  await expect(page.locator('#diagnostic-indicator')).toBeHidden();
+  await page.locator('#settings-panel-btn').click();
+  await page.locator('#diagnostic-mode-toggle').check();
+  await expect(page.locator('#settings-panel-status')).toContainText('on for the next 24 hours');
+  await expect(page.locator('#diagnostic-indicator')).toBeVisible();
+  await page.locator('#diagnostic-mode-toggle').uncheck();
+  await expect(page.locator('#diagnostic-indicator')).toBeHidden();
+  expect(enabled).toBe(false);
 });
 
 test('support dialog has no serious or critical accessibility violations', async ({ page }) => {
@@ -2816,17 +2932,54 @@ test.describe('moving buttons and undoing an applied edit', () => {
     await page.route('**/api/tdsnap/undo', (route) => fulfillJson(route, {
       ok: false,
       error: 'The target page changed after preview. Refresh the layout and review the edit again.',
+      code: 'FINGERPRINT_CHANGED', outcome: 'refused', op: 'b0b1',
     }, 400));
     await connect(page);
     await page.locator('#undo-last-btn').click();
     await page.locator('#confirm-update-btn').click();
 
-    await expect(page.locator('#review-error')).toContainText(
-      'TD Snap couldn’t undo the last change.',
-    );
-    await expect(page.locator('#review-error')).toContainText(
-      'the page is as it was before this undo',
-    );
+    const error = page.locator('#review-error');
+    await expect(error).toContainText('The undo was not started.');
+    await expect(error).toContainText('Nothing was changed.');
+    await expect(error).toContainText('Refresh the page and review the edit again.');
+    await expect(error).toContainText('Reference b0b1');
+  });
+
+  test('an edit whose symbols were not checked does not read as a plain success', async ({ page }) => {
+    // REL-014: the heading was "Done" whatever the checks said.
+    await mockTD(page);
+    await page.route('**/api/tdsnap/edit-plan', (route) => fulfillJson(route, {
+      ok: true, page: 'Eating', buttons: 1, warnings: [],
+      outcome: 'verified_with_gaps', unverified: ['symbols'],
+      checks: { td_snap_edit: 'pass', content: 'pass', symbols: 'partial' },
+    }));
+    await existingItems(page);
+    await page.locator('#word-input').fill('apple');
+    await page.locator('#word-add-btn').click();
+    await page.locator('#build-btn').click();
+    await page.locator('#confirm-update-btn').click();
+    await expect(page.locator('#result-eyebrow')).toHaveText('Done — check the notes');
+    await expect(page.locator('#result-heading')).toContainText('Done, with notes');
+    await expect(page.locator('#result-warnings')).toContainText('Not checked automatically: symbols');
+  });
+
+  test('an undo that could not finish never claims the page is as it was', async ({ page }) => {
+    // It used to say "the page is as it was before this undo" whatever happened.
+    await movablePage(page);
+    await mockUndo(page, { available: APPLIED });
+    await page.route('**/api/tdsnap/undo', (route) => fulfillJson(route, {
+      ok: false,
+      error: 'TD Snap did not verify apple. TD Snap could not verify restoration of the reviewed page.',
+      code: 'VERIFY_MISMATCH', outcome: 'partial', op: 'c4fe',
+    }, 400));
+    await connect(page);
+    await page.locator('#undo-last-btn').click();
+    await page.locator('#confirm-update-btn').click();
+
+    const error = page.locator('#review-error');
+    await expect(error).toContainText('may be partly changed');
+    await expect(error).toContainText('Do not retry until you have checked the page.');
+    await expect(error).not.toContainText('as it was');
   });
 
   test('starting over stops offering an undo for a page set that may change', async ({ page }) => {
@@ -2904,6 +3057,13 @@ test.describe('exported file adds to an existing page', () => {
     });
     await expect(page.locator('#wizard-destination')).toBeVisible();
   }
+
+  test('the file connected screen is clean with no dialog open', async ({ page }) => {
+    await openFile(page);
+    await expect(page.locator('#file-badge')).toHaveAccessibleName('sample.sps · Change file');
+    await expect(page.locator('[role="dialog"]:visible, dialog[open]')).toHaveCount(0);
+    expect(await blockingViolations(page)).toEqual([]);
+  });
 
   test('switching from live search to a full exported page clears search and gives file guidance', async ({ page }) => {
     await mockTD(page);
@@ -3932,14 +4092,13 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
 
   /* ---------- getting started ---------- */
 
-  test('a build with no engine of its own says so, and offers the one route it has', async ({ page }) => {
-    // Ollama is not an alternative in this build — it is the only way — and
-    // the steps used to sit folded behind a summary reading "Use my own Ollama
-    // model", which is not where somebody with no model at all would look.
+  test('a copy started without the AI extra says so and never mentions Ollama', async ({ page }) => {
+    // REL-028: launch.bat installed no engine, so the panel fell back to
+    // Ollama and showed its connection error to people who never chose it.
     await mockTD(page);
     await mockAi(page, [{ words: [] }], {
       status: readyStatus({
-        ollama: { reachable: false, models: [] },
+        ollama: { reachable: false, models: [], checked: false },
         ai: AI_UNAVAILABLE,
       }),
     });
@@ -3947,10 +4106,24 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
     await openSuggestions(page);
 
     await expect(page.locator('#ai-state-pill')).toHaveText('Not available');
-    await expect(page.locator('#ai-summary')).toContainText("aren't available");
+    await expect(page.locator('#ai-summary')).toContainText("aren't included");
+    await expect(page.locator('#ai-detail')).toContainText('launch.bat');
     await expect(page.locator('#ai-stage-ready')).toBeHidden();
     await expect(page.locator('#ai-stage-setup')).toBeHidden();
+    await expect(page.locator('#ai-ollama-btn-alt')).toBeHidden();
+    await expect(page.locator('#ai-summary')).not.toContainText('Ollama');
+  });
 
+  test('somebody who chose Ollama and has it stopped is told so, with the steps', async ({ page }) => {
+    await mockTD(page);
+    await mockSettings(page, { preferences: { ai_engine: 'ollama' } });
+    await mockAi(page, [{ words: [] }], {
+      status: readyStatus({ ollama: { reachable: false, models: [] }, ai: AI_OLLAMA_OFF }),
+    });
+    await existingItems(page);
+    await openSuggestions(page);
+
+    await expect(page.locator('#ai-summary')).toContainText('Ollama');
     await page.locator('#ai-ollama-btn-alt').click();
     await expect(page.locator('.ai-setup-steps')).toBeVisible();
     await expect(page.locator('.ai-setup-steps')).toContainText('ollama pull llama3.2');
@@ -3976,10 +4149,12 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
     await expect(page.locator('.ai-setup-steps')).toBeHidden();
     await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
 
-    // ... but they are one click away for somebody who already runs Ollama.
+    // ... but they are one click away for somebody who already runs Ollama,
+    // and asking for them is choosing Ollama.
     await page.locator('#ai-ollama-btn').click();
     await expect(page.locator('#ai-advanced')).toHaveAttribute('open', '');
     await expect(page.locator('.ai-setup-steps')).toBeVisible();
+    await expect(page.locator('#ai-engine')).toHaveValue('ollama');
   });
 
   test('the panel knows where it stands before anybody opens anything', async ({ page }) => {
@@ -4398,9 +4573,9 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
     expect(asked[0].engine).toBe('auto');
 
     await openSettings(page);
-    await page.locator('#ai-engine').selectOption('local');
+    await page.locator('#ai-engine').selectOption('ollama');
     await page.locator('#ai-go').click();
-    expect(asked[1].engine).toBe('local');
+    expect(asked[1].engine).toBe('ollama');
   });
 
   test('an engine that stood in for the chosen one says so', async ({ page }) => {
@@ -5010,17 +5185,16 @@ test.describe('private by default: what is kept, and what can leave', () => {
     });
     return asked;
   }
-  // Two autosave ticks (every 2 seconds), plus a margin.
-  const TWO_TICKS = 4600;
 
   test('nothing somebody builds is written to disk unless they asked for that', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page);
     await mockTD(page);
     await existingItems(page);
     await page.locator('#word-input').fill('private word, another one');
     await page.locator('#word-input').press('Enter');
     await expect(page.locator('#chipbox .chip')).toHaveCount(2);
-    await page.waitForTimeout(TWO_TICKS);
+    await runClock(page, AUTOSAVE_TICKS);
 
     expect(store.draft).toBeNull();
     expect(store.writes.every((body) => !body.draft)).toBe(true);
@@ -5028,6 +5202,7 @@ test.describe('private by default: what is kept, and what can leave', () => {
   });
 
   test('keeping an unfinished page is a choice: on saves it, off deletes it', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page);
     await mockTD(page);
     await existingItems(page);
@@ -5041,6 +5216,7 @@ test.describe('private by default: what is kept, and what can leave', () => {
 
     await page.locator('#word-input').fill('apple');
     await page.locator('#word-input').press('Enter');
+    await runClock(page, AUTOSAVE_TICKS);
     await expect.poll(() => store.draft?.items.length).toBe(1);
 
     await page.locator('#settings-panel-btn').click();
@@ -5055,7 +5231,7 @@ test.describe('private by default: what is kept, and what can leave', () => {
     // Off means off: what is typed from here on is not kept.
     await page.locator('#word-input').fill('pear');
     await page.locator('#word-input').press('Enter');
-    await page.waitForTimeout(TWO_TICKS);
+    await runClock(page, AUTOSAVE_TICKS);
     expect(store.draft).toBeNull();
   });
 
@@ -5088,17 +5264,19 @@ test.describe('private by default: what is kept, and what can leave', () => {
   });
 
   test('a draft is kept after it is answered when drafts are on', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page, {
       draft: olderDraft, preferences: { draft_autosave: true },
     });
     await mockTD(page);
     await openEditor(page);
     await page.locator('#draft-resume-btn').click();
-    await page.waitForTimeout(500);
+    await runClock(page, AUTOSAVE_TICKS);
     expect(store.draft).not.toBeNull();
   });
 
   test('the Wikipedia lookup starts off every time and is never remembered', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page);
     await mockTD(page);
     await existingItems(page);
@@ -5107,7 +5285,8 @@ test.describe('private by default: what is kept, and what can leave', () => {
     await expect(page.locator('#ai-grounding')).not.toBeChecked();
     await page.locator('#ai-grounding').check();
     await expect(page.locator('#ai-grounding')).toBeChecked();
-    await page.waitForTimeout(300);
+    // Any debounced preference save would have fired inside this span.
+    await runClock(page, AUTOSAVE_TICKS);
     expect(JSON.stringify(store.writes)).not.toContain('ai_grounding');
 
     // The next launch starts unticked, whatever was chosen before.
@@ -5315,4 +5494,280 @@ test.describe('a Grid 3 grid-set file', () => {
     expect(submitted.removals).toEqual([]);
     expect(await blockingViolations(page)).toEqual([]);
   });
+});
+
+/* Shutdown safety and recovery (REL-007, REL-021, roadmap B3). */
+test.describe('quitting and coming back', () => {
+  test('quit is refused while an edit is running, and the app stays open', async ({ page }) => {
+    await mockTD(page);
+    await page.route('**/api/quit', (route) => fulfillJson(route, {
+      ok: false, code: 'BUSY', outcome: 'refused',
+      error: 'An edit to the AAC app is running. Wait for it to finish, then quit.',
+    }, 409));
+    await openEditor(page);
+    const messages = [];
+    page.on('dialog', (dialog) => {
+      messages.push(dialog.message());
+      return dialog.accept();
+    });
+    await page.locator('#quit-btn').click();
+    await expect.poll(() => messages.length).toBe(2);
+    expect(messages[1]).toContain('Wait for it to finish');
+    await expect(page.locator('#quit-screen')).toBeHidden();
+    await expect(page.locator('main')).toBeVisible();
+  });
+
+  test('quitting with unsaved file edits asks first, then keeps them', async ({ page }) => {
+    const bodies = [];
+    await mockTD(page);
+    await page.route('**/api/quit', (route) => {
+      const body = route.request().postDataJSON();
+      bodies.push(body);
+      return body.force
+        ? fulfillJson(route, { ok: true, kept: 1 })
+        : fulfillJson(route, {
+          ok: false, code: 'UNSAVED', outcome: 'refused', unsaved: [{ filename: 'a.sps', edits: 1 }],
+          error: 'There are edits to an exported file that have not been saved. '
+            + 'They will be kept and offered the next time AAC Editor starts.',
+        }, 409);
+    });
+    await openEditor(page);
+    const messages = [];
+    page.on('dialog', (dialog) => {
+      messages.push(dialog.message());
+      return dialog.accept();
+    });
+    await page.locator('#quit-btn').click();
+    await expect(page.locator('#quit-screen')).toBeVisible();
+    expect(messages[1]).toContain('offered the next time');
+    expect(bodies).toEqual([{ force: false }, { force: true }]);
+  });
+
+  test('an unsaved copy from last time is offered, and can be discarded', async ({ page }) => {
+    let closed = 0;
+    await mockTD(page);
+    await page.route('**/api/pageset/recoverable', (route) => fulfillJson(route, {
+      ok: true,
+      sessions: [{ session_id: 'old-session', filename: 'client.sps', edits: 2,
+        modified: 1700000000 }],
+    }));
+    await page.route('**/api/pageset/old-session/close', (route) => {
+      closed += 1;
+      return fulfillJson(route, { ok: true });
+    });
+    await openEditor(page);
+    await expect(page.locator('#recover-banner')).toBeVisible();
+    await expect(page.locator('#recover-banner-text')).toContainText('client.sps');
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('#recover-discard-btn').click();
+    await expect(page.locator('#recover-banner')).toBeHidden();
+    await expect.poll(() => closed).toBe(1);
+  });
+
+  test('an unsaved copy from last time can be opened again', async ({ page }) => {
+    await mockTD(page);
+    await page.route('**/api/pageset/recoverable', (route) => fulfillJson(route, {
+      ok: true,
+      sessions: [{ session_id: 'old-session', filename: 'client.sps', edits: 2,
+        modified: 1700000000 }],
+    }));
+    await page.route('**/api/pageset/old-session', (route) => fulfillJson(route, {
+      ok: true, session_id: 'old-session', filename: 'client.sps', schema_version: '4.13',
+      grid: { cols: 3, rows: 2 }, pages: [{ id: 1, title: 'Home' }], baseline_problems: [],
+      edits: 2, unsaved: true,
+    }));
+    await page.route('**/api/pageset/old-session/pages', (route) =>
+      fulfillJson(route, { ok: true, pages: [{ id: 1, title: 'Home' }] }));
+    await openEditor(page);
+    await page.locator('#recover-open-btn').click();
+    await expect(page.locator('#file-badge')).toHaveText('client.sps · Change file');
+    await expect(page.locator('#header-save-btn')).toBeVisible();
+  });
+});
+
+test('an edit a previous run never finished is reported at start', async ({ page }) => {
+  let acknowledged = 0;
+  await mockTD(page);
+  await page.route('**/api/interrupted', (route) => fulfillJson(route, {
+    ok: true, edits: [{ op: 'aa11', app: 'tdsnap', kind: 'post:tdsnap.edit-plan', at: 1700000000 }],
+  }));
+  await page.route('**/api/interrupted/ack', (route) => {
+    acknowledged += 1;
+    return fulfillJson(route, { ok: true });
+  });
+  await openEditor(page);
+  await expect(page.locator('#interrupted-banner')).toBeVisible();
+  await expect(page.locator('#interrupted-text')).toContainText('TD Snap edit');
+  await expect(page.locator('#interrupted-text')).toContainText('reference aa11');
+  await page.locator('#interrupted-ack-btn').click();
+  await expect(page.locator('#interrupted-banner')).toBeHidden();
+  await expect.poll(() => acknowledged).toBe(1);
+});
+
+test('a restarted app is reported as a restart, not as TD Snap going away', async ({ page }) => {
+  // REL-009: a restarted server has a new token; every protected call then
+  // failed with 403 and the live poll called that "TD Snap not found".
+  let token = 'token-one';
+  await page.route('**/api/config', (route) => fulfillJson(route, {
+    ok: true, token, native: false, elevated: false,
+  }));
+  await mockTD(page);
+  await page.route('**/api/tdsnap/status', (route) => {
+    if (route.request().headers()['x-tdsnap-token'] !== token) {
+      return fulfillJson(route, { ok: false, code: 'TOKEN_STALE', error: 'stale' }, 403);
+    }
+    return fulfillJson(route, defaultStatus());
+  });
+  await connect(page);
+  token = 'token-two';  // the app restarts
+  await expect(page.locator('#restart-banner')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#live-lost')).toBeHidden();
+});
+
+test('a token that never loaded is fetched again and the request retried', async ({ page }) => {
+  let configCalls = 0;
+  await page.route('**/api/config', (route) => {
+    configCalls += 1;
+    return configCalls === 1
+      ? route.abort()
+      : fulfillJson(route, { ok: true, token: 'late-token', native: false, elevated: false });
+  });
+  await mockTD(page);
+  await page.route('**/api/tdsnap/status', (route) => {
+    if (route.request().headers()['x-tdsnap-token'] !== 'late-token') {
+      return fulfillJson(route, { ok: false, code: 'TOKEN_STALE', error: 'stale' }, 403);
+    }
+    return fulfillJson(route, defaultStatus());
+  });
+  await connect(page);
+  await expect(page.locator('#restart-banner')).toBeHidden();
+  expect(configCalls).toBeGreaterThan(1);
+});
+
+test('a lost answer to an applied edit is checked, not guessed', async ({ page }) => {
+  // H-14: the edit may have landed even though its response never arrived.
+  let requestId = null;
+  await mockTD(page);
+  await page.route('**/api/tdsnap/edit-plan', (route) => {
+    requestId = route.request().headers()['x-aac-request'];
+    return route.abort('connectionreset');
+  });
+  await page.route('**/api/operation-result/*', (route) => fulfillJson(route, {
+    ok: true, known: true, done: true, outcome: 'verified', op: 'beef', succeeded: true,
+  }));
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await page.locator('#build-btn').click();
+  await page.locator('#confirm-update-btn').click();
+  const error = page.locator('#review-error');
+  await expect(error).toContainText('went through, but its answer was lost');
+  await expect(error).toContainText('Do not apply it again');
+  expect(requestId).toBeTruthy();
+});
+
+test('leaving the review is blocked while an edit is being applied', async ({ page }) => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await mockTD(page);
+  await page.route('**/api/tdsnap/edit-plan', async (route) => {
+    await held;
+    return fulfillJson(route, {
+      ok: true, page: 'Eating', buttons: 1, warnings: [], outcome: 'verified',
+      checks: { td_snap_edit: 'pass' },
+    });
+  });
+  await existingItems(page);
+  await page.locator('#word-input').fill('apple');
+  await page.locator('#word-add-btn').click();
+  await page.locator('#build-btn').click();
+  await page.locator('#confirm-update-btn').click();
+  await expect(page.locator('#review-back-btn')).toBeDisabled();
+  await expect(page.locator('#file-badge')).toBeDisabled();
+  release();
+  await expect(page.locator('#result-heading')).toContainText('Done');
+  await expect(page.locator('#file-badge')).toBeEnabled();
+});
+
+test('when local AI is not ready, a request to paste into an assistant is offered', async ({ page }) => {
+  // Roadmap D7: the owner's own workaround, made a guided path. It must
+  // make no network request of its own.
+  await mockTD(page);
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus({
+    ai: { ...AI_UNAVAILABLE },
+  })));
+  const outbound = [];
+  page.on('request', (request) => {
+    if (!request.url().startsWith('http://127.0.0.1') && !request.url().startsWith('http://localhost')) {
+      outbound.push(request.url());
+    }
+  });
+  await existingItems(page);
+  await openSuggestions(page);
+  await expect(page.locator('#ai-manual')).toBeVisible();
+  await expect(page.locator('#ai-manual-prompt')).toContainText('"Eating"');
+  await expect(page.locator('#ai-manual-prompt')).toContainText('Separate them with commas');
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.locator('#ai-manual-copy').click();
+  await expect(page.locator('#ai-manual-status')).toContainText(/Copied|Ctrl\+C/);
+  await page.locator('#ai-manual-paste').click();
+  await expect(page.locator('#word-input')).toBeFocused();
+  expect(outbound).toEqual([]);
+});
+
+test('the assistant fallback is not shown once suggestions are ready', async ({ page }) => {
+  await mockTD(page);
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus()));
+  await existingItems(page);
+  await openSuggestions(page);
+  await expect(page.locator('#ai-manual')).toBeHidden();
+});
+
+test('an answer to an older suggestion request never replaces a newer one', async ({ page }) => {
+  // Roadmap D4: the slower, older reply used to be shown over the newer one.
+  let calls = 0;
+  let releaseFirst;
+  const firstHeld = new Promise((resolve) => { releaseFirst = resolve; });
+  await mockTD(page);
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus()));
+  await page.route('**/api/ai/words', async (route) => {
+    calls += 1;
+    const words = calls === 1 ? ['Stale'] : ['Fresh'];
+    if (calls === 1) await firstHeld;
+    return fulfillJson(route, {
+      ok: true, engine: 'local', requested: 10, returned: 1, retried: false, note: '', words,
+    });
+  });
+  await existingItems(page);
+  await openSuggestions(page);
+  await expect(page.locator('#ai-go')).toBeEnabled();
+  await page.locator('#ai-go').click();
+  await expect.poll(() => calls).toBe(1);
+  await page.evaluate(() => document.getElementById('ai-go').removeAttribute('disabled'));
+  await page.locator('#ai-go').click();
+  await expect(page.locator('#ai-tray')).toContainText('Fresh');
+  releaseFirst();
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('#ai-tray')).not.toContainText('Stale');
+});
+
+test('the model download poll stops after repeated failures and says so', async ({ page }) => {
+  await page.clock.install();
+  let polls = 0;
+  await mockTD(page);
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus({
+    ai: AI_DOWNLOADING, local: { ...LOCAL_MODEL, download: { status: 'downloading' } },
+  })));
+  await page.route('**/api/ai/download', (route) => {
+    polls += 1;
+    return fulfillJson(route, { ok: false, error: 'boom' }, 500);
+  });
+  await existingItems(page);
+  await runClock(page, 120_000);
+  const settled = polls;
+  await runClock(page, 60_000);
+  expect(polls).toBe(settled);
+  expect(polls).toBeLessThanOrEqual(10);
+  await openSuggestions(page);
+  await expect(page.locator('#ai-progress-text')).toContainText('stopped hearing');
 });

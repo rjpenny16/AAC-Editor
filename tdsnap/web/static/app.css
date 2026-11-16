@@ -823,6 +823,14 @@ summary {
 }
 .foot p { margin: 0; }
 .foot-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.diagnostic-indicator {
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--warning);
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 0.85rem;
+}
 .quit-screen { margin: 2rem auto; }
 
 /* Unexpected failures and the draft-recovery offer. In the page flow, above
@@ -1403,4 +1411,23 @@ body[data-step="review"] .review-actions { position: sticky; bottom: 0; padding:
   .cell-state, .cell-selection, .stage-progress li::before, .seg-btn::before, .choice-card.selected::after { forced-color-adjust: none; }
   .btn[aria-disabled="true"] { color: GrayText; }
   .preview .cell.selected { border-color: Highlight; }
+}
+
+/* "Or ask an assistant yourself" (roadmap D7) */
+.ai-manual {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.ai-manual h4 {
+  margin: 0 0 0.25rem;
+}
+
+.ai-manual-prompt {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface-soft);
+  user-select: all;
 }

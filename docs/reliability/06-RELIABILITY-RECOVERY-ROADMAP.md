@@ -1,6 +1,6 @@
 # 06. Reliability recovery roadmap
 
-Audited commit `69ffa9d`. This is the implementation plan. **Nothing in it has been started; it needs the owner's approval first.** Issue IDs refer to [02](02-CONFIRMED-BUGS-AND-ROOT-CAUSES.md) and [03](03-INTERMITTENT-FAILURE-INVESTIGATION.md). It supersedes the ordering of Track E (Phases 16 to 20) in [ROADMAP.md](../../ROADMAP.md) until the release gate in [07](07-RELEASE-READINESS-CHECKLIST.md) is met; Phases 17, 18 and most of 20 (fewer steps, design system, polish) are paused.
+Audited commit `69ffa9d`. This is the implementation plan. The owner asked for it to be carried out; see **Implementation status** below. Issue IDs refer to [02](02-CONFIRMED-BUGS-AND-ROOT-CAUSES.md) and [03](03-INTERMITTENT-FAILURE-INVESTIGATION.md). It supersedes the ordering of Track E (Phases 16 to 20) in [ROADMAP.md](../../ROADMAP.md) until the release gate in [07](07-RELEASE-READINESS-CHECKLIST.md) is met; Phases 17, 18 and most of 20 (fewer steps, design system, polish) are paused.
 
 ## Revision 2 (after owner input)
 
@@ -11,6 +11,26 @@ The owner confirmed: a Windows machine with TD Snap and Grid 3 is available; the
 3. **Phase C is reordered**: C1 (foreground), C2 (robust reads), C3 (fingerprint), C4 (database reads) come first and are to be re-ranked from the first real logs.
 4. **Phase D gains D7**, a guided "ask an assistant yourself" fallback. This is the single exception to rule 1.
 5. Until Phase B3 lands, the owner should start the app from the installer only, and not run `launch.bat` while it is open.
+
+## Implementation status (16 November 2026)
+
+Implemented on branch `claude/trusting-maxwell-2zo70f`, one commit per item, as one pull request at the owner's request rather than one pull request per item (rule 2). Every software item below has tests; the browser suite runs on Linux Chromium and Windows Edge.
+
+| Item | Status | Notes |
+|---|---|---|
+| A1, A2, A3 | Done | A1 also fixed preview cells, which the audit missed. **A2 owner action outstanding:** turn on required status checks for `main`. |
+| A4, A5, A6, A7a, A8, A9 | Done | Log in `logs/operations.jsonl`; diagnostic mode in "What AAC Editor saves". |
+| A7 | **Not done: needs the owner's Windows machine.** | Script ready: [T3-1-DISCOVERY-SESSION.md](T3-1-DISCOVERY-SESSION.md). |
+| B1 to B9, B11 | Done | B6/B7 use the conservative versions (refuse, cap, stop); "verify before commit" for Grid 3 waits on T3-1. |
+| B10 | Done for TD Snap | `tests/fake_tdsnap.py`, `tests/test_live_sweep.py`: 7 faults x 6 operations x 13 steps, plus 200 seeded random-timing runs. It found two defects, both fixed: a raw read error before any write escaped unclassified, and a stale read let a rollback report "restored" while the edit was still there (now a settle wait, `SETTLE_SECONDS`). Grid 3 is covered by targeted fault tests, not a full fake. |
+| C1 to C10 | Done | C1: Grid 3 keeps a per-process foreground check until T3-1 shows how its Create Cell dialog appears. C3: the pixel fingerprint is kept alongside for one release and disagreements are logged (`FINGERPRINT_MOVED`). C10: `TESTED_TDSNAP_VERSIONS` is empty until T3-1 records a version. |
+| D1, D4, D5, D6, D7 | Done | |
+| D2 | Partly done | Browser side done (no overlapping polls, newest request wins, newer status checks not dropped); server keeps requests inside the browser's deadline. Not done: a server-side AI state machine with cancel of a running generation. |
+| D3 | Partly done | Loading now checks *available* memory. Not done: running inference in a child process (packaging change, needs the installer smoke test on Windows). |
+| E1, E2, E3, E5, E7 | Done | E7: [WHAT_RESULTS_MEAN.md](../WHAT_RESULTS_MEAN.md). |
+| E4 | Partly done | The failure, verification and settle logic of `apply_page_edits` are now separate functions exercised by the sweep; the full plan/execute/verify/restore split was not done, to avoid a large refactor of the live path before T3-1. |
+| E6 | Partly done | Scans of each connected state with no dialog added. NVDA and Narrator passes need a person. |
+| F1 to F5 | **Not done: need real machines, the owner and elapsed time.** | |
 
 ## Rules for the whole programme
 

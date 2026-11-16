@@ -178,11 +178,54 @@ def test_wait_for_returns_the_first_truthy_value(monkeypatch):
 
 
 def test_wait_for_raises_with_the_given_message_on_timeout(monkeypatch):
-    ticks = iter([0, 0, 100])
-    monkeypatch.setattr(uia.time, "monotonic", lambda: next(ticks))
-    monkeypatch.setattr(uia.time, "sleep", lambda _seconds: None)
+    clock = [0.0]
+    monkeypatch.setattr(uia.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(uia.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
     with pytest.raises(PagesetError, match="gave up"):
         uia.wait_for(lambda: None, "gave up", timeout=1)
+
+
+def test_wait_for_polls_a_minimum_number_of_times_and_once_after_the_deadline(monkeypatch):
+    """REL-017: a short timeout on a slow PC used to get one or two polls,
+    and a value arriving during the last sleep was never seen."""
+    clock = [0.0]
+    monkeypatch.setattr(uia.time, "monotonic", lambda: clock[0])
+    # Each poll is a slow tree walk: 5 s, far past a 2 s timeout.
+    calls = []
+
+    def slow_callback():
+        calls.append(clock[0])
+        clock[0] += 5
+        return None
+
+    monkeypatch.setattr(uia.time, "sleep", lambda seconds: None)
+    with pytest.raises(PagesetError):
+        uia.wait_for(slow_callback, "x", timeout=2)
+    assert len(calls) == uia.WAIT_MIN_POLLS
+
+    # The value appears during the final sleep; the last poll catches it.
+    clock[0] = 0.0
+    state = {"n": 0}
+
+    def arrives_late():
+        state["n"] += 1
+        return "ready" if clock[0] >= 1.0 else None
+
+    monkeypatch.setattr(uia.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + 1.0))
+    assert uia.wait_for(arrives_late, "x", timeout=1, min_polls=1) == "ready"
+
+
+def test_wait_for_polls_again_when_the_element_vanished(monkeypatch):
+    monkeypatch.setattr(uia.time, "sleep", lambda _s: None)
+    attempts = []
+
+    def repainting():
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise OSError("element not available")
+        return "found"
+
+    assert uia.wait_for(repainting, "x") == "found"
 
 
 def test_wait_for_ignore_swallows_only_named_exceptions(monkeypatch):
@@ -228,3 +271,49 @@ def test_process_helpers_return_none_off_windows(monkeypatch):
 def test_process_helpers_return_none_for_falsy_process_id():
     assert uia.process_app_user_model_id(0) is None
     assert uia.process_image_path(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Foreground and integrity (REL-005, REL-023, roadmap C1)
+
+
+def test_raw_input_is_refused_when_the_window_is_not_in_front(monkeypatch):
+    states = iter([(False, False), (False, False)])
+    monkeypatch.setattr(uia, "foreground_state", lambda _w: next(states))
+    monkeypatch.setattr(uia.time, "sleep", lambda _s: None)
+    focused = []
+    window = SimpleNamespace(NativeWindowHandle=0, SetFocus=lambda: focused.append(1))
+    with pytest.raises(PagesetError, match="Click on TD Snap") as caught:
+        uia.require_foreground(window, "TD Snap")
+    assert caught.value.code == "NOT_FOREGROUND"
+    # One ordinary request for the foreground, never a forced one.
+    assert focused == [1]
+
+
+def test_raw_input_goes_ahead_once_the_window_is_in_front(monkeypatch):
+    states = iter([(False, False), (True, True)])
+    monkeypatch.setattr(uia, "foreground_state", lambda _w: next(states))
+    monkeypatch.setattr(uia.time, "sleep", lambda _s: None)
+    uia.require_foreground(SimpleNamespace(NativeWindowHandle=0, SetFocus=lambda: None), "TD Snap")
+
+
+def test_another_window_of_the_same_process_is_only_accepted_when_asked(monkeypatch):
+    monkeypatch.setattr(uia, "foreground_state", lambda _w: (False, True))
+    monkeypatch.setattr(uia.time, "sleep", lambda _s: None)
+    window = SimpleNamespace(NativeWindowHandle=0, SetFocus=lambda: None)
+    uia.require_foreground(window, "Grid 3", same_process_ok=True)
+    with pytest.raises(PagesetError):
+        uia.require_foreground(window, "TD Snap")
+
+
+def test_an_elevated_aac_app_is_refused_at_connect(monkeypatch):
+    levels = {1234: 0x3000, uia.os.getpid(): 0x2000}
+    monkeypatch.setattr(uia, "process_integrity_level", lambda pid: levels.get(pid))
+    with pytest.raises(PagesetError) as caught:
+        uia.require_not_more_elevated(SimpleNamespace(ProcessId=1234), "TD Snap")
+    assert caught.value.code == "ELEVATION_MISMATCH"
+    levels[1234] = 0x2000
+    uia.require_not_more_elevated(SimpleNamespace(ProcessId=1234), "TD Snap")
+    # Unknown levels (off Windows, or unreadable) never refuse.
+    monkeypatch.setattr(uia, "process_integrity_level", lambda pid: None)
+    uia.require_not_more_elevated(SimpleNamespace(ProcessId=1234), "TD Snap")

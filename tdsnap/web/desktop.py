@@ -16,19 +16,25 @@ falls back to the classic browser mode so the app still works.
 
 import contextlib
 import ctypes
+import json
 import os
+import sqlite3
 import subprocess
 import sys
 import threading
-import time
 import urllib.request
+import zipfile
+import zlib
 from ctypes import wintypes
 from typing import Optional
 
 from ..errors import PagesetError
-from . import localhttp, server
+from . import instance, localhttp, server
 
 WINDOW_TITLE = "AAC Editor"
+# What a damaged or hostile file raises while being read (doc 02, minor).
+_DAMAGED = (sqlite3.Error, zipfile.BadZipFile, zlib.error, ValueError, KeyError)
+
 FILE_TYPES = ("TD Snap page sets (*.sps;*.spb)", "All files (*.*)")
 
 
@@ -60,6 +66,12 @@ class NativeApi:
             return server.open_path(path)
         except (PagesetError, OSError) as exc:
             return {"ok": False, "error": str(exc)}
+        except _DAMAGED as exc:
+            # A corrupt file used to raise straight through to the window.
+            return {"ok": False, "code": "FILE_INVALID", "error": (
+                "This file could not be read as a page set; it may be damaged "
+                f"({type(exc).__name__}). Nothing was changed."
+            )}
 
     def save_pageset(self, session_id):
         """Native save dialog → write the edited copy where the user picks."""
@@ -77,8 +89,15 @@ class NativeApi:
             path = chosen[0] if isinstance(chosen, (list, tuple)) else chosen
             server.save_current_as(session_id, path)
             return {"ok": True, "path": path}
-        except (PagesetError, OSError) as exc:
+        except PagesetError as exc:
+            return {"ok": False, "code": getattr(exc, "code", None), "error": str(exc)}
+        except OSError as exc:
             return {"ok": False, "error": str(exc)}
+        except _DAMAGED as exc:
+            return {"ok": False, "code": "SAVE_INVALID", "error": (
+                f"The edited copy could not be saved ({type(exc).__name__}). "
+                "The working copy is unchanged."
+            )}
 
     def restart_elevated_for_grid3(self):
         """Request UAC elevation, leaving this instance intact on cancel."""
@@ -155,6 +174,33 @@ def _bring_to_front(window) -> None:
         pass
 
 
+def _closing_allowed(window) -> bool:
+    """Whether the window may close now (REL-007).
+
+    Closing the window stops the server and its daemon automation thread, so
+    closing mid-edit used to abandon TD Snap or Grid 3 wherever the sequence
+    had got to. While an edit runs the close is cancelled and the page says
+    why; it can be closed as soon as the edit finishes.
+    """
+    reason = server.busy_reason()
+    if reason is None:
+        return True
+    with contextlib.suppress(Exception):
+        window.evaluate_js(
+            "window.aacCloseBlocked && window.aacCloseBlocked(" + json.dumps(reason) + ")"
+        )
+    return False
+
+
+def _guard_closing(window) -> None:
+    events = getattr(window, "events", None)
+    closing = getattr(events, "closing", None)
+    if closing is None:
+        return
+    with contextlib.suppress(Exception):
+        closing += lambda: _closing_allowed(window)
+
+
 def run_desktop(
     port: int = server.DEFAULT_PORT,
     *,
@@ -168,12 +214,21 @@ def run_desktop(
         server.run(port=port)
         return
 
-    if replace_instance:
-        deadline = time.monotonic() + 20
-        while server.instance_running(port) and time.monotonic() < deadline:
-            time.sleep(0.2)
+    # REL-010: one copy per user, decided by a lock taken before anything
+    # else. A copy restarting itself (administrator restart for Grid 3) waits
+    # for the old one to let go.
+    if not instance.acquire(wait=20 if replace_instance else 0):
+        _focus_running(instance.running_port() or port)
+        return
+    try:
+        _run_desktop_holding_lock(webview, port, initial_provider)
+    finally:
+        instance.release()
 
+
+def _run_desktop_holding_lock(webview, port, initial_provider) -> None:
     if server.instance_running(port):
+        # An older version without the lock is still serving this port.
         _focus_running(port)
         return
 
@@ -183,6 +238,8 @@ def run_desktop(
         url += "/?provider=grid3"
     server.set_native(True)
     flask_server = server.make_server(port)
+    instance.record_port(port)
+    server.record_start(port, "native")
 
     serve_thread = threading.Thread(target=flask_server.serve_forever, daemon=True)
     serve_thread.start()
@@ -199,6 +256,7 @@ def run_desktop(
         )
         api._window = window
         server.set_focus_handler(lambda: _bring_to_front(window))
+        _guard_closing(window)
         _lock_down_webview(webview)
         # private_mode keeps the embedded browser from leaving anything behind: no
         # cookies, no local storage, no cache. Its profile is deleted when the window

@@ -1,5 +1,6 @@
 """Format detection, the structure-only inspect report, and the CLI's .gridset paths."""
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -103,7 +104,9 @@ def test_inspect_other_files(tmp_path):
     report = formats.inspect(str(xml))
     assert report["container"] == "other" and report["xml_root"] == "Root"
     noise = tmp_path / "b.dat"
-    noise.write_bytes(os.urandom(1024))
+    # Fixed high-entropy bytes: os.urandom occasionally produced a prefix
+    # the inspector recognised, which made this test fail one run in many.
+    noise.write_bytes(b"".join(hashlib.sha256(bytes([i])).digest() for i in range(32)))
     assert formats.inspect(str(noise))["encrypted_looking"] is True
     data = tmp_path / "c.json"
     data.write_text('{"boards": [], "name": "Sam"}')

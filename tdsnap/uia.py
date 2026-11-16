@@ -63,7 +63,9 @@ deliberate choice, not an oversight:
   operation implemented twice.
 """
 
+import contextlib
 import ctypes
+import os
 import queue
 import statistics
 import sys
@@ -97,6 +99,31 @@ def _initialize_com():
     return auto.UIAutomationInitializerInThread()
 
 
+# ---------------------------------------------------------------------------
+# Cancellation (REL-011, roadmap C5)
+#
+# A job that passes its deadline is abandoned by its caller but may still be
+# running on the automation thread, blocked in a call into an unresponsive
+# app. It is told to stop: every wait and every raw input checks the flag and
+# raises, so an abandoned read cannot go on to navigate TD Snap after the
+# person has moved on, and an abandoned write presses nothing more.
+
+_current_job = threading.local()
+
+
+class Cancelled(PagesetError):
+    """Raised inside an abandoned job at its next wait or input."""
+
+
+def check_cancelled() -> None:
+    flag = getattr(_current_job, "cancel", None)
+    if flag is not None and flag.is_set():
+        raise Cancelled(
+            "The operation was stopped because the AAC app took too long to respond.",
+            code="AUTOMATION_DEADLINE",
+        )
+
+
 class AutomationThread:
     """Run every TD Snap and Grid 3 automation call on one long-lived thread.
 
@@ -111,6 +138,9 @@ class AutomationThread:
         self._jobs = queue.SimpleQueue()
         self._thread = None
         self._start_lock = threading.Lock()
+        # The cancel flag of the job running now, if any. Set while a job
+        # whose caller gave up is still stuck inside the AAC app.
+        self._running = None
 
     def _loop(self):
         initializer = None
@@ -121,7 +151,9 @@ class AutomationThread:
         else:
             startup_error = None
         while True:
-            call, outcome, done = self._jobs.get()
+            call, outcome, done, cancel = self._jobs.get()
+            _current_job.cancel = cancel
+            self._running = cancel
             try:
                 if startup_error is not None:
                     raise PagesetError(
@@ -131,6 +163,8 @@ class AutomationThread:
             except BaseException as exc:  # handed back to the waiting caller
                 outcome["error"] = exc
             finally:
+                _current_job.cancel = None
+                self._running = None
                 done.set()
         del initializer  # pragma: no cover - the loop never exits
 
@@ -142,15 +176,38 @@ class AutomationThread:
                 )
                 self._thread.start()
 
-    def run(self, call):
-        """Run *call* on the automation thread and return what it returns."""
+    def busy_with_abandoned_job(self) -> bool:
+        running = self._running
+        return running is not None and running.is_set()
+
+    def run(self, call, deadline=None):
+        """Run *call* on the automation thread and return what it returns.
+
+        With *deadline* (seconds), a call that has not finished in time is
+        abandoned: it is told to stop at its next wait or input, and the
+        caller gets AUTOMATION_DEADLINE. While an abandoned call is still
+        stuck in the AAC app, nothing new is queued behind it (REL-011:
+        every later live request used to wait for ever).
+        """
         if threading.current_thread() is self._thread:
             return call()
+        if self.busy_with_abandoned_job():
+            raise PagesetError(
+                "The AAC app is still not responding to the last request. Check it is "
+                "running normally, then try again.",
+                code="AUTOMATION_DEADLINE",
+            )
         self._ensure_started()
         outcome = {}
         done = threading.Event()
-        self._jobs.put((call, outcome, done))
-        done.wait()
+        cancel = threading.Event()
+        self._jobs.put((call, outcome, done, cancel))
+        if not done.wait(deadline):
+            cancel.set()
+            raise PagesetError(
+                "The AAC app stopped responding, so AAC Editor stopped waiting for it.",
+                code="AUTOMATION_DEADLINE",
+            )
         if "error" in outcome:
             raise outcome["error"]
         return outcome.get("result")
@@ -238,6 +295,7 @@ def activate(
     *missing_message* and *busy_message* let each product name itself in the
     two errors this can raise; the activation logic itself is identical.
     """
+    check_cancelled()
     if control is None:
         raise PagesetError(missing_message)
     getter = getattr(control, "GetInvokePattern", None)
@@ -266,25 +324,66 @@ def activate(
 # polling
 
 WAIT_DEFAULT_TIMEOUT = 8
+# Every wait gets at least this many polls, however short its timeout: a
+# 2 s wait on a slow PC used to get one or two tree walks (REL-017).
+WAIT_MIN_POLLS = 3
+
+# What a UI Automation read raises when the element went away between being
+# found and being read: COMError from comtypes on Windows, OSError otherwise.
+try:  # pragma: no cover - Windows only
+    from _ctypes import COMError as _COMError
+
+    VANISHED = (OSError, _COMError)
+except ImportError:  # pragma: no cover - non-Windows interpreters
+    VANISHED = (OSError,)
 
 
-def wait_for(callback, message, timeout=WAIT_DEFAULT_TIMEOUT, ignore=()):
+def wait_for(callback, message, timeout=WAIT_DEFAULT_TIMEOUT, ignore=(),
+             min_polls=WAIT_MIN_POLLS):
     """Poll *callback* until truthy, or raise ``PagesetError(message)``.
 
-    *ignore* names exception types that count as "not yet" instead of a hard
-    failure — see the module docstring for why this is a caller-supplied
-    parameter rather than a hard-coded default.
+    REL-017, roadmap C2:
+
+    - an element that vanishes during a read (the AAC app repainted) counts
+      as "not yet" and is polled again, instead of failing the operation;
+    - there is always one poll after the deadline has passed, so a value that
+      arrived during the last sleep is not missed;
+    - the wait lasts at least *timeout* seconds **and** *min_polls* polls.
+
+    *ignore* names further exception types that count as "not yet"; see the
+    module docstring for why that is a caller-supplied parameter.
     """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    started = time.monotonic()
+    deadline = started + timeout
+    polls = 0
+    tolerated = (*VANISHED, *tuple(ignore or ()))
+    while True:
+        check_cancelled()
+        polls += 1
         try:
             value = callback()
-        except ignore:
+        except tolerated:
             value = None
         if value:
+            _note_wait(started, polls, "ok")
             return value
+        if time.monotonic() >= deadline and polls >= min_polls:
+            break
         time.sleep(0.15)
+    _note_wait(started, polls, "timeout")
     raise PagesetError(message)
+
+
+def _note_wait(started: float, polls: int, result: str) -> None:
+    """A step record for diagnostic mode: how long a wait took and how many
+    polls it got. That is the evidence for or against REL-017."""
+    try:
+        from .web import oplog
+
+        oplog.step("wait", polls=polls, ms=int((time.monotonic() - started) * 1000),
+                   result=result)
+    except Exception:  # noqa: S110 - logging must never change what a wait does
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -348,3 +447,148 @@ def process_image_path(process_id: int):
     finally:
         kernel32.CloseHandle(process)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Foreground (REL-005, roadmap C1)
+#
+# Raw input (a mouse click at screen coordinates, a drag, a key press) goes
+# to whichever window is in front. TD Snap's path used to call SetFocus once
+# per edit and ignore the result; Grid 3's checked the foreground *process*
+# before every key. Both now go through require_foreground before every raw
+# input. Windows may refuse to hand the foreground to a background process;
+# nothing here tries to force it. A minimised window is restored, one
+# ordinary focus request is made, and if the AAC app is still not in front
+# the step is refused and the person is asked to click it.
+
+_GA_ROOT = 2
+_SW_RESTORE = 9
+
+
+def _user32():
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    return user32
+
+
+def foreground_state(window) -> tuple:
+    """``(window_in_front, process_in_front)`` for *window*; both True off Windows."""
+    if sys.platform != "win32":
+        return True, True
+    handle = getattr(window, "NativeWindowHandle", 0)
+    if not handle:
+        return False, False
+    user32 = _user32()
+    foreground = user32.GetForegroundWindow()
+    if not foreground:
+        return False, False
+    root = user32.GetAncestor(foreground, _GA_ROOT) or foreground
+    process_id = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(foreground, ctypes.byref(process_id))
+    same_window = int(root or 0) == int(handle) or int(foreground) == int(handle)
+    return same_window, process_id.value == getattr(window, "ProcessId", -1)
+
+
+def require_foreground(window, app_name: str, *, same_process_ok: bool = False) -> None:
+    """Refuse a raw input unless *window* is the window in front.
+
+    *same_process_ok* accepts any window of the same process: Grid 3 drives
+    its own Create Cell dialogs by keyboard, so for Grid 3 the check stays
+    per process until session T3-1 shows those dialogs' window identity.
+    """
+    check_cancelled()
+    window_ok, process_ok = foreground_state(window)
+    if window_ok or (same_process_ok and process_ok):
+        return
+    handle = getattr(window, "NativeWindowHandle", 0)
+    if sys.platform == "win32" and handle:
+        user32 = _user32()
+        if user32.IsIconic(handle):
+            user32.ShowWindow(handle, _SW_RESTORE)
+            time.sleep(0.3)
+    with contextlib.suppress(Exception):
+        window.SetFocus()
+        time.sleep(0.2)
+    window_ok, process_ok = foreground_state(window)
+    if window_ok or (same_process_ok and process_ok):
+        return
+    raise PagesetError(
+        f"{app_name} is not the window in front, so AAC Editor sent nothing to it. "
+        f"Click on {app_name} to bring it to the front, then try again.",
+        code="NOT_FOREGROUND",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Integrity level (REL-023)
+#
+# Windows silently drops input sent to a process running at a higher
+# integrity level (an elevated app) from a lower one. That used to show up
+# only as timeouts such as "TD Snap did not open a button in the empty cell".
+
+_TOKEN_QUERY = 0x0008
+_TOKEN_INTEGRITY_LEVEL = 25
+
+
+def process_integrity_level(process_id: int):
+    """The mandatory integrity RID of *process_id* (e.g. 0x2000 medium,
+    0x3000 high), or None when it cannot be read or off Windows."""
+    if sys.platform != "win32" or not process_id:
+        return None
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        advapi32.OpenProcessToken.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+        advapi32.GetTokenInformation.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD)]
+        advapi32.GetSidSubAuthorityCount.argtypes = [ctypes.c_void_p]
+        advapi32.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
+        advapi32.GetSidSubAuthority.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+        advapi32.GetSidSubAuthority.restype = ctypes.POINTER(wintypes.DWORD)
+        process = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, process_id)
+        if not process:
+            return None
+        try:
+            token = wintypes.HANDLE()
+            if not advapi32.OpenProcessToken(process, _TOKEN_QUERY, ctypes.byref(token)):
+                return None
+            try:
+                size = wintypes.DWORD()
+                advapi32.GetTokenInformation(
+                    token, _TOKEN_INTEGRITY_LEVEL, None, 0, ctypes.byref(size))
+                buffer = ctypes.create_string_buffer(size.value)
+                if not advapi32.GetTokenInformation(
+                        token, _TOKEN_INTEGRITY_LEVEL, buffer, size, ctypes.byref(size)):
+                    return None
+                sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+                count = advapi32.GetSidSubAuthorityCount(sid)[0]
+                return int(advapi32.GetSidSubAuthority(sid, count - 1)[0])
+            finally:
+                kernel32.CloseHandle(token)
+        finally:
+            kernel32.CloseHandle(process)
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
+def require_not_more_elevated(window, app_name: str) -> None:
+    """Refuse, at connect, when the AAC app runs above this app's integrity."""
+    theirs = process_integrity_level(getattr(window, "ProcessId", 0))
+    ours = process_integrity_level(os.getpid())
+    if theirs is not None and ours is not None and theirs > ours:
+        raise PagesetError(
+            f"{app_name} is running as administrator and AAC Editor is not, so Windows "
+            f"would silently drop every click AAC Editor sends it. Close {app_name} and "
+            "start it normally (not with Run as administrator), then try again.",
+            code="ELEVATION_MISMATCH",
+        )

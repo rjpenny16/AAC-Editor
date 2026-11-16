@@ -35,12 +35,13 @@ import urllib.request
 import zipfile
 from typing import Optional
 
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, g, jsonify, request, send_file, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 from .. import (
     __version__,
     builder,
+    errors,
     formats,
     grid3,
     gridset,
@@ -54,13 +55,16 @@ from .. import (
 from ..atomic import atomic_copy, atomic_write, replace_durably
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
+from ..sqliteuri import sqlite_ro_uri
 from . import (
     diagnostics,
     engines,
     grounding,
+    instance,
     localai,
     localhttp,
     ollama,
+    oplog,
     prompts,
     settings,
 )
@@ -69,10 +73,15 @@ APP_ID = "aac-editor"
 DEFAULT_PORT = 8765
 MAX_UPLOAD_BYTES = 512 * 1024 * 1024  # page sets with media can be large
 SESSION_MAX_AGE = 24 * 60 * 60  # leftover session dirs older than this are removed
+# A working copy with edits that were never saved is kept across exit and
+# offered at the next start (REL-007), for at most this long.
+UNSAVED_MAX_AGE = 7 * 24 * 60 * 60
 MAX_ACTIVE_SESSIONS = 4
 # How slow a first suggestion round may be and still earn a second one. The
 # browser gives a generation 150 seconds; two rounds have to fit inside that.
 RETRY_BUDGET_SECONDS = 45
+# Inside the browser's 150 s for a suggestion request (state.js).
+AI_REQUEST_DEADLINE_SECONDS = 130
 MAX_SESSION_STORAGE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ITEMS = 200
 MAX_TITLE_CHARS = 60
@@ -96,9 +105,91 @@ _AUTOMATION = uia.AutomationThread()
 
 
 def _drive(call):
-    """Run one TD Snap or Grid 3 automation call, alone, on the automation thread."""
+    """Run one TD Snap or Grid 3 automation call, alone, on the automation thread.
+
+    The request's operation (see oplog) is bound on the automation thread too,
+    so live.py and grid3.py can note fallbacks, steps and Undo presses on it.
+    """
+    op = _current_op()
+    writing = _is_live_write()
+    journaled = op is not None and writing
+    if writing and _live_lock_state["op"] is not None:
+        raise PagesetError(
+            "The last edit stopped part-way because the AAC app stopped responding "
+            f"(reference {_live_lock_state['op']}). Check that page in the AAC app, then "
+            "choose Reconnect before making another edit.",
+            code="LIVE_LOCKED",
+        )
+    deadline = WRITE_DEADLINE_SECONDS if writing else READ_DEADLINE_SECONDS
+
+    def bound_call():
+        with oplog.bound(op):
+            return call()
+
     with _LIVE_LOCK:
-        return _AUTOMATION.run(call)
+        if journaled:
+            oplog.journal_begin(op.id, op.app, op.kind)
+        outcome = errors.UNKNOWN
+        try:
+            result = _AUTOMATION.run(bound_call, deadline=deadline)
+            if isinstance(result, dict):
+                outcome = result.get("outcome") or "ok"
+            return result
+        except PagesetError as exc:
+            outcome = errors.outcome_of(exc)
+            if writing and getattr(exc, "code", None) == "AUTOMATION_DEADLINE" \
+                    and not isinstance(exc, uia.Cancelled):
+                # REL-011: a write past its deadline leaves the page in an
+                # unknown state; live editing stays locked until the person
+                # has checked it and reconnected.
+                _live_lock_state["op"] = op.id if op is not None else "?"
+                outcome = errors.UNKNOWN
+                raise PagesetError(
+                    "The AAC app stopped responding during the edit, so AAC Editor "
+                    "stopped. Check this page in the AAC app before doing anything else, "
+                    "then choose Reconnect.",
+                    code="AUTOMATION_DEADLINE", outcome=errors.UNKNOWN, page_touched=True,
+                ) from exc
+            raise
+        except BaseException as exc:
+            outcome = errors.outcome_of(exc)
+            raise
+        finally:
+            if journaled:
+                oplog.journal_end(op.id, outcome)
+
+
+# REL-011: automation calls used to have no deadline, so one hung call into an
+# unresponsive app held the live lock for ever. Reads give up just before the
+# browser does; writes get long enough for a batch of several pages.
+READ_DEADLINE_SECONDS = 55
+WRITE_DEADLINE_SECONDS = 600
+# Set when a write passed its deadline: live writes are refused until the
+# person reconnects (POST /api/live/reconnect).
+_live_lock_state = {"op": None}
+
+
+# Requests that send input to TD Snap or Grid 3 and so are written to the
+# intent journal (doc 04 L15).
+_LIVE_WRITES = {
+    "/api/tdsnap/edit-plan", "/api/tdsnap/batch", "/api/tdsnap/undo", "/api/tdsnap/page",
+    "/api/grid3/edit-plan", "/api/grid3/undo", "/api/grid3/probe",
+}
+
+
+def _is_live_write() -> bool:
+    try:
+        rule = request.url_rule.rule if request.url_rule is not None else ""
+    except RuntimeError:
+        return False
+    return rule in _LIVE_WRITES
+
+
+def _current_op():
+    try:
+        return g.get("op")
+    except RuntimeError:  # outside a request
+        return None
 
 def _session_root_name() -> str:
     """One folder per user, so two people on one computer never share a folder.
@@ -472,7 +563,16 @@ def _validated_draft(value) -> Optional[dict]:
 
 
 def _session_storage_bytes(exclude: str = "") -> int:
+    """Bytes held by this process's open sessions.
+
+    REL-021: this used to count every folder on disk, including ones left by
+    crashes or by another copy of the app, so after a few crashes with large
+    page sets every open was refused as "would exceed the storage limit".
+    Leftovers are offered back or swept separately; they do not block work.
+    """
     total = 0
+    with _sessions_lock:
+        live = {os.path.realpath(session["dir"]) for session in _sessions.values()}
     try:
         entries = os.scandir(_SESSION_ROOT)
     except OSError:
@@ -480,6 +580,8 @@ def _session_storage_bytes(exclude: str = "") -> int:
     with entries:
         for entry in entries:
             if not entry.is_dir(follow_symlinks=False) or entry.path == exclude:
+                continue
+            if os.path.realpath(entry.path) not in live:
                 continue
             for root, _, files in os.walk(entry.path):
                 for name in files:
@@ -497,6 +599,26 @@ def release_session(session_id: str) -> None:
 
 def _has_unsaved_edits(session: dict) -> bool:
     return session.get("edits", 0) > session.get("saved_edits", 0)
+
+
+def _mark_saved(session: dict) -> None:
+    """Record that everything so far was saved, on disk as well as in memory,
+    so a rebuilt session does not claim unsaved changes (REL-021)."""
+    session["saved_edits"] = session.get("edits", 0)
+    with contextlib.suppress(OSError, KeyError):
+        atomic_write(
+            os.path.join(session["dir"], "saved.json"),
+            json.dumps({"saved_edits": session["saved_edits"]}), prefix=".saved-",
+        )
+
+
+def _saved_edits_on_disk(session_dir: str) -> int:
+    try:
+        with open(os.path.join(session_dir, "saved.json"), encoding="utf-8") as handle:
+            value = json.load(handle).get("saved_edits", 0)
+        return value if isinstance(value, int) and value >= 0 else 0
+    except (OSError, ValueError, AttributeError):
+        return 0
 
 
 def _make_room_for_a_session() -> None:
@@ -521,13 +643,68 @@ def _make_room_for_a_session() -> None:
         release_session(session_id)
 
 
-def cleanup_sessions() -> None:
-    """Remove every sensitive temporary copy owned by this process."""
+def cleanup_sessions(*, keep_unsaved: bool = True) -> int:
+    """Remove this process's temporary copies at exit; return how many were kept.
+
+    REL-007: every working copy used to be deleted at exit, including ones
+    holding edits that were never saved. Those are now kept on disk and
+    offered at the next start (see ``recoverable_sessions``); everything
+    else is removed as before.
+    """
     with _sessions_lock:
         sessions = list(_sessions.values())
         _sessions.clear()
+    kept = 0
     for session in sessions:
+        if keep_unsaved and _has_unsaved_edits(session):
+            kept += 1
+            continue
         shutil.rmtree(session["dir"], ignore_errors=True)
+    return kept
+
+
+def unsaved_sessions() -> list:
+    """Open sessions with edits that have not been saved."""
+    with _sessions_lock:
+        return [
+            {"session_id": session_id, "filename": session.get("filename", ""),
+             "edits": session.get("edits", 0)}
+            for session_id, session in _sessions.items() if _has_unsaved_edits(session)
+        ]
+
+
+def recoverable_sessions() -> list:
+    """Working copies on disk, not open in this process, with unsaved edits.
+
+    What a previous run (closed, crashed or relaunched) left behind that is
+    worth offering back. Read-only: nothing is opened or changed.
+    """
+    with _sessions_lock:
+        live = {os.path.realpath(session["dir"]) for session in _sessions.values()}
+    try:
+        names = os.listdir(_SESSION_ROOT)
+    except OSError:
+        return []
+    found = []
+    for name in names:
+        path = os.path.join(_SESSION_ROOT, name)
+        if (
+            not _SESSION_ID.fullmatch(name) or os.path.islink(path)
+            or not os.path.isdir(path) or os.path.realpath(path) in live
+        ):
+            continue
+        try:
+            with open(os.path.join(path, "meta.json"), encoding="utf-8") as handle:
+                meta = json.load(handle)
+            edits = int(meta.get("edits", 0))
+            filename = meta["filename"]
+            modified = os.path.getmtime(os.path.join(path, "current"))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if edits > _saved_edits_on_disk(path) and isinstance(filename, str):
+            found.append({"session_id": name, "filename": filename, "edits": edits,
+                          "modified": modified})
+    return sorted(found, key=lambda item: -item["modified"])
 
 
 def clear_leftover_sessions() -> tuple[int, int]:
@@ -601,6 +778,7 @@ def _rehydrate_session(session_id: str):
         filename = meta["filename"]
         baseline_warnings = meta.get("baseline_warnings", [])
         edits = int(meta.get("edits", 0))
+        saved_edits = _saved_edits_on_disk(session_dir)
     except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
         return None
     # A hand-edited or truncated meta file must read as "no session", not as a
@@ -617,6 +795,7 @@ def _rehydrate_session(session_id: str):
         "filename": filename,
         "baseline_warnings": baseline_warnings,
         "edits": edits,
+        "saved_edits": min(saved_edits, edits),
         "last_access": time.time(),
         "lock": threading.Lock(),
     }
@@ -656,6 +835,27 @@ def _current_path(session_id: str) -> str:
     return os.path.join(_session_dir(session_id), "current")
 
 
+def _read_current(session_id: str, read):
+    """Run *read(current)* holding the session lock (REL-020, roadmap C8).
+
+    The vocabulary and layout reads run in the background while the person
+    works. On Windows, replacing a file that any handle has open fails, so a
+    read that overlapped an edit's replace made the edit fail with "another
+    program is using the file". Reads and replaces of one session's working
+    copy now take turns.
+    """
+    session = _session_record(session_id)
+    current = os.path.join(session["dir"], "current")
+    with session["lock"]:
+        return read(current)
+
+
+def _ro_uri(path: str) -> str:
+    """A read-only SQLite URI for *path* that survives '#', '%', '?' and spaces
+    in folder names (REL-013)."""
+    return sqlite_ro_uri(path)
+
+
 def _is_gridset(path: str) -> bool:
     """True when a session's copy is a Grid 3 grid set rather than a TD Snap page set."""
     return not is_sqlite_file(path) and gridset.is_gridset_file(path)
@@ -665,7 +865,7 @@ def _list_pages(path: str):
     if _is_gridset(path):
         with gridset.GridsetFile(path) as source:
             return source.pages()
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = sqlite3.connect(_ro_uri(path), uri=True)
     conn.row_factory = sqlite3.Row
     try:
         return [
@@ -691,7 +891,7 @@ def _home_page_id(path: str) -> Optional[int]:
         with gridset.GridsetFile(path) as source:
             return source.home_page_id()
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+        with contextlib.closing(sqlite3.connect(_ro_uri(path), uri=True)) as conn:
             row = conn.execute(
                 "SELECT p.Id FROM Page p JOIN PageSetProperties s "
                 "ON p.UniqueId = s.DefaultHomePageUniqueId WHERE p.PageType = 1 LIMIT 1"
@@ -724,7 +924,7 @@ def _page_state(path: str, page_id: int, include_buttons: bool = True) -> dict:
     if _is_gridset(path):
         with gridset.GridsetFile(path) as source:
             return source.page_state(page_id, include_buttons=include_buttons)
-    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+    with contextlib.closing(sqlite3.connect(_ro_uri(path), uri=True)) as conn:
         conn.row_factory = sqlite3.Row
         layout = builder.layout_for_page(conn, page_id, pageset.grid_dimension(conn))
         cols, rows = schema.parse_grid(layout["PageLayoutSetting"])
@@ -889,6 +1089,12 @@ def open_path(path: str) -> dict:
     session_id, session_dir = _new_session_dir()
     try:
         shutil.copyfile(path, os.path.join(session_dir, "original"))
+        # Where it was opened from, so a save can refuse to write over it
+        # (REL-006). Kept beside the working copy, never logged.
+        atomic_write(
+            os.path.join(session_dir, "source.json"),
+            json.dumps({"path": os.path.realpath(path)}), prefix=".source-",
+        )
         return _register_session(session_id, session_dir, os.path.basename(path))
     except Exception:
         shutil.rmtree(session_dir, ignore_errors=True)
@@ -906,27 +1112,127 @@ def _default_extension(session_id: str) -> str:
     return ".gridset" if _is_gridset(_current_path(session_id)) else ".sps"
 
 
+def _source_path(session_id: str) -> Optional[str]:
+    """The file a natively opened session came from, if it was recorded."""
+    try:
+        with open(os.path.join(_session_dir(session_id), "source.json"), encoding="utf-8") as h:
+            path = json.load(h).get("path")
+    except (OSError, ValueError, AttributeError, PagesetError):
+        return None
+    return path if isinstance(path, str) and path else None
+
+
+def _same_file(first: str, second: str) -> bool:
+    """The guard Pageset.save_as uses: samefile, else normalised real paths."""
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return (
+            os.path.normcase(os.path.realpath(first))
+            == os.path.normcase(os.path.realpath(second))
+        )
+
+
+def _file_digest(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _check_saved_copy(saved: str, current: str) -> None:
+    """Re-open the saved copy and check it before "saved" is shown (F10).
+
+    It must be byte-for-byte the working copy, and must open as what it is:
+    a sound SQLite database for a TD Snap page set, a readable zip for a grid
+    set.
+    """
+    if _file_digest(saved) != _file_digest(current):
+        raise PagesetError(
+            "The saved copy does not match the edited working copy. Save again; "
+            "the working copy is unchanged.", code="SAVE_INVALID",
+        )
+    try:
+        if is_sqlite_file(saved):
+            with contextlib.closing(sqlite3.connect(_ro_uri(saved), uri=True)) as conn:
+                result = conn.execute("PRAGMA quick_check").fetchone()
+                if not result or result[0] != "ok":
+                    raise PagesetError("quick_check failed")
+        else:
+            with zipfile.ZipFile(saved) as archive:
+                if archive.testzip() is not None:
+                    raise PagesetError("zip entry failed")
+    except (sqlite3.Error, zipfile.BadZipFile, OSError, PagesetError) as exc:
+        raise PagesetError(
+            "The saved copy could not be re-opened cleanly. Save again to a different "
+            "place; the working copy is unchanged.", code="SAVE_INVALID",
+        ) from exc
+
+
 def save_current_as(session_id: str, dest_path: str) -> None:
-    """Write the current session copy to *dest_path*."""
+    """Write the current session copy to *dest_path*, then check it.
+
+    REL-006: this used to copy over whatever path the native dialog returned,
+    including the file the session was opened from, despite the promise in
+    docs/IMPORT_SAFETY.md that only a separate file is ever written. The
+    source is now refused, and the saved copy is re-opened and checked
+    before success is reported.
+    """
     current = _current_path(session_id)
     if not os.path.exists(current):
-        raise PagesetError("Nothing to save yet; re-upload the file.")
-    atomic_copy(current, dest_path, prefix=".aac-editor-")
+        raise PagesetError("Nothing to save yet; re-upload the file.", code="SESSION_EXPIRED")
+    source = _source_path(session_id)
+    if source and os.path.exists(dest_path) and _same_file(source, dest_path):
+        raise PagesetError(
+            "That is the original file. AAC Editor never saves over it, so the "
+            "original stays as it was. Choose a different name, such as the "
+            f"suggested {os.path.basename(edited_filename(session_id))!r}.",
+            code="SAVE_SAME_AS_SOURCE",
+        )
+    try:
+        atomic_copy(current, dest_path, prefix=".aac-editor-")
+    except PermissionError as exc:
+        raise PagesetError(
+            "The file could not be saved there: it is open in another program or the "
+            "folder is read-only. Close it or choose another folder; the working copy "
+            "is unchanged.", code="SAVE_LOCKED",
+        ) from exc
+    _check_saved_copy(dest_path, current)
     session = _sessions.get(session_id)
     if session is not None:
-        session["saved_edits"] = session.get("edits", 0)
+        _mark_saved(session)
+
+
+def _error_fields(exc) -> dict:
+    """Code, outcome and operation ID for an error reply.
+
+    The code and outcome come from the exception (errors.code_of and
+    errors.outcome_of), never from its message, so the browser can choose a
+    message and the user can quote the reference.
+    """
+    op = _current_op()
+    if op is not None:
+        op.fail(exc)
+    return {
+        "code": errors.code_of(exc),
+        "outcome": errors.outcome_of(exc),
+        "op": op.id if op is not None else None,
+    }
 
 
 @app.errorhandler(PagesetError)
 def _pageset_error(exc):
-    return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": False, "error": str(exc), **_error_fields(exc)}), 400
 
 
 @app.errorhandler(HTTPException)
 def _http_error(exc):
     if not request.path.startswith("/api/"):
         return exc
-    return jsonify({"ok": False, "error": exc.description}), exc.code
+    op = _current_op()
+    return jsonify({"ok": False, "error": exc.description, "code": "REFUSED",
+                    "outcome": errors.REFUSED, "op": op.id if op else None}), exc.code
 
 
 @app.errorhandler(Exception)
@@ -938,13 +1244,15 @@ def _unexpected_error(exc):
     in a sentence the user can act on, and keep the full traceback in the log.
     """
     app.logger.exception("Unhandled error in %s", request.path)
-    detail = str(exc).strip() or type(exc).__name__
+    # E1: the raw exception text used to be shown ("Something unexpected went
+    # wrong (...). Try again."). It can name a file or a button and tells the
+    # person nothing they can act on; its class and code go to the log and
+    # the support report, and the browser builds the rest of the message
+    # (what changed, is it safe, what next) from the outcome.
     return jsonify({
         "ok": False,
-        "error": (
-            f"Something unexpected went wrong ({detail[:200]}). Try again. If it keeps "
-            "happening, restart AAC Editor and copy a support report from the footer."
-        ),
+        "error": "AAC Editor ran into a problem it does not recognise.",
+        **_error_fields(exc),
     }), 500
 
 
@@ -1012,10 +1320,11 @@ _AUTOMATION_PREFIXES = ("/api/tdsnap/", "/api/grid3/")
 #   It has no input and no effect beyond bringing a window forward.
 # * the live .obz export is a plain browser download, which cannot carry a header.
 #   It only reads, and the page that triggers a download cannot read what arrives.
-# * /api/diagnostics (a GET, so not listed here) only reads, and returns nothing
-#   about a page set; it has to keep working when things are broken, including
-#   when the token never loaded.
 _TOKEN_FREE = {"/api/focus", "/api/tdsnap/export.obz"}
+# Reads that need the token even though they are GETs. /api/diagnostics probes
+# both AAC apps; without a token any web page could trigger it with an <img>
+# and stall live editing (REL-024). The diagnostic-mode state is the user's.
+_TOKEN_READS = {"/api/diagnostics", "/api/diagnostic-mode"}
 
 
 def _needs_token() -> bool:
@@ -1023,6 +1332,8 @@ def _needs_token() -> bool:
     if request.method == "OPTIONS" or path in _TOKEN_FREE:
         return False
     if request.method in ("POST", "PUT", "DELETE") or path.startswith("/api/ai/"):
+        return True
+    if path in _TOKEN_READS:
         return True
     return path.startswith(_AUTOMATION_PREFIXES)
 
@@ -1033,10 +1344,111 @@ def _require_api_token():
         return None
     supplied = request.headers.get("X-TDSnap-Token", "")
     if not secrets.compare_digest(supplied.encode("utf-8"), API_TOKEN.encode("utf-8")):
+        oplog.record(kind="request.token", outcome=errors.REFUSED, code="TOKEN_STALE")
         return jsonify(
-            {"ok": False, "error": "Missing or invalid API token; reload the page."}
+            {"ok": False, "error": "Missing or invalid API token; reload the page.",
+             "code": "TOKEN_STALE", "outcome": errors.REFUSED}
         ), 403
     return None
+
+
+# Requests recorded as operations in the local log (REL-025). Every write is
+# one, and so are the reads a person waits on. Background polls and the
+# settings autosave are not: they would bury the operations that matter.
+_LOGGED_READS = {
+    "/api/tdsnap/page-layout", "/api/grid3/page-layout", "/api/tdsnap/vocabulary",
+    "/api/pageset/<session_id>/vocabulary", "/api/pageset/<session_id>/download",
+    "/api/grid3/status",
+}
+_UNLOGGED_WRITES = {"/api/settings", "/api/focus", "/api/diagnostic-mode"}
+
+
+def _operation_kind(rule: str) -> str:
+    """"post:pageset.x.page.x.buttons" from a route template: no IDs, no names."""
+    shape = re.sub(r"<[^>]+>", "x", rule).strip("/").replace("/", ".")
+    if shape.startswith("api."):
+        shape = shape[4:]
+    return f"{request.method.lower()}:{shape}"[:64]
+
+
+def _operation_app(rule: str) -> Optional[str]:
+    for app_name in ("tdsnap", "grid3", "pageset", "obf", "ai"):
+        if rule.startswith(f"/api/{app_name}"):
+            return app_name
+    return None
+
+
+@app.before_request
+def _begin_operation():
+    rule = request.url_rule.rule if request.url_rule is not None else ""
+    if not rule.startswith("/api/"):
+        return None
+    logged = (
+        (request.method in ("POST", "PUT", "DELETE") and rule not in _UNLOGGED_WRITES)
+        or rule in _LOGGED_READS
+        # A status read the person asked for (connect), not the live poll.
+        or (rule == "/api/tdsnap/status" and not request.headers.get("X-TDSnap-Brief"))
+    )
+    if logged:
+        g.op = oplog.Operation(_operation_kind(rule), _operation_app(rule))
+        request_id = request.headers.get("X-AAC-Request", "")
+        if _REQUEST_ID.fullmatch(request_id):
+            g.request_id = request_id
+            _remember_result(request_id, {"done": False, "op": g.op.id})
+    return None
+
+
+# H-14 / roadmap C9: a write whose response is lost (the connection dropped,
+# the browser gave up) used to leave the person with "isn't responding, try
+# again", although the edit may have landed. The browser names each write
+# with a random request ID; its outcome is kept here, briefly, so the browser
+# can ask what happened instead of guessing or retrying.
+_REQUEST_ID = re.compile(r"[A-Za-z0-9-]{8,64}")
+_RESULTS_KEPT = 50
+_results: dict = {}
+_results_lock = threading.Lock()
+
+
+def _remember_result(request_id: str, result: dict) -> None:
+    with _results_lock:
+        _results[request_id] = result
+        while len(_results) > _RESULTS_KEPT:
+            _results.pop(next(iter(_results)))
+
+
+@app.get("/api/operation-result/<request_id>")
+def operation_result(request_id):
+    """What became of a write whose response never arrived."""
+    if not _REQUEST_ID.fullmatch(request_id or ""):
+        raise PagesetError("Unknown request.")
+    with _results_lock:
+        result = _results.get(request_id)
+    if result is None:
+        return jsonify({"ok": True, "known": False})
+    return jsonify({"ok": True, "known": True, **result})
+
+
+@app.after_request
+def _end_operation(response):
+    op = _current_op()
+    if op is None:
+        return response
+    response.headers["X-AAC-Op"] = op.id
+    outcome = op.outcome
+    if outcome is None and response.is_json and response.status_code < 400:
+        body = response.get_json(silent=True) or {}
+        reported = body.get("outcome") if isinstance(body, dict) else None
+        outcome = reported if reported in errors.OUTCOMES else None
+    if outcome is None:
+        outcome = "ok" if response.status_code < 400 else errors.REFUSED
+    op.finish(outcome, status=response.status_code)
+    request_id = g.get("request_id")
+    if request_id:
+        _remember_result(request_id, {
+            "done": True, "op": op.id, "outcome": outcome, "code": op.code,
+            "succeeded": response.status_code < 400,
+        })
+    return response
 
 
 @app.get("/api/health")
@@ -1054,13 +1466,44 @@ def config():
 
 @app.get("/api/diagnostics")
 def diagnostics_report():
-    """Environment facts for a bug report — never page-set content.
+    """Environment facts and recent operation records for a bug report —
+    never page-set content.
 
-    Probing TD Snap and Grid 3 walks their accessibility trees, so this takes
-    the same lock every other live call does.
+    REL-024: this used to run the whole report, model hashing and the Ollama
+    probe included, on the automation thread under the live lock, without a
+    token. Now it needs the token; the app and AI facts are gathered on this
+    request thread; and TD Snap and Grid 3 are only probed if the automation
+    thread is free within a moment, so a report never stalls a live edit and a
+    hung edit never stops a report being made.
     """
-    data = _drive(lambda: diagnostics.report(_runtime["native"]))
+    native = _runtime["native"]
+    if _LIVE_LOCK.acquire(timeout=2):
+        try:
+            live_facts = _AUTOMATION.run(diagnostics.live_report)
+        except Exception as exc:  # the report must still be produced
+            live_facts = {"tdsnap": {"probe_failed": type(exc).__name__},
+                          "grid3": {"probe_failed": type(exc).__name__}}
+        finally:
+            _LIVE_LOCK.release()
+    else:
+        busy = {"probe_skipped": "busy"}
+        live_facts = {"tdsnap": busy, "grid3": busy}
+    data = diagnostics.report(native, live_facts=live_facts)
     return jsonify({"ok": True, "report": data, "text": diagnostics.as_text(data)})
+
+
+@app.get("/api/diagnostic-mode")
+def get_diagnostic_mode():
+    return jsonify({"ok": True, **oplog.diagnostic_status()})
+
+
+@app.put("/api/diagnostic-mode")
+def put_diagnostic_mode():
+    """Switch diagnostic mode (step records in the log) on for 24 hours, or off."""
+    enabled = _json_payload().get("enabled")
+    if not isinstance(enabled, bool):
+        raise PagesetError("'enabled' must be true or false.")
+    return jsonify({"ok": True, **oplog.set_diagnostic(enabled)})
 
 
 @app.get("/api/settings")
@@ -1072,7 +1515,17 @@ def get_settings():
     A draft left by an older version is still returned once, so the person can
     resume or discard it rather than losing it unseen.
     """
-    data = settings.load()
+    try:
+        data = settings.load()
+    except OSError as exc:
+        # The file exists but cannot be read (locked by a sync client, or its
+        # permissions changed). Saying so beats a generic error, and nothing
+        # treats the saved work as empty (doc 02 minor finding).
+        raise PagesetError(
+            "AAC Editor could not read its saved settings just now. They have not "
+            "been changed. Close anything that might have the file open, then reload.",
+            code="REFUSED",
+        ) from exc
     return jsonify({
         "ok": True,
         "preferences": _validated_preferences(data["preferences"]),
@@ -1112,17 +1565,78 @@ def delete_settings():
     in use, so it stays until it is closed; the reply says how many.
     """
     settings.clear()
+    oplog.clear()
+    grid3.clear_backups()
     removed, in_use = clear_leftover_sessions()
     return jsonify({"ok": True, "working_copies_removed": removed, "working_copies_open": in_use})
 
 
+def busy_reason() -> Optional[str]:
+    """Why quitting now would abandon work in progress, or None."""
+    if _LIVE_LOCK.locked():
+        return "An edit to the AAC app is running. Wait for it to finish, then quit."
+    return None
+
+
 @app.post("/api/quit")
 def quit_app():
+    """Stop the app, unless that would abandon work (REL-007).
+
+    The automation thread is a daemon: quitting mid-edit used to stop the
+    sequence wherever it was, leaving TD Snap or Grid 3 in edit mode with
+    part of the edit applied and no rollback. Quit is refused while an edit
+    runs. With unsaved file edits it asks first (``force``), and those
+    working copies are kept and offered at the next start.
+    """
     shutdown = _runtime.get("shutdown")
     if shutdown is None:
         raise PagesetError("The app wasn't started in a stoppable mode.")
+    busy = busy_reason()
+    if busy:
+        return jsonify({"ok": False, "error": busy, "code": "BUSY",
+                        "outcome": errors.REFUSED}), 409
+    payload = request.get_json(silent=True) or {}
+    unsaved = unsaved_sessions()
+    if unsaved and payload.get("force") is not True:
+        return jsonify({
+            "ok": False, "code": "UNSAVED", "outcome": errors.REFUSED,
+            "unsaved": [{"filename": item["filename"], "edits": item["edits"]}
+                        for item in unsaved],
+            "error": "There are edits to an exported file that have not been saved. "
+                     "They will be kept and offered the next time AAC Editor starts.",
+        }), 409
     threading.Timer(0.3, shutdown).start()
+    return jsonify({"ok": True, "kept": len(unsaved)})
+
+
+@app.post("/api/live/reconnect")
+def live_reconnect():
+    """The person has checked the page after a stopped edit; allow edits again."""
+    if _AUTOMATION.busy_with_abandoned_job():
+        raise PagesetError(
+            "The AAC app is still not responding. Close it, open it again, then reconnect.",
+            code="AUTOMATION_DEADLINE",
+        )
+    _live_lock_state["op"] = None
     return jsonify({"ok": True})
+
+
+@app.get("/api/interrupted")
+def list_interrupted():
+    """Live edits an earlier run started and never finished (doc 04 L15)."""
+    return jsonify({"ok": True, "edits": oplog.interrupted()})
+
+
+@app.post("/api/interrupted/ack")
+def acknowledge_interrupted():
+    oplog.acknowledge_interrupted()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/pageset/recoverable")
+def list_recoverable():
+    """Edited copies a previous run left unsaved, newest first."""
+    return jsonify({"ok": True, "sessions": recoverable_sessions()})
 
 
 @app.post("/api/focus")
@@ -1418,7 +1932,7 @@ def pageset_summary(session_id):
         kind = formats.GRIDSET
     else:
         with contextlib.closing(
-            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+            sqlite3.connect(_ro_uri(current), uri=True)
         ) as conn:
             conn.row_factory = sqlite3.Row
             cols, rows = pageset.grid_dimension(conn)
@@ -1438,20 +1952,22 @@ def pageset_summary(session_id):
 
 @app.get("/api/pageset/<session_id>/pages")
 def pages(session_id):
-    current = _current_path(session_id)
-    return jsonify({"ok": True, "pages": _list_pages(current)})
+    return jsonify({"ok": True, "pages": _read_current(session_id, _list_pages)})
 
 
 @app.get("/api/pageset/<session_id>/page/<int:page_id>/capacity")
 def capacity(session_id, page_id):
-    current = _current_path(session_id)
-    return jsonify({"ok": True, "free_cells": _free_cells(current, page_id)})
+    free = _read_current(session_id, lambda current: _free_cells(current, page_id))
+    return jsonify({"ok": True, "free_cells": free})
 
 
 @app.get("/api/pageset/<session_id>/vocabulary")
 def pageset_vocabulary(session_id):
     """The exported-file counterpart of ``/api/tdsnap/vocabulary``."""
-    current = _current_path(session_id)
+    return _read_current(session_id, _vocabulary_of)
+
+
+def _vocabulary_of(current):
     if _is_gridset(current):
         with gridset.GridsetFile(current) as source:
             return jsonify({"ok": True, "available": True,
@@ -1459,7 +1975,7 @@ def pageset_vocabulary(session_id):
                             "samples": source.label_samples()})
     try:
         with contextlib.closing(
-            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+            sqlite3.connect(_ro_uri(current), uri=True)
         ) as conn:
             conn.row_factory = sqlite3.Row
             labels = pageset.labels_by_page(conn)
@@ -1474,8 +1990,62 @@ def pageset_vocabulary(session_id):
 @app.get("/api/pageset/<session_id>/page/<int:page_id>/layout")
 def page_layout(session_id, page_id):
     """The exported-file counterpart of ``/api/tdsnap/page-layout``."""
-    current = _current_path(session_id)
-    return jsonify({"ok": True, **_page_state(current, page_id)})
+    return jsonify({"ok": True, **_read_current(
+        session_id, lambda current: _page_state(current, page_id))})
+
+
+def _validated_file_edit(session, build, specific, fingerprint_check=None):
+    """One validate, snapshot, edit, check, save cycle for a TD Snap file (E3).
+
+    There were three near-identical copies of this block (add buttons, add a
+    page, import boards). *build(ps)* makes the edit and returns its report;
+    *specific(conn, report)* returns the edit's own problems. Nothing reaches
+    ``current`` unless every check passes, and ``current`` is replaced
+    atomically. *fingerprint_check* runs inside the session lock, so two
+    identical submissions cannot both pass it (doc 02 minor finding).
+
+    Returns ``(report, problems, checks)``; *problems* empty means saved.
+    """
+    current = os.path.join(session["dir"], "current")
+    scratch = os.path.join(session["dir"], "scratch")
+    # One edit at a time per session: concurrent requests would share the
+    # same scratch working copy and corrupt each other.
+    with session["lock"]:
+        if fingerprint_check is not None:
+            fingerprint_check()
+        with Pageset(current, working_copy=scratch, cleanup=True) as ps:
+            baseline = validate.validate_pageset(ps.conn)
+            before = validate.table_snapshot(ps.conn)
+            report = build(ps)
+            after = validate.table_snapshot(ps.conn)
+            result = validate.validate_pageset(ps.conn)
+            roundtrip = validate.check_roundtrip(before, after)
+            problems = (
+                roundtrip + specific(ps.conn, report) + result["problems"]
+                + validate.new_warnings(baseline, result)
+            )
+            checks = {
+                "sqlite_integrity": "pass",
+                "linkage_chains": "pass" if not problems else "fail",
+                "roundtrip_diff": "pass" if not roundtrip else "fail",
+            }
+            if problems:
+                return report, problems, checks
+            ps.save_as(current, allow_source_overwrite=True)
+            session["edits"] += 1
+            _write_session_meta(
+                session["dir"], session["filename"], session["baseline_warnings"],
+                session["edits"],
+            )
+    return report, [], checks
+
+
+def _validation_failed(problems, checks):
+    return jsonify(
+        {"ok": False, "error": "Validation failed; nothing was saved.",
+         "problems": problems, "checks": checks, "code": "REFUSED",
+         "outcome": errors.REFUSED}
+    ), 422
 
 
 @app.post("/api/pageset/<session_id>/page/<int:page_id>/buttons")
@@ -1497,43 +2067,23 @@ def add_buttons(session_id, page_id):
         )
     if _is_gridset(current):
         return _gridset_edit(session_id, page_id, items, (), (), (), fingerprint)
-    if _page_state(current, page_id)["fingerprint"] != fingerprint:
-        raise PagesetError(
-            "This page changed after the preview. Reload the page and review the "
-            "edit again."
-        )
     session = _session_record(session_id)
-    scratch = os.path.join(session["dir"], "scratch")
 
-    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
-        baseline = validate.validate_pageset(ps.conn)
-        before = validate.table_snapshot(ps.conn)
-        report = builder.add_buttons_to_page(ps, page_id, items)
-        after = validate.table_snapshot(ps.conn)
+    def unchanged_since_review():
+        if _page_state(current, page_id)["fingerprint"] != fingerprint:
+            raise PagesetError(
+                "This page changed after the preview. Reload the page and review the "
+                "edit again.", code="FINGERPRINT_CHANGED",
+            )
 
-        result = validate.validate_pageset(ps.conn)
-        roundtrip = validate.check_roundtrip(before, after)
-        problems = (
-            roundtrip
-            + validate.validate_added_buttons(ps.conn, report)
-            + result["problems"]
-            + validate.new_warnings(baseline, result)
-        )
-        checks = {
-            "sqlite_integrity": "pass",
-            "linkage_chains": "pass" if not problems else "fail",
-            "roundtrip_diff": "pass" if not roundtrip else "fail",
-        }
-        if problems:
-            return jsonify(
-                {"ok": False, "error": "Validation failed; nothing was saved.",
-                 "problems": problems, "checks": checks}
-            ), 422
-        ps.save_as(current, allow_source_overwrite=True)
-        session["edits"] += 1
-        _write_session_meta(
-            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
-        )
+    report, problems, checks = _validated_file_edit(
+        session,
+        lambda ps: builder.add_buttons_to_page(ps, page_id, items),
+        validate.validate_added_buttons,
+        unchanged_since_review,
+    )
+    if problems:
+        return _validation_failed(problems, checks)
     checks["target_page"] = "pass"
     checks["positions"] = "pass"
     return jsonify(
@@ -1562,7 +2112,6 @@ def add_page(session_id):
 
     session = _session_record(session_id)  # raises, and rehydrates from disk, as needed
     current = os.path.join(session["dir"], "current")
-    scratch = os.path.join(session["dir"], "scratch")
     if _is_gridset(current):
         report, failure = _gridset_write(session_id, lambda source, dest: gridset.add_grid(
             source, dest, title, items, parent_page_id))
@@ -1575,37 +2124,13 @@ def add_page(session_id):
             "warnings": report["warnings"], "edits": session["edits"],
         })
 
-    # One edit at a time per session: concurrent requests would share the
-    # same scratch working copy and corrupt each other.
-    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
-        baseline = validate.validate_pageset(ps.conn)
-        before = validate.table_snapshot(ps.conn)
-        report = builder.add_category_page(ps, title, items, parent_page_id)
-        after = validate.table_snapshot(ps.conn)
-
-        result = validate.validate_pageset(ps.conn)
-        roundtrip = validate.check_roundtrip(before, after)
-        problems = (
-            roundtrip
-            + validate.validate_new_page(ps.conn, report)
-            + result["problems"]
-            + validate.new_warnings(baseline, result)
-        )
-        checks = {
-            "sqlite_integrity": "pass",
-            "linkage_chains": "pass" if not problems else "fail",
-            "roundtrip_diff": "pass" if not roundtrip else "fail",
-        }
-        if problems:
-            return jsonify(
-                {"ok": False, "error": "Validation failed; nothing was saved.",
-                 "problems": problems, "checks": checks}
-            ), 422
-        ps.save_as(current, allow_source_overwrite=True)
-        session["edits"] += 1
-        _write_session_meta(
-            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
-        )
+    report, problems, checks = _validated_file_edit(
+        session,
+        lambda ps: builder.add_category_page(ps, title, items, parent_page_id),
+        validate.validate_new_page,
+    )
+    if problems:
+        return _validation_failed(problems, checks)
     return jsonify(
         {
             "ok": True,
@@ -1716,6 +2241,20 @@ def edit_cells(session_id, page_id):
 
 @app.post("/api/pageset/<session_id>/close")
 def close_pageset(session_id):
+    """Close a session, or discard a copy a previous run left unsaved."""
+    _checked_session_id(session_id)
+    with _sessions_lock:
+        open_now = session_id in _sessions
+    if not open_now:
+        # Not open in this process: a recovered copy being discarded. Only a
+        # direct child of the session root is ever removed.
+        path = os.path.join(_SESSION_ROOT, session_id)
+        if (
+            os.path.isdir(path) and not os.path.islink(path)
+            and os.path.dirname(os.path.realpath(path)) == os.path.realpath(_SESSION_ROOT)
+        ):
+            shutil.rmtree(path, ignore_errors=True)
+        return jsonify({"ok": True})
     release_session(session_id)
     return jsonify({"ok": True})
 
@@ -1726,7 +2265,7 @@ def download(session_id):
     if not os.path.exists(current):
         raise PagesetError("Nothing to download; re-upload the file.")
     session = _session_record(session_id)
-    session["saved_edits"] = session.get("edits", 0)
+    _mark_saved(session)
     base, ext = os.path.splitext(session["filename"])
     return send_file(
         current,
@@ -1786,7 +2325,7 @@ def _import_plan(current: str, boardset: dict, parent_page_id: int) -> tuple[dic
         plan = gridset.plan_import(current, boardset, parent_page_id)
     else:
         with contextlib.closing(
-            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+            sqlite3.connect(_ro_uri(current), uri=True)
         ) as conn:
             conn.row_factory = sqlite3.Row
             grid = pageset.grid_dimension(conn)
@@ -1858,9 +2397,9 @@ def apply_board_import(session_id):
     plan, expected = _import_plan(current, stash["boardset"], stash["parent_page_id"])
     if expected != fingerprint:
         raise PagesetError(
-            "The page set changed after the import was reviewed. Review the import again."
+            "The page set changed after the import was reviewed. Review the import again.",
+            code="FINGERPRINT_CHANGED",
         )
-    scratch = os.path.join(session["dir"], "scratch")
     if _is_gridset(current):
         report, failure = _gridset_write(session_id, lambda source, dest: gridset.import_boards(
             source, dest, plan, stash["parent_page_id"]))
@@ -1876,35 +2415,25 @@ def apply_board_import(session_id):
             "parent": plan["parent"], "checks": report["checks"],
             "edits": session["edits"],
         })
-    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
-        baseline = validate.validate_pageset(ps.conn)
-        before = validate.table_snapshot(ps.conn)
-        report = builder.add_linked_pages(ps, plan, stash["parent_page_id"])
-        after = validate.table_snapshot(ps.conn)
+    def unchanged_since_review():
+        # Again inside the lock: a second identical submission must find the
+        # page set already changed by the first.
+        if _import_plan(current, stash["boardset"], stash["parent_page_id"])[1] != fingerprint:
+            raise PagesetError(
+                "The page set changed after the import was reviewed. Review the import again.",
+                code="FINGERPRINT_CHANGED",
+            )
 
-        result = validate.validate_pageset(ps.conn)
-        roundtrip = validate.check_roundtrip(before, after)
-        imported = validate.validate_imported_pages(ps.conn, report)
-        problems = (
-            roundtrip + imported + result["problems"] + validate.new_warnings(baseline, result)
-        )
-        checks = {
-            "sqlite_integrity": "pass",
-            "linkage_chains": "pass" if not problems else "fail",
-            "roundtrip_diff": "pass" if not roundtrip else "fail",
-        }
-        if problems:
-            return jsonify(
-                {"ok": False, "error": "Validation failed; nothing was saved.",
-                 "problems": problems, "checks": checks}
-            ), 422
-        ps.save_as(current, allow_source_overwrite=True)
-        session["edits"] += 1
-        _write_session_meta(
-            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
-        )
-        with contextlib.suppress(OSError):
-            os.remove(_import_stash(session["dir"]))
+    report, problems, checks = _validated_file_edit(
+        session,
+        lambda ps: builder.add_linked_pages(ps, plan, stash["parent_page_id"]),
+        validate.validate_imported_pages,
+        unchanged_since_review,
+    )
+    if problems:
+        return _validation_failed(problems, checks)
+    with contextlib.suppress(OSError):
+        os.remove(_import_stash(session["dir"]))
     checks.update({"positions": "pass", "board_links": "pass", "navigation": "pass"})
     pages = report["pages"]
     return jsonify({
@@ -1923,7 +2452,7 @@ def apply_board_import(session_id):
 def _exported_boards(path: str) -> dict:
     if _is_gridset(path):
         return gridset.to_boardset(path)
-    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+    with contextlib.closing(sqlite3.connect(_ro_uri(path), uri=True, timeout=2)) as conn:
         conn.row_factory = sqlite3.Row
         return obf.export_pageset(conn)
 
@@ -1939,7 +2468,7 @@ def _obz_response(boardset: dict, name: str):
 
 
 def _live_pageset_path() -> str:
-    path = live._active_pageset_path(request.args.get("page") or None)
+    path = live.active_pageset_path(request.args.get("page") or None)
     if not path:
         raise PagesetError(
             "AAC Editor could not tell which page set TD Snap has open, so there is "
@@ -2001,13 +2530,18 @@ def ai_status():
     preferred = _bounded_text(request.args.get("model_key"), "model_key", 20) or None
     engine = _validated_engine(request.args.get("engine"))
     named = _bounded_text(request.args.get("model"), "model", 120)
-    ollama_state = ollama.status(host)
+    # Ollama is only probed when somebody chose it (REL-028): the built-in
+    # model is the default, and an absent Ollama costs a 5 s probe and shows
+    # an error to people who never asked for it.
+    ollama_state = ollama.status(host) if engines.wants_ollama(engine) else engines.NOT_CHECKED
     local_state = localai.status(preferred)
     return jsonify({
         "ok": True,
         "ollama": ollama_state,
         "local": local_state,
-        "ai": engines.readiness(ollama_state, local_state, engine, named),
+        "ai": engines.readiness(
+            ollama_state, local_state, engine, named, localai.launch_mode()
+        ),
     })
 
 
@@ -2017,8 +2551,9 @@ def ai_download():
     if not localai.engine_available():
         return jsonify(
             {"ok": False,
-             "error": "This install doesn't include the built-in AI engine; "
-                      "use Ollama instead or install llama-cpp-python."}
+             "error": "This copy of AAC Editor doesn't include the built-in "
+                      "suggestion engine. Use the installed app, or start "
+                      "launch.bat again once the AI extra can install."}
         ), 400
     payload = _json_payload()
     key = _bounded_text(payload.get("model_key"), "model_key", 20) or None
@@ -2051,9 +2586,10 @@ def _labels_of(words) -> list:
 def ai_words():
     """Generate suggestions with whichever engine is ready.
 
-    Preference order: whichever engine the user chose, then a reachable Ollama
-    server, then the built-in downloaded model (see engines.choose).
+    The built-in model unless the user chose Ollama; a chosen Ollama that
+    cannot run is stood in for by the built-in model (see engines.choose).
     """
+    request_started = time.monotonic()
     payload = _json_payload()
     existing = _validated_existing(payload.get("existing", []))
     category = _bounded_text(
@@ -2114,7 +2650,9 @@ def ai_words():
     )
     model_key = _bounded_text(payload.get("model_key"), "model_key", 20) or None
     preferred = _validated_engine(payload.get("engine"))
-    ollama_state = ollama.status(host)
+    ollama_state = (
+        ollama.status(host) if engines.wants_ollama(preferred) else engines.NOT_CHECKED
+    )
     local_state = localai.status(model_key)
     # An Ollama server with no models can't generate anything; engines.choose
     # falls through to the built-in engine instead of failing with "model not
@@ -2123,7 +2661,9 @@ def ai_words():
     if engine is None:
         return jsonify(
             {"ok": False, "words": [],
-             "error": engines.readiness(ollama_state, local_state)["summary"]}
+             "error": engines.readiness(
+                 ollama_state, local_state, preferred, "", localai.launch_mode()
+             )["summary"]}
         ), 400
 
     def generate(extra=None):
@@ -2210,7 +2750,13 @@ def ai_words():
     # push the whole request past the browser's deadline. A thin answer is
     # still an answer; a request that times out is nothing at all.
     retried = False
-    if len(words) < max(1, count // 2) and elapsed <= RETRY_BUDGET_SECONDS:
+    # REL-022: the retry budget used to look at the first call only, so a
+    # slow reference lookup plus two rounds could pass the browser's 150 s.
+    # A second round is only started if one more round as long as the first
+    # still finishes inside AI_REQUEST_DEADLINE_SECONDS of the request.
+    spent = time.monotonic() - request_started
+    if (len(words) < max(1, count // 2) and elapsed <= RETRY_BUDGET_SECONDS
+            and spent + elapsed <= AI_REQUEST_DEADLINE_SECONDS):
         retried = True
         more, retry_error = generate({"already": [*already, *_labels_of(words)]})
         if not retry_error:
@@ -2258,10 +2804,13 @@ def cleanup_stale_sessions(max_age: int = SESSION_MAX_AGE) -> None:
     except OSError:
         return
     cutoff = time.time() - max_age
+    unsaved_cutoff = time.time() - UNSAVED_MAX_AGE
+    recoverable = {item["session_id"] for item in recoverable_sessions()}
     for name in entries:
         path = os.path.join(_SESSION_ROOT, name)
         try:
-            if os.path.getmtime(path) < cutoff:
+            age_limit = unsaved_cutoff if name in recoverable else cutoff
+            if os.path.getmtime(path) < age_limit:
                 with _sessions_lock:
                     expired = [
                         session_id for session_id, session in _sessions.items()
@@ -2290,6 +2839,13 @@ def make_server(port: int):
         # is not left in the temp folder just because the app stopped oddly.
         atexit.register(cleanup_sessions)
         _cleanup_registered = True
+    if os.environ.get("AAC_QUIET_HTTP_LOG") == "1":
+        # The browser suite makes thousands of requests; one access-log line
+        # each buried the test failures in CI logs. Warnings and errors,
+        # including tracebacks, still print.
+        import logging
+
+        logging.getLogger("werkzeug").setLevel(logging.WARNING)
     server = _make_server("127.0.0.1", port, app, threaded=True)
     _runtime["shutdown"] = server.shutdown
     return server
@@ -2337,7 +2893,61 @@ def _exit_cleanly_on_signals() -> None:
             signal.signal(number, stop)
 
 
+def record_start(port: int, window: str) -> None:
+    """One log record per start: which copy, on which port, in which mode."""
+    import platform
+
+    oplog.set_port(port)
+    localai.cleanup_at_startup(instance.is_held())
+    oplog.record(
+        kind="app.start", version=__version__, window=window,
+        launch=localai.launch_mode(), packaged=bool(getattr(sys, "frozen", False)),
+        python=platform.python_version(), platform=platform.system() + "-" + platform.release(),
+        elevated=bool(grid3.is_elevated()),
+    )
+
+
+def hand_over_to_running_copy(port: int, open_browser: bool = True) -> None:
+    """Another copy holds the single-instance lock: show it, never start a second.
+
+    The running copy may be busy (a long automation call, a model check), so
+    its focus endpoint is given a few tries rather than the one-second probe
+    that used to decide a second server was needed (REL-010).
+    """
+    target = instance.running_port() or port
+    url = f"http://127.0.0.1:{target}"
+    for _ in range(10):
+        reply = localhttp.loopback_json(
+            urllib.request.Request(f"{url}/api/focus", method="POST"),  # noqa: S310
+            timeout=2,
+        )
+        if reply.get("ok"):
+            if reply.get("focused"):
+                print("Already running — brought its window to the front.")
+            elif open_browser:
+                _open_browser(url)
+                print(f"Already running at {url} — opened it in your browser.")
+            else:
+                print(f"Already running at {url}.")
+            return
+        time.sleep(1)
+    print(
+        "AAC Editor is already running but is not answering. Wait a moment and try "
+        "again, or close it from the taskbar first."
+    )
+
+
 def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
+    if not instance.acquire():
+        hand_over_to_running_copy(port, open_browser)
+        return
+    try:
+        _run_holding_lock(port, open_browser)
+    finally:
+        instance.release()
+
+
+def _run_holding_lock(port: int, open_browser: bool) -> None:
     if instance_running(port):
         url = f"http://127.0.0.1:{port}"
         focused = localhttp.loopback_json(
@@ -2355,6 +2965,8 @@ def run(port: int = DEFAULT_PORT, open_browser: bool = True) -> None:
 
     port = pick_port(port)
     server = make_server(port)
+    instance.record_port(port)
+    record_start(port, "browser")
     url = f"http://127.0.0.1:{port}"
     if open_browser:
         threading.Timer(1.0, lambda: _open_browser(url)).start()

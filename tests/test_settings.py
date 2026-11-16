@@ -240,3 +240,15 @@ def test_two_corrupt_files_in_the_same_second_are_both_kept(isolated_data_dir, m
         assert settings.load()["templates"] == []
     kept = sorted(name for name in os.listdir(isolated_data_dir) if "corrupt" in name)
     assert len(kept) == 2
+
+
+def test_an_unreadable_settings_file_is_reported_clearly(monkeypatch):
+    from tdsnap.web import server
+
+    def locked():
+        raise PermissionError(13, "locked")
+
+    monkeypatch.setattr(server.settings, "load", locked)
+    response = server.app.test_client().get("/api/settings")
+    assert response.status_code == 400
+    assert "could not read its saved settings" in response.get_json()["error"]

@@ -232,3 +232,21 @@ def test_release_documentation_says_unsigned_and_how_to_verify():
     assert "SIGNPATH" not in contributing
     assert "Releases are not code-signed" in security
     assert not (ROOT / "docs" / "UIACCESS_TESTING.md").exists()
+
+
+def test_launch_scripts_never_close_a_running_copy_and_try_the_ai_extra():
+    """REL-007 / REL-028 (roadmap A9).
+
+    The scripts used to POST /api/quit to whatever answered on port 8765,
+    which closed the installed app (and its unsaved work) whenever launch.bat
+    was double-clicked. They now leave it running; ``python -m tdsnap.web``
+    brings an open copy to the front. They also try to install the AI extra
+    from prebuilt wheels only, so a launch.bat copy has the same built-in
+    engine as the installer when one is available for this Python.
+    """
+    for name in ("launch.bat", "launch.sh"):
+        script = read(name)
+        assert "/api/quit" not in script, name
+        assert ".[ai]" in script, name
+        assert "--only-binary llama-cpp-python" in script, name
+        assert "-m tdsnap.web" in script, name

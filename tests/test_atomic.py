@@ -69,3 +69,88 @@ def test_copy_is_all_or_nothing(tmp_path, monkeypatch):
         atomic.atomic_copy(str(source), str(target))
     assert target.read_bytes() == b"data"
     assert litter(tmp_path) == []
+
+
+def test_a_failure_while_writing_the_data_keeps_the_original(tmp_path, monkeypatch):
+    """doc 04 F1-F4 for atomic.py itself: the temp file's own write fails."""
+    import os
+
+    from tdsnap import atomic
+
+    dest = tmp_path / "settings.json"
+    dest.write_text("old", encoding="utf-8")
+    real_fdopen = os.fdopen
+
+    class Failing:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.handle.close()
+
+        def write(self, _data):
+            raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(atomic.os, "fdopen", lambda fd, *a, **k: Failing(real_fdopen(fd, *a, **k)))
+    with pytest.raises(OSError):
+        atomic.atomic_write(str(dest), "new")
+    assert dest.read_text(encoding="utf-8") == "old"
+    assert [p.name for p in tmp_path.iterdir()] == ["settings.json"]
+
+
+def test_a_replace_refused_for_a_moment_is_retried(tmp_path, monkeypatch):
+    """REL-020: Windows refuses to rename over a file another handle has open."""
+    dest = tmp_path / "current"
+    dest.write_bytes(b"old")
+    real_replace = os.replace
+    refusals = {"left": 3}
+
+    def busy_replace(src, dst):
+        if refusals["left"]:
+            refusals["left"] -= 1
+            raise PermissionError(13, "The process cannot access the file")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(atomic.os, "replace", busy_replace)
+    monkeypatch.setattr(atomic.time, "sleep", lambda _s: None)
+    atomic.atomic_write(str(dest), b"new")
+    assert dest.read_bytes() == b"new"
+
+
+def test_a_replace_refused_for_good_still_keeps_the_original(tmp_path, monkeypatch):
+    dest = tmp_path / "current"
+    dest.write_bytes(b"old")
+
+    def always_busy(_src, _dst):
+        raise PermissionError(13, "busy")
+
+    monkeypatch.setattr(atomic.os, "replace", always_busy)
+    monkeypatch.setattr(atomic.time, "sleep", lambda _s: None)
+    with pytest.raises(PermissionError):
+        atomic.atomic_write(str(dest), b"new")
+    assert dest.read_bytes() == b"old"
+    assert litter(tmp_path) == []
+
+
+def test_a_failed_copy_keeps_the_destination_and_leaves_no_temp_file(tmp_path, monkeypatch):
+    dest = tmp_path / "saved.sps"
+    dest.write_bytes(b"old")
+    source = tmp_path / "current"
+    source.write_bytes(b"new")
+
+    def fail(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(atomic.shutil, "copyfile", fail)
+    with pytest.raises(OSError):
+        atomic.atomic_copy(str(source), str(dest))
+    assert dest.read_bytes() == b"old"
+    assert litter(tmp_path) == []
+
+
+def test_directory_flush_is_skipped_where_a_directory_cannot_be_opened(monkeypatch, tmp_path):
+    monkeypatch.setattr(atomic.os, "name", "nt")
+    atomic._fsync_directory(str(tmp_path))  # a no-op, and never raises

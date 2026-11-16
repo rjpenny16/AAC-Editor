@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
@@ -109,7 +110,7 @@ def test_built_in_caps_prompt_processing_and_generation(monkeypatch, cores, thre
     monkeypatch.setitem(sys.modules, "llama_cpp", SimpleNamespace(Llama=loader))
     monkeypatch.setattr(localai, "_llm", None)
     monkeypatch.setattr(localai, "_llm_path", None)
-    monkeypatch.setattr(localai, "_validation_error", lambda key: None)
+    monkeypatch.setattr(localai, "_validation_error", lambda key, **_kw: None)
     monkeypatch.setattr(localai.os, "cpu_count", lambda: cores)
     assert localai._load_llm("qwen3") is fake
     assert localai._load_llm("qwen3") is fake
@@ -420,7 +421,7 @@ def test_ai_endpoints(ai_client, recording_grounding, monkeypatch):
     assert generated["reference"] == "REF:About Snacks"
     assert recording_grounding[-1]["requested"] is True
 
-    # A reachable Ollama takes precedence.
+    # A reachable Ollama is used only when chosen (REL-028).
     monkeypatch.setattr(
         ollama, "status",
         lambda host=None: {"reachable": True, "models": ["m"], "message": "ok"},
@@ -430,15 +431,18 @@ def test_ai_endpoints(ai_client, recording_grounding, monkeypatch):
     )
     data = client.post("/api/ai/words", json={"category": "Snacks"},
                        headers=headers).get_json()
+    assert data["engine"] == "local"
+    data = client.post("/api/ai/words", json={"category": "Snacks", "engine": "ollama"},
+                       headers=headers).get_json()
     assert data["engine"] == "ollama" and data["words"] == ["Juice"]
 
-    # ... but an Ollama server with no models falls back to the built-in
-    # engine instead of failing with "model not found".
+    # ... and a chosen Ollama server with no models falls back to the
+    # built-in engine instead of failing with "model not found".
     monkeypatch.setattr(
         ollama, "status",
         lambda host=None: {"reachable": True, "models": [], "message": "empty"},
     )
-    data = client.post("/api/ai/words", json={"category": "Snacks"},
+    data = client.post("/api/ai/words", json={"category": "Snacks", "engine": "ollama"},
                        headers=headers).get_json()
     assert data["engine"] == "local" and data["words"] == ["Chips", "Apple"]
 
@@ -658,9 +662,12 @@ def test_the_user_can_say_which_engine_writes_the_suggestions(
     )
     monkeypatch.setattr(ollama, "generate_words", lambda **kw: (["Juice"], None))
 
-    # Ollama would win on its own; an explicit choice overrules that.
+    # The built-in model is the default; Ollama only runs when chosen.
     assert client.post(
         "/api/ai/words", json={"category": "Snacks"}, headers=headers
+    ).get_json()["engine"] == "local"
+    assert client.post(
+        "/api/ai/words", json={"category": "Snacks", "engine": "ollama"}, headers=headers
     ).get_json()["engine"] == "ollama"
     data = client.post(
         "/api/ai/words", json={"category": "Snacks", "engine": "local"},
@@ -1309,3 +1316,145 @@ def test_a_download_clears_part_files_left_by_a_killed_one(isolated_model, monke
     localai.start_download()
     _settle()
     assert not os.path.exists(stale)
+
+
+def test_checking_for_the_engine_does_not_import_it(monkeypatch):
+    """Importing llama_cpp loads a native library; doing that on the first
+    status check starved the server at startup (packaged smoke test)."""
+    import builtins
+    import importlib.util
+    import sys as _sys
+
+    monkeypatch.delitem(_sys.modules, "llama_cpp", raising=False)
+    real_import = builtins.__import__
+
+    def guarded(name, *args, **kwargs):
+        if name == "llama_cpp":
+            raise AssertionError("engine_available imported llama_cpp")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded)
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name: object() if name == "llama_cpp" else None)
+    assert localai.engine_available() is True
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    assert localai.engine_available() is False
+
+
+# ---------------------------------------------------------------------------
+# REL-008 / roadmap D1: no hashing on the status path
+
+
+def test_a_status_check_after_install_reads_four_bytes_not_the_whole_model(
+    isolated_model, monkeypatch,
+):
+    localai.start_download()
+    assert _settle()["status"] == "ready"
+    assert os.path.exists(localai.model_path() + ".verified.json")
+    localai._validations.clear()  # as after a restart
+
+    def no_hashing(*_args, **_kwargs):
+        raise AssertionError("the status path hashed the model")
+
+    monkeypatch.setattr(localai, "_full_check", no_hashing)
+    assert localai.is_downloaded() is True
+
+
+def test_a_model_without_a_record_is_checked_in_the_background(isolated_model, monkeypatch):
+    """A model installed by an older version has no sidecar: status answers at
+    once ("verifying") and the hash runs off the request path."""
+    target = localai.model_path()
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "wb") as handle:
+        handle.write(isolated_model.read_bytes())
+    release = threading.Event()
+    real_check = localai._full_check
+
+    def slow_check(path, choice):
+        release.wait(5)
+        return real_check(path, choice)
+
+    monkeypatch.setattr(localai, "_full_check", slow_check)
+    assert localai._validation_error() == localai.VERIFYING
+    assert localai.status()["verifying"] is True
+    release.set()
+    for _ in range(200):
+        if not localai.verifying():
+            break
+        time.sleep(0.01)
+    assert localai.is_downloaded() is True
+    assert os.path.exists(target + ".verified.json")
+
+
+def test_a_model_changed_on_disk_is_not_trusted_from_its_record(isolated_model):
+    localai.start_download()
+    assert _settle()["status"] == "ready"
+    target = localai.model_path()
+    with open(target, "r+b") as handle:
+        handle.seek(20)
+        handle.write(b"tampered")
+    os.utime(target, ns=(1, 1))
+    localai._validations.clear()
+    assert localai._validation_error(wait=True) == "The downloaded model failed its integrity check."
+
+
+def test_the_panel_says_a_model_is_being_checked():
+    from tdsnap.web import engines
+
+    report = engines.readiness({"reachable": False}, {"verifying": True, "engine_available": True})
+    assert report["state"] == "downloading"
+    assert "Checking" in report["summary"]
+
+
+def test_a_killed_downloads_leftover_is_removed_at_startup_only_with_the_lock(isolated_model):
+    """Roadmap D6."""
+    folder = localai._models_dir(create=True)
+    leftover = os.path.join(folder, "big-model.gguf.part")
+    with open(leftover, "wb") as handle:
+        handle.write(b"partial")
+    localai.cleanup_at_startup(holds_single_instance_lock=False)
+    assert os.path.exists(leftover)  # another copy may be writing it
+    localai.cleanup_at_startup(holds_single_instance_lock=True)
+    assert not os.path.exists(leftover)
+
+
+def test_loading_is_refused_cleanly_when_free_memory_is_short(tmp_path):
+    """REL-022: the gate used total RAM; an out-of-memory abort inside
+    llama.cpp ends the whole editor."""
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"GGUF" + b"\0" * 1000)
+    refusal = localai._memory_refusal(str(model), available=500)
+    assert refusal and "free memory" in refusal and "Editing is not affected" in refusal
+    assert localai._memory_refusal(str(model), available=10**9) is None
+    assert localai._memory_refusal(str(model), available=0) is None  # unmeasured
+
+
+def test_a_retry_is_skipped_when_it_would_pass_the_request_deadline(ai_client, monkeypatch):
+    """REL-022: a slow first round plus a retry could pass the browser's 150 s."""
+    import types
+
+    from tdsnap.web import server as web_server
+
+    client, headers = ai_client
+    _ready_local(monkeypatch, [["Chips"]])
+    now = [0.0]
+    monkeypatch.setattr(web_server, "time", types.SimpleNamespace(monotonic=lambda: now[0]))
+    calls = []
+
+    def slow_generate(**_kwargs):
+        calls.append(1)
+        now[0] += 40.0 if len(calls) == 1 else 1.0  # under RETRY_BUDGET_SECONDS
+        return ["Chips"], None
+
+    monkeypatch.setattr(localai, "generate_words", slow_generate)
+    now[0] = 0.0
+    data = client.post("/api/ai/words", json={"category": "Snacks", "count": 10},
+                       headers=headers).get_json()
+    assert data["retried"] is True  # 40 s spent, 40 s more fits inside 130 s
+
+    calls.clear()
+    monkeypatch.setattr(web_server, "AI_REQUEST_DEADLINE_SECONDS", 70)
+    data = client.post("/api/ai/words", json={"category": "Snacks", "count": 10},
+                       headers=headers).get_json()
+    assert data["retried"] is False  # 40 + 40 would pass 70
+    assert calls == [1]

@@ -25,6 +25,18 @@ OLLAMA = "ollama"
 LOCAL = "local"
 ENGINES = (OLLAMA, LOCAL)
 
+# How this copy was started. The installer bundles the built-in engine; a
+# source checkout started from launch.bat or launch.sh has it only if the AI
+# extra installed (REL-028). The panel says which, so the two are not
+# mistaken for each other.
+INSTALLED = "installed"
+SOURCE = "source"
+
+# Stands in for an Ollama status that was deliberately not fetched: Ollama is
+# only probed when somebody chose it, so nobody who did not ask for Ollama
+# waits on its probe or sees its errors (REL-028).
+NOT_CHECKED = {"reachable": False, "models": [], "message": "not checked", "checked": False}
+
 # What the panel shows. One of these, never a combination.
 READY = "ready"
 DOWNLOADING = "downloading"
@@ -54,19 +66,18 @@ def choose(
     """``(engine, note)`` — which engine will run, and why it is not the one
     that was asked for.
 
-    A preference is honoured when it can run and quietly stood in for when it
-    cannot: somebody who chose Ollama and forgot to start it is better served
-    by working suggestions plus a sentence saying which model wrote them than
-    by an error telling them what they already know. ``engine`` is None when
-    neither can run, and ``note`` is empty whenever nothing surprising
-    happened.
+    The built-in model is the default, and the only engine used unless
+    somebody chose Ollama in the suggestion settings (REL-028): an Ollama
+    that is reachable but slow or half-configured used to be preferred over a
+    working built-in model, and anybody without Ollama saw its connection
+    errors. A choice of Ollama is honoured when it can run and stood in for
+    by the built-in model when it cannot, with a sentence saying so.
+    ``engine`` is None when nothing can run, and ``note`` is empty whenever
+    nothing surprising happened.
     """
     wanted = preferred if preferred in ENGINES else AUTO
     ready = {OLLAMA: _ollama_ready(ollama_state), LOCAL: _local_ready(local_state)}
-    # Ollama first by default: somebody running it has already chosen a model,
-    # and it is usually the faster of the two.
-    order = [wanted, *(engine for engine in ENGINES if engine != wanted)] \
-        if wanted in ENGINES else list(ENGINES)
+    order = [OLLAMA, LOCAL] if wanted == OLLAMA else [LOCAL]
     for engine in order:
         if ready[engine]:
             if wanted in ENGINES and engine != wanted:
@@ -96,19 +107,35 @@ def describe(engine: Optional[str], local_state: dict, ollama_model: str = "") -
     return "no model"
 
 
+def wants_ollama(preferred: Optional[str]) -> bool:
+    """Whether Ollama should be probed at all for this preference."""
+    return preferred == OLLAMA
+
+
+def _started(launch_mode: str) -> str:
+    if launch_mode == SOURCE:
+        return "AAC Editor was started from launch.bat or launch.sh."
+    return "AAC Editor is running as the installed app."
+
+
 def readiness(
     ollama_state: dict,
     local_state: dict,
     preferred: Optional[str] = None,
     ollama_model: str = "",
+    launch_mode: str = INSTALLED,
 ) -> dict:
     """Everything the panel needs to render one state, in one read.
 
     ``state`` is what to show, ``summary`` is what to say, and ``action`` is
     the single next thing the person can do about it. The browser renders
-    this; it does not re-derive it.
+    this; it does not re-derive it. ``launch_mode`` and ``engine`` are
+    reported so the panel and the support report can say which copy is
+    running with which engine.
     """
     engine, note = choose(ollama_state, local_state, preferred)
+    chose_ollama = wants_ollama(preferred)
+    started = _started(launch_mode)
     model = local_state.get("model") or {}
     size = str(model.get("size") or "about 1 GB")
     can_download = bool(
@@ -118,17 +145,34 @@ def readiness(
         return {
             "ready": True,
             "engine": engine,
+            "launch_mode": launch_mode,
             "state": READY,
             "summary": f"Ready — suggestions come from {describe(engine, local_state, ollama_model)}.",
-            "detail": "Nothing you write leaves this computer.",
+            "detail": f"Nothing you write leaves this computer. {started}",
             "action": "",
             "note": note,
             "can_download": can_download,
+        }
+    if local_state.get("verifying"):
+        # REL-008: a model installed before checks were recorded is being
+        # checked once in the background; the panel says so instead of
+        # "unavailable".
+        return {
+            "ready": False,
+            "engine": None,
+            "launch_mode": launch_mode,
+            "state": DOWNLOADING,
+            "summary": "Checking the suggestion model…",
+            "detail": "This happens once. You can keep adding words meanwhile.",
+            "action": "",
+            "note": "",
+            "can_download": False,
         }
     if _downloading(local_state):
         return {
             "ready": False,
             "engine": None,
+            "launch_mode": launch_mode,
             "state": DOWNLOADING,
             "summary": "Setting up suggestions…",
             "detail": "You can keep adding words while this finishes.",
@@ -140,6 +184,7 @@ def readiness(
         return {
             "ready": False,
             "engine": None,
+            "launch_mode": launch_mode,
             "state": SETUP,
             "summary": "Suggestions need a one-time setup.",
             "detail": (
@@ -151,10 +196,11 @@ def readiness(
             "note": "",
             "can_download": True,
         }
-    if ollama_state.get("reachable"):
+    if chose_ollama and ollama_state.get("reachable"):
         return {
             "ready": False,
             "engine": None,
+            "launch_mode": launch_mode,
             "state": SETUP,
             "summary": "Ollama is running, but it has no model installed.",
             "detail": (
@@ -165,17 +211,42 @@ def readiness(
             "note": "",
             "can_download": False,
         }
+    if chose_ollama:
+        return {
+            "ready": False,
+            "engine": None,
+            "launch_mode": launch_mode,
+            "state": UNAVAILABLE,
+            "summary": "Your Ollama server isn't answering.",
+            "detail": (
+                "You chose Ollama in the suggestion settings. Start Ollama and "
+                "choose Check again, or switch back to the built-in model. "
+                "Everything else in AAC Editor works without suggestions."
+            ),
+            "action": "ollama",
+            "note": "",
+            "can_download": False,
+        }
+    if launch_mode == SOURCE:
+        detail = (
+            "Suggestions are not included when AAC Editor is started from "
+            "launch.bat or launch.sh without the AI extra. Use the installed "
+            "app, or run launch.bat again once the AI extra can install. "
+            "Everything else in AAC Editor works exactly as it does with them."
+        )
+    else:
+        detail = (
+            "This copy of AAC Editor was built without the suggestion model. "
+            "Everything else in AAC Editor works exactly as it does with them."
+        )
     return {
         "ready": False,
         "engine": None,
+        "launch_mode": launch_mode,
         "state": UNAVAILABLE,
-        "summary": "Suggestions aren't available in this installation.",
-        "detail": (
-            "This copy of AAC Editor was built without the suggestion model. "
-            "Suggestions need Ollama running on this computer instead. "
-            "Everything else in AAC Editor works exactly as it does with them."
-        ),
-        "action": "ollama",
+        "summary": "Suggestions aren't included in this copy of AAC Editor.",
+        "detail": detail,
+        "action": "",
         "note": "",
         "can_download": False,
     }

@@ -855,3 +855,145 @@ def test_edit_page_leaves_edit_mode_even_when_the_rollback_fails(grid_root, monk
         grid3.edit_page(items=[{"label": "one", "slot": 1}, {"label": "two", "slot": 2}],
                         fingerprint=fingerprint)
     assert fake.actions[-1] == "leave"
+
+
+# ---------------------------------------------------------------------------
+# Bounded rollback, outcomes and backups (REL-001, REL-015, roadmap B7)
+
+
+class _Grid3Rollback:
+    """Records every Undo and save; *readable* and *restored* script the check."""
+
+    def __init__(self, monkeypatch, *, restored=True, readable=True, dirty=False):
+        self.events = []
+        self.restored_value = restored
+        self.readable = readable
+        monkeypatch.setattr(grid3, "_undo_once", lambda _auto: self.events.append("undo"))
+        monkeypatch.setattr(grid3, "_save", lambda _auto: self.events.append("save"))
+        monkeypatch.setattr(grid3, "_dirty", lambda _auto: dirty)
+        monkeypatch.setattr(grid3, "_leave_edit_mode",
+                            lambda _auto: self.events.append("leave"))
+
+    def restored(self):
+        self.events.append("read")
+        if not self.readable:
+            raise zipfile.BadZipFile("still being written")
+        return self.restored_value
+
+
+def test_rollback_undoes_exactly_the_edit_and_saves_once(monkeypatch):
+    """REL-001: it used to undo-save-read up to max(steps, n*4)+8 times, and
+    treat an unreadable file as "keep undoing", reaching into earlier work."""
+    fake = _Grid3Rollback(monkeypatch)
+    grid3._rollback_saved(object(), fake.restored, 3)
+    assert fake.events == ["undo", "undo", "undo", "save", "read"]
+
+
+def test_an_unreadable_file_after_rollback_is_unknown_and_undoes_nothing_more(monkeypatch):
+    fake = _Grid3Rollback(monkeypatch, readable=False)
+    with pytest.raises(PagesetError) as caught:
+        grid3._rollback_saved(object(), fake.restored, 2)
+    assert caught.value.outcome == "unknown"
+    assert caught.value.code == "VERIFY_UNREADABLE"
+    assert fake.events.count("undo") == 2 and fake.events.count("save") == 1
+
+
+def test_a_rollback_that_does_not_restore_is_partial_after_one_attempt(monkeypatch):
+    fake = _Grid3Rollback(monkeypatch, restored=False)
+    with pytest.raises(PagesetError) as caught:
+        grid3._rollback_saved(object(), fake.restored, 2)
+    assert caught.value.outcome == "partial"
+    assert fake.events.count("undo") == 2
+
+
+def test_unsaved_restore_is_bounded_by_the_steps_performed(monkeypatch):
+    fake = _Grid3Rollback(monkeypatch, dirty=True)
+    with pytest.raises(PagesetError) as caught:
+        grid3._restore_unsaved(object(), 2)
+    assert fake.events.count("undo") == 2
+    assert caught.value.outcome == "partial"
+
+
+def test_a_failed_edit_rolls_back_once_and_always_leaves_edit_mode(monkeypatch):
+    fake = _Grid3Rollback(monkeypatch, restored=False)
+
+    def leave(_auto):
+        fake.events.append("leave")
+        raise PagesetError("Grid 3 stayed in Edit Mode.")
+
+    monkeypatch.setattr(grid3, "_leave_edit_mode", leave)
+    original = PagesetError("Grid 3 did not save the requested cells.")
+    failure = grid3._failed_grid3_edit(object(), original, fake.restored, 3, False)
+    assert "did not save the requested cells" in str(failure)
+    assert failure.outcome == "partial" and failure.page_touched is True
+    assert fake.events.count("undo") == 3
+    assert fake.events[-1] == "leave"
+
+    # A rollback already attempted is not attempted again.
+    fake.events.clear()
+    again = grid3._failed_grid3_edit(
+        object(), PagesetError("x", outcome="partial"), fake.restored, 3, True)
+    assert "undo" not in fake.events and again.outcome == "partial"
+
+
+def test_a_failure_before_any_step_is_a_refusal(monkeypatch):
+    fake = _Grid3Rollback(monkeypatch)
+    failure = grid3._failed_grid3_edit(object(), PagesetError("no cell"), fake.restored, 0, False)
+    assert failure.outcome == "refused" and failure.page_touched is False
+    assert "undo" not in fake.events and "leave" in fake.events
+
+
+def test_a_raw_exception_becomes_a_described_unknown(monkeypatch):
+    fake = _Grid3Rollback(monkeypatch, readable=False)
+    failure = grid3._failed_grid3_edit(object(), OSError("COM"), fake.restored, 2, False)
+    assert isinstance(failure, PagesetError)
+    assert failure.outcome == "unknown"
+
+
+def test_rel015_probe_leaves_edit_mode_even_when_its_restore_fails(monkeypatch):
+    """REL-015: the probe's except block called _restore_unsaved unprotected;
+    if that raised, Grid 3 was left in Edit Mode and the real error lost."""
+    left = []
+    grid = SimpleNamespace(cells=[SimpleNamespace(safe_blank=True, x=0, y=0)], cols=1, rows=1)
+    monkeypatch.setattr(grid3, "_desktop_unlocked", lambda: True)
+    monkeypatch.setattr(grid3, "is_elevated", lambda: True)
+    monkeypatch.setattr(grid3, "_active_context", lambda: (object(), object(), object(), grid))
+    monkeypatch.setattr(grid3, "_semantic", lambda _g: {})
+    monkeypatch.setattr(grid3, "_fingerprint", lambda _a: "f")
+    monkeypatch.setattr(grid3, "_positions", lambda _g: [])
+    monkeypatch.setattr(grid3, "_live_cells", lambda *_a, **_k: [])
+    monkeypatch.setattr(grid3, "_enter_edit_mode", lambda *_a: object())
+
+    def select(*_args):
+        raise PagesetError("Grid 3 did not select the empty cell.")
+
+    def restore(*_args):
+        raise PagesetError("Grid 3 could not restore the clean pre-edit state.")
+
+    monkeypatch.setattr(grid3, "_select_cell", select)
+    monkeypatch.setattr(grid3, "_restore_unsaved", restore)
+    monkeypatch.setattr(grid3, "_leave_edit_mode", lambda _auto: left.append(True))
+    with pytest.raises(PagesetError, match="did not select the empty cell"):
+        grid3.probe_accessibility()
+    assert left == [True]
+
+
+def test_a_backup_is_taken_and_old_backups_are_pruned(tmp_path, monkeypatch):
+    source = tmp_path / "Client grid.gridset"
+    source.write_bytes(b"PK grid")
+    monkeypatch.setattr(grid3, "MAX_BACKUPS", 3)
+    made = [grid3.backup_gridset(str(source)) for _ in range(5)]
+    assert all(os.path.basename(path).startswith("Client grid.") for path in made)
+    remaining = sorted(os.listdir(grid3._backup_dir()))
+    assert len(remaining) == 3
+    assert open(made[-1], "rb").read() == b"PK grid"
+
+
+def test_an_edit_is_refused_when_no_backup_can_be_made(monkeypatch):
+    def fail(_path):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(grid3, "backup_gridset", fail)
+    with pytest.raises(PagesetError, match="could not make a backup") as caught:
+        grid3._take_backup("x.gridset")
+    assert caught.value.page_touched is False

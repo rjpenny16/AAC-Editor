@@ -31,8 +31,10 @@ replaces the registry with the single model it names.
 import contextlib
 import errno
 import hashlib
+import json
 import os
 import shutil
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -280,6 +282,62 @@ def _windows_memory_bytes() -> int:
     return 0
 
 
+def available_memory_bytes() -> int:
+    """Physical memory free right now, or 0 when it cannot be measured."""
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            class MemoryStatusEx(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MemoryStatusEx()
+            status.dwLength = ctypes.sizeof(MemoryStatusEx)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.ullAvailPhys)
+        except Exception:
+            return 0
+        return 0
+    try:
+        return int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_AVPHYS_PAGES"))
+    except (AttributeError, ValueError, OSError):
+        return 0
+
+
+# A loaded model needs roughly its file size plus working memory.
+LOAD_HEADROOM = 1.3
+
+
+def _memory_refusal(path: str, available: Optional[int] = None) -> Optional[str]:
+    """Why the model should not be loaded now, judged on *available* memory.
+
+    REL-022: the memory gate used total RAM, so a machine with other programs
+    open could pass it and then abort inside llama.cpp, which takes the whole
+    editor down with it. Unmeasurable memory does not refuse (the size gate in
+    ``supported`` still applies).
+    """
+    try:
+        needed = int(os.path.getsize(path) * LOAD_HEADROOM)
+    except OSError:
+        return None
+    free = available_memory_bytes() if available is None else available
+    if free <= 0 or free >= needed:
+        return None
+    return (
+        f"There isn't enough free memory to start suggestions right now (they need "
+        f"about {needed / GIB:.1f} GB free; {free / GIB:.1f} GB is free). Close other "
+        "programs and try again. Editing is not affected."
+    )
+
+
 def supported(choice: ModelChoice, memory: Optional[int] = None) -> tuple[bool, str]:
     """``(ok, reason)`` for running *choice* on this machine.
 
@@ -303,18 +361,98 @@ def supported(choice: ModelChoice, memory: Optional[int] = None) -> tuple[bool, 
     return True, ""
 
 
-def engine_available() -> bool:
-    """True when llama-cpp-python is importable (bundled in the packaged app)."""
-    try:
-        import llama_cpp  # noqa: F401
+def launch_mode() -> str:
+    """"installed" in the packaged app (PyInstaller sets ``sys.frozen``),
+    "source" when started from a checkout by launch.bat, launch.sh or
+    ``python -m tdsnap.web``. The two can differ in whether the built-in
+    engine is present (REL-028), so the panel names which one is running."""
+    return "installed" if getattr(sys, "frozen", False) else "source"
 
+
+def engine_available() -> bool:
+    """True when llama-cpp-python is installed (bundled in the packaged app).
+
+    This used to import llama_cpp to find out, which loads its native
+    library and numpy. Once the first status check no longer waited on an
+    Ollama probe (REL-028), that import ran at the moment the window opened
+    and starved the server's other request threads; the packaged smoke
+    test's /api/config then timed out. Finding the module is enough to know
+    it is installed; it is imported when a model is actually loaded, where a
+    broken install is reported as a load failure.
+    """
+    if "llama_cpp" in sys.modules:
         return True
-    except Exception:
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec("llama_cpp") is not None
+    except (ImportError, ValueError):
         return False
 
 
-def _validation_error(key: Optional[str] = None) -> Optional[str]:
-    """Return why a model is unsafe to load, caching the expensive hash check."""
+VERIFYING = "The suggestion model is being checked."
+_verifying: set = set()
+
+
+def _sidecar_path(path: str) -> str:
+    return path + ".verified.json"
+
+
+def _write_sidecar(path: str, sha256: Optional[str]) -> None:
+    """Record that *path*, as it is now, passed its full check (REL-008)."""
+    with contextlib.suppress(OSError):
+        stat = os.stat(path)
+        with open(_sidecar_path(path), "w", encoding="utf-8") as handle:
+            json.dump({"size": stat.st_size, "mtime_ns": stat.st_mtime_ns,
+                       "sha256": (sha256 or "").lower()}, handle)
+
+
+def _sidecar_matches(path: str, stat, sha256: Optional[str]) -> bool:
+    try:
+        with open(_sidecar_path(path), encoding="utf-8") as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return (
+        isinstance(record, dict)
+        and record.get("size") == stat.st_size
+        and record.get("mtime_ns") == stat.st_mtime_ns
+        and record.get("sha256") == (sha256 or "").lower()
+    )
+
+
+def _full_check(path: str, choice) -> Optional[str]:
+    digest = hashlib.sha256() if choice.sha256 else None
+    try:
+        with open(path, "rb") as handle:
+            magic = handle.read(4)
+            if magic != b"GGUF":
+                return "The downloaded file is not a GGUF model."
+            if digest:
+                digest.update(magic)
+                while chunk := handle.read(1024 * 1024):
+                    digest.update(chunk)
+    except OSError as exc:
+        return f"The downloaded model could not be read: {exc}"
+    if digest and digest.hexdigest().lower() != choice.sha256.lower():
+        return "The downloaded model failed its integrity check."
+    return None
+
+
+def _validation_error(key: Optional[str] = None, *, wait: bool = False) -> Optional[str]:
+    """Return why a model is unsafe to load, or None.
+
+    REL-008: this hashed every installed model (gigabytes) on the status
+    request path; from a cold disk the first check after launch could exceed
+    the browser's 10 s and suggestions showed as unavailable until a reload.
+    The full SHA-256 now runs at install, and its result is kept beside the
+    model as a sidecar record of size, modification time and hash. A status
+    check that finds a matching sidecar reads only the first four bytes. One
+    that does not (a model installed by an older version, or changed on
+    disk) starts the full check in the background and reports VERIFYING
+    meanwhile; a caller that is about to load the model passes ``wait=True``
+    and gets the full check inline.
+    """
     choice = choice_for(key)
     path = model_path(choice.key)
     try:
@@ -326,27 +464,47 @@ def _validation_error(key: Optional[str] = None) -> Optional[str]:
         cached = _validations.get(choice.key)
         if cached and cached[0] == signature:
             return cached[1]
-    error = None
     if choice.size is not None and stat.st_size != choice.size:
         error = "The downloaded model has the wrong size."
-    else:
-        digest = hashlib.sha256() if choice.sha256 else None
+    elif _sidecar_matches(path, stat, choice.sha256):
         try:
             with open(path, "rb") as handle:
-                magic = handle.read(4)
-                if magic != b"GGUF":
-                    error = "The downloaded file is not a GGUF model."
-                elif digest:
-                    digest.update(magic)
-                    while chunk := handle.read(1024 * 1024):
-                        digest.update(chunk)
+                error = None if handle.read(4) == b"GGUF" else (
+                    "The downloaded file is not a GGUF model.")
         except OSError as exc:
             error = f"The downloaded model could not be read: {exc}"
-        if digest and error is None and digest.hexdigest().lower() != choice.sha256.lower():
-            error = "The downloaded model failed its integrity check."
+    elif not wait:
+        _verify_in_background(choice)
+        return VERIFYING
+    else:
+        error = _full_check(path, choice)
+        if error is None:
+            _write_sidecar(path, choice.sha256)
     with _validation_lock:
         _validations[choice.key] = (signature, error)
     return error
+
+
+def _verify_in_background(choice) -> None:
+    with _validation_lock:
+        if choice.key in _verifying:
+            return
+        _verifying.add(choice.key)
+
+    def run():
+        try:
+            _validation_error(choice.key, wait=True)
+        finally:
+            with _validation_lock:
+                _verifying.discard(choice.key)
+
+    threading.Thread(target=run, name=f"verify-{choice.key}", daemon=True).start()
+
+
+def verifying() -> bool:
+    """Whether a background model check is running now."""
+    with _validation_lock:
+        return bool(_verifying)
 
 
 def is_downloaded(key: Optional[str] = None) -> bool:
@@ -436,12 +594,29 @@ def _remove_stale_parts() -> None:
                     os.remove(os.path.join(directory, name))
 
 
+def cleanup_at_startup(holds_single_instance_lock: bool) -> None:
+    """Remove a killed download's ``.part`` files when the app starts (D6).
+
+    They used to be removed only when the next download started, so a
+    multi-gigabyte leftover could sit there for months. Startup is only safe
+    for this while this process holds the single-instance lock: otherwise
+    another copy could be in the middle of writing that very file (REL-010).
+    """
+    if not holds_single_instance_lock:
+        return
+    with _download_lock:
+        if _download.get("status") == "downloading":
+            return
+    _remove_stale_parts()
+
+
 def start_download(key: Optional[str] = None) -> dict:
     """Kick off the one-time model download in a background thread."""
     choice = choice_for(key)
     ok, reason = supported(choice)
     with _download_lock:
-        if _download["status"] == "downloading" or is_downloaded(choice.key):
+        if _download["status"] == "downloading" or \
+                _validation_error(choice.key, wait=True) is None:
             return dict(_download)
         if not ok:
             _download.update(
@@ -506,6 +681,9 @@ def start_download(key: Optional[str] = None) -> dict:
             if choice.sha256 and digest.hexdigest().lower() != choice.sha256.lower():
                 raise ValueError("The model download failed its integrity check.")
             replace_durably(part, model_path(choice.key))
+            # Checked in full just now; the sidecar lets every later status
+            # check skip the hash (REL-008).
+            _write_sidecar(model_path(choice.key), choice.sha256)
             with _validation_lock:
                 _validations.pop(choice.key, None)
             with _download_lock:
@@ -543,6 +721,7 @@ def status(preferred: Optional[str] = None) -> dict:
     return {
         "engine_available": engine_available(),
         "downloaded": is_downloaded(selected),
+        "verifying": verifying(),
         "download": download_state(),
         "selected": selected,
         "memory_bytes": memory,
@@ -564,7 +743,10 @@ def _load_llm(key: Optional[str] = None):
     path = model_path(key)
     with _llm_lock:
         if _llm is None or _llm_path != path:
-            error = _validation_error(key)
+            error = _validation_error(key, wait=True)
+            if error:
+                raise RuntimeError(error)
+            error = _memory_refusal(path)
             if error:
                 raise RuntimeError(error)
             from llama_cpp import Llama
@@ -604,7 +786,7 @@ def generate_words(
     if not engine_available():
         return [], "The built-in AI engine isn't available in this install."
     key = active_key(model_key)
-    error = _validation_error(key)
+    error = _validation_error(key, wait=True)
     if error:
         return [], error
     count = max(1, min(int(count), 60))

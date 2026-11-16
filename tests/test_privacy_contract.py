@@ -333,6 +333,10 @@ _CSS_EXTERNAL = re.compile(r"""(?:url\(\s*["']?|@import\s+["']?)(?:https?:)?//""
 ALLOWED_LINKS = {
     "https://ollama.com/download",
     "https://en.wikipedia.org",
+    # Roadmap D7: "Open a chat assistant" beside the copyable request, shown only
+    # when local suggestions are not ready. Nothing is sent with it; the person
+    # pastes the request themselves (PRIVACY.md, "Asking an assistant yourself").
+    "https://claude.ai/new",
 }
 
 
@@ -608,9 +612,30 @@ def test_the_open_page_set_is_never_opened_for_writing():
         source = (ROOT / name).read_text(encoding="utf-8")
         for match in re.finditer(r"sqlite3\.connect\(", source):
             call = source[match.start():match.start() + 160]
-            if "mode=ro" not in call:
+            # sqlite_ro_uri (and server's _ro_uri wrapper) always ask for
+            # mode=ro; that is pinned by the next test.
+            if "mode=ro" not in call and "_ro_uri(" not in call:
                 offenders.append(f"{name}: {call.splitlines()[0]}")
     assert not offenders, offenders
+
+
+# '?' cannot appear in a Windows folder name, so that case exists only elsewhere.
+@pytest.mark.parametrize("folder", ["plain", "with#hash", "with%41", "sp ace"]
+                         + ([] if sys.platform == "win32" else ["q?m"]))
+def test_the_read_only_uri_helper_is_read_only_for_any_folder_name(tmp_path, folder):
+    from tdsnap.sqliteuri import sqlite_ro_uri
+
+    path = tmp_path / folder / "set.sps"
+    path.parent.mkdir()
+    with contextlib.closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (x)")
+        conn.commit()
+    uri = sqlite_ro_uri(path)
+    assert uri.endswith("?mode=ro")
+    with contextlib.closing(sqlite3.connect(uri, uri=True)) as conn:
+        assert conn.execute("SELECT count(*) FROM t").fetchone() == (0,)
+        with pytest.raises(sqlite3.OperationalError):
+            conn.execute("INSERT INTO t VALUES (1)")
 
 
 def test_only_the_private_working_copy_is_opened_read_write():
@@ -979,3 +1004,62 @@ def test_a_fresh_start_of_the_app_and_the_settings_panel_write_nothing(client, t
     for path in ("/api/settings", "/api/ai/status", "/api/health", "/api/config", "/api/diagnostics"):
         client.get(path, headers=token)
     assert not data.exists() or list(data.rglob("*")) == [], "reading wrote something to disk"
+
+
+# ---------------------------------------------------------------------------
+# the operation log and support report (REL-025, roadmap A5)
+
+SEEDED = ("Grandma Rosa", "Breakfast Foods", "client_ryan.sps", "C:\\Users\\therapist")
+
+
+def test_seeded_labels_never_reach_the_log_or_the_support_report(tmp_path, monkeypatch,
+                                                                 _isolated_operation_log):
+    """Every error path that can carry a label in its message is driven with
+    seeded labels; neither the operation log nor the support report may
+    contain any of them."""
+    from tdsnap import live
+    from tdsnap.web import diagnostics, oplog
+
+    monkeypatch.setattr(server, "_SESSION_ROOT", str(tmp_path / "sessions"))
+    monkeypatch.setattr(server, "_sessions", {})
+    os.makedirs(server._SESSION_ROOT)
+    client = server.app.test_client()
+    headers = {"X-TDSnap-Token": server.API_TOKEN, "X-TDSnap-Editor": "1"}
+    oplog.set_diagnostic(True)
+
+    def refused(*_args, **_kwargs):
+        raise PagesetError(f"TD Snap did not verify the removal of: {SEEDED[0]} on {SEEDED[1]}")
+
+    def touched(*_args, **_kwargs):
+        error = PagesetError(f"{SEEDED[0]} was changed on {SEEDED[1]} and not restored")
+        error.page_touched = True
+        raise error
+
+    def crashed(*_args, **_kwargs):
+        raise RuntimeError(f"COM error reading {SEEDED[0]} at {SEEDED[3]}")
+
+    plan = {"operation": "edit_page", "page": SEEDED[1], "fingerprint": "f",
+            "items": [{"label": SEEDED[0]}]}
+    for failure in (refused, touched, crashed):
+        monkeypatch.setattr(live, "apply_page_edits", failure)
+        monkeypatch.setattr(live, "apply_batch", failure)
+        client.post("/api/tdsnap/edit-plan", json=plan, headers=headers)
+        client.post("/api/tdsnap/batch", json={"entries": [plan]}, headers=headers)
+    # A file-mode error whose message names the file.
+    client.post("/api/pageset", headers=headers, data={
+        "file": (io.BytesIO(b"not a page set"), SEEDED[2]),
+    }, content_type="multipart/form-data")
+    with oplog.operation("live.apply", "tdsnap") as op:
+        op.step(f"select {SEEDED[0]}", page=SEEDED[1], result=SEEDED[0])
+
+    logged = ""
+    for name in os.listdir(_isolated_operation_log):
+        logged += pathlib.Path(_isolated_operation_log, name).read_text(encoding="utf-8")
+    assert '"op"' in logged, "the failures above were not logged at all"
+    monkeypatch.setattr(diagnostics, "live_report", lambda: {})
+    report = client.get("/api/diagnostics", headers=headers).get_json()["text"]
+    assert "code=" in report
+    for seeded in SEEDED:
+        for fragment in (seeded, seeded.split()[0]):
+            assert fragment not in logged, fragment
+            assert fragment not in report, fragment

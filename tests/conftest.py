@@ -225,3 +225,28 @@ def smoke_localai(tmp_path_factory):
                 os.environ[name] = value
         with contextlib.suppress(Exception):
             importlib.reload(localai)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_folder(request, tmp_path_factory, monkeypatch):
+    """Nothing a test does may land in the real per-user data folder
+    (settings, logs, Grid 3 backups, models). Tests that need a specific
+    folder still set these themselves, and the real-model smoke tests keep
+    the temp home their session fixture downloaded the model into."""
+    if "smoke_localai" in request.fixturenames:
+        return None
+    folder = tmp_path_factory.mktemp("data")
+    monkeypatch.setenv("XDG_DATA_HOME", str(folder))
+    monkeypatch.setenv("LOCALAPPDATA", str(folder))
+    return folder
+
+
+@pytest.fixture(autouse=True)
+def _isolated_operation_log(tmp_path_factory, monkeypatch):
+    """Every test writes its operation log to its own folder, never the real
+    per-user data folder."""
+    from tdsnap.web import oplog
+
+    folder = tmp_path_factory.mktemp("oplog")
+    monkeypatch.setattr(oplog, "log_dir", lambda: str(folder))
+    return folder

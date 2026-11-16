@@ -979,3 +979,21 @@ def test_deeply_nested_board_json_is_a_clean_error():
     with pytest.raises(PagesetError, match="not valid JSON"):
         obf._load_json(b"[" * 200_000, "board.obf")
     assert obf._command_parts("[" * 200_000) is None
+
+
+def test_corrupt_deflate_data_is_a_clear_refusal_not_a_server_error(tmp_path):
+    """doc 02 minor finding: zlib.error escaped as a generic 500."""
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", '{"format": "open-board-0.1", "root": "b.obf"}' * 50)
+    data = bytearray(buffer.getvalue())
+    start = data.find(b"manifest.json") + len(b"manifest.json")
+    for index in range(start, start + 40):
+        data[index] ^= 0xFF
+    path = tmp_path / "damaged.obz"
+    path.write_bytes(bytes(data))
+    with pytest.raises(PagesetError):
+        obf.read(str(path))

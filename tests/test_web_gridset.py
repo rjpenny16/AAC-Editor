@@ -204,3 +204,81 @@ def test_unwritable_disk_answers_cleanly_and_keeps_the_session_copy(
     assert response.get_json()["ok"] is False
     assert server._sessions[sid]["edits"] == 0
     assert layout(client, sid)["fingerprint"] == before
+
+
+# ---------------------------------------------------------------------------
+# Fault injection for grid-set writes (doc 04 F7, roadmap B11)
+
+
+def _add_drink(client, sid):  # noqa: F811
+    return client.post(
+        f"/api/pageset/{sid}/page/{HOME}/buttons",
+        json={"items": [{"label": "drink", "slot": 2}],
+              "fingerprint": layout(client, sid)["fingerprint"]},
+        headers=token_headers(),
+    )
+
+
+def test_a_grid_set_rebuild_that_fails_on_any_write_changes_nothing(
+    client, tmp_path, monkeypatch,  # noqa: F811
+):
+    """Every entry the rebuilt zip writes is a point the disk can fail at.
+    Whichever one it is, the session's current copy is byte-for-byte unchanged,
+    no scratch file is left, and the next edit still works."""
+    real_writestr = zipfile.ZipFile.writestr
+    counter = {"n": 0, "fail_at": None}
+
+    def counting_writestr(self, *args, **kwargs):
+        counter["n"] += 1
+        if counter["n"] == counter["fail_at"]:
+            raise OSError(28, "No space left on device")
+        return real_writestr(self, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "writestr", counting_writestr)
+
+    def fresh_session():
+        # make() writes with ZipFile.write*, so it must not be failed or counted.
+        saved = counter["fail_at"]
+        counter["fail_at"] = None
+        folder = tmp_path / f"s{saved}"
+        folder.mkdir()
+        response = upload(client, make(folder), "My Grids.gridset")
+        counter["fail_at"] = saved
+        return response.get_json()["session_id"]
+
+    # A dry run counts the writes one edit makes.
+    sid = fresh_session()
+    counter["n"] = 0
+    assert _add_drink(client, sid).status_code == 200
+    writes = counter["n"]
+    assert writes >= 1
+
+    for fail_at in range(1, writes + 1):
+        counter.update(fail_at=fail_at)
+        sid = fresh_session()
+        current = server._current_path(sid)
+        before = open(current, "rb").read()
+        counter["n"] = 0
+        response = _add_drink(client, sid)
+        assert response.status_code == 500, (fail_at, response.get_json())
+        assert open(current, "rb").read() == before, fail_at
+        assert not os.path.exists(os.path.join(os.path.dirname(current), "scratch"))
+        counter["fail_at"] = None
+        assert _add_drink(client, sid).status_code == 200, fail_at
+
+
+def test_a_grid_set_round_trips_through_edit_save_and_reopen(client, session, tmp_path):  # noqa: F811
+    sid = session["session_id"]
+    added = client.post(
+        f"/api/pageset/{sid}/page/{HOME}/buttons",
+        json={"items": [{"label": "drink", "slot": 2}],
+              "fingerprint": layout(client, sid)["fingerprint"]},
+        headers=token_headers(),
+    )
+    assert added.status_code == 200
+    saved = tmp_path / "My Grids.edited.gridset"
+    server.save_current_as(sid, str(saved))
+    reopened = upload(client, str(saved), "My Grids.edited.gridset").get_json()
+    words = client.get(f"/api/pageset/{reopened['session_id']}/vocabulary").get_json()
+    assert "drink" in words["labels"]["Home"]
+    assert layout(client, reopened["session_id"])["free_slots"] == [5]

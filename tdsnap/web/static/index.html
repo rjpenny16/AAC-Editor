@@ -29,7 +29,7 @@
     <div class="connection-area">
       <span class="local-status"><span aria-hidden="true"></span>Local by default</span>
       <a id="header-save-btn" class="btn btn-primary btn-compact header-save" hidden>Save edited copy</a>
-      <button type="button" id="file-badge" class="file-badge" aria-label="Change AAC app" hidden></button>
+      <button type="button" id="file-badge" class="file-badge" hidden></button>
       <details id="help-menu" class="help-menu">
         <summary>Help</summary>
         <div class="help-menu-body">
@@ -63,6 +63,35 @@
   <div class="app-error-actions">
     <button type="button" id="draft-resume-btn" class="btn btn-secondary btn-compact">Resume</button>
     <button type="button" id="draft-discard-btn" class="btn btn-ghost btn-compact">Discard</button>
+  </div>
+</div>
+
+<div id="restart-banner" class="alert app-error" role="alert" tabindex="-1" hidden>
+  <strong>AAC Editor restarted</strong>
+  <p>This page belongs to the copy that stopped. Reload it to carry on. Nothing was changed by
+    the restart; an edit you had reviewed but not applied needs reviewing again.</p>
+  <div class="app-error-actions">
+    <button type="button" id="restart-reload-btn" class="btn btn-secondary btn-compact">Reload</button>
+  </div>
+</div>
+
+<div id="interrupted-banner" class="alert app-error" role="alert" tabindex="-1" hidden>
+  <strong>An edit was interrupted before it finished</strong>
+  <p id="interrupted-text"></p>
+  <p class="field-hint">AAC Editor was closed or stopped while it was changing the page. Look at the
+    page you were editing and compare it with what you meant to do before making another edit.</p>
+  <div class="app-error-actions">
+    <button type="button" id="interrupted-ack-btn" class="btn btn-secondary btn-compact">I have checked the page</button>
+  </div>
+</div>
+
+<div id="recover-banner" class="alert app-error" role="status" tabindex="-1" hidden>
+  <strong id="recover-banner-text"></strong>
+  <p class="field-hint">AAC Editor kept the edited copy on this computer because it had not been
+    saved. The original file was never changed.</p>
+  <div class="app-error-actions">
+    <button type="button" id="recover-open-btn" class="btn btn-secondary btn-compact">Open it</button>
+    <button type="button" id="recover-discard-btn" class="btn btn-ghost btn-compact">Discard it</button>
   </div>
 </div>
 
@@ -414,6 +443,22 @@
                 </div>
               </div>
 
+              <section id="ai-manual" class="ai-manual" aria-labelledby="ai-manual-heading" hidden>
+                <h4 id="ai-manual-heading">Or ask an assistant yourself</h4>
+                <p class="field-hint">Copy this request into a chat assistant you already use, then paste
+                  its answer into the word box above. AAC Editor sends nothing anywhere; whatever you paste
+                  goes through the same review as typed words.</p>
+                <p id="ai-manual-prompt" class="ai-manual-prompt"></p>
+                <p class="field-hint"><strong>Do not add a client&rsquo;s name or personal details</strong> to
+                  the request: it leaves this computer when you paste it into the assistant.</p>
+                <div class="ai-actions">
+                  <button type="button" id="ai-manual-copy" class="btn btn-secondary btn-compact">Copy the request</button>
+                  <a id="ai-manual-open" class="btn btn-ghost btn-compact" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer">Open a chat assistant</a>
+                  <button type="button" id="ai-manual-paste" class="text-button">Go to the word box</button>
+                </div>
+                <p id="ai-manual-status" class="status-line" role="status" aria-live="polite"></p>
+              </section>
+
               <p id="ai-status" class="status-line" role="status" aria-live="polite"></p>
 
               <section id="ai-tray" class="ai-tray" aria-labelledby="ai-tray-heading" hidden>
@@ -461,8 +506,7 @@
                   <div class="field">
                     <label for="ai-engine">Where suggestions come from</label>
                     <select id="ai-engine">
-                      <option value="auto">Whichever is ready</option>
-                      <option value="local">The built-in model on this computer</option>
+                      <option value="auto">The built-in model on this computer (default)</option>
                       <option value="ollama">My own Ollama server</option>
                     </select>
                   </div>
@@ -648,6 +692,7 @@
 <footer class="foot">
   <p>Your page sets and words stay on this computer. No account, no tracking.</p>
   <div class="foot-actions">
+    <span id="diagnostic-indicator" class="diagnostic-indicator" role="status" hidden>Diagnostic mode is on</span>
     <button type="button" id="settings-panel-btn" class="text-button">What AAC Editor saves</button>
     <button type="button" id="support-report-btn" class="text-button">Copy a support report</button>
     <button type="button" id="quit-btn" class="text-button" hidden>Quit the app</button>
@@ -792,10 +837,19 @@
       <ul class="privacy-list">
         <li><strong>A working copy of an exported file</strong>, only while you edit one. It sits in
           your temporary folder, only your account and this computer&rsquo;s administrators can open
-          it, and it is deleted when you close the file or quit. If AAC Editor is shut down
+          it, and it is deleted when you close the file or quit, unless it holds edits you never saved:
+          then it is kept for up to a week so AAC Editor can offer it back next time. If AAC Editor is shut down
           abruptly a copy can be left behind. The next time AAC Editor starts after a day it
           deletes any it finds, and Clear all saved data deletes them straight away.
           <span id="working-copies-folder-line" hidden>Folder: <code></code></span></li>
+        <li><strong>An activity log</strong> in the &ldquo;logs&rdquo; folder next to the settings
+          file: one line per edit, save or check, with when it happened, how long it took, whether
+          it worked, and a short code if it did not. It never contains button labels, spoken
+          messages, page or file names, or anything you typed. It keeps at most about 5 MB and
+          Clear all saved data deletes it. It is only ever shared if you copy a support report.</li>
+        <li><strong>Grid 3 backups</strong>, only if you edit Grid 3 live: a copy of the grid set
+          taken just before each edit, in the &ldquo;backups&rdquo; folder next to the settings
+          file. The newest 20 are kept, and Clear all saved data deletes them.</li>
         <li><strong>The suggestion model</strong>, only if you set up suggestions. It is one file of
           about 1 to 5 GB in the &ldquo;models&rdquo; folder next to the settings file. It is a public
           model with nothing about you in it, and nothing you type is ever added to it.</li>
@@ -819,6 +873,17 @@
         the Wikipedia lookup off completely.</p>
     </section>
 
+    <section class="privacy-section" aria-labelledby="diagnostic-heading">
+      <h3 id="diagnostic-heading">Diagnostic mode</h3>
+      <label class="inline-option" for="diagnostic-mode-toggle">
+        <input id="diagnostic-mode-toggle" type="checkbox">
+        Record each step of every edit in the activity log
+      </label>
+      <p id="diagnostic-mode-hint" class="field-hint">For tracking down a problem that comes and
+        goes. It adds timings and step names, still with no labels, names or words, and turns itself
+        off after 24 hours. A note at the bottom of the window shows while it is on.</p>
+    </section>
+
     <p id="settings-panel-status" class="status-line" role="status" aria-live="polite"></p>
     <div class="dialog-actions">
       <button type="button" id="settings-clear-btn" class="btn btn-danger">Clear all saved data</button>
@@ -830,8 +895,9 @@
 <dialog id="support-dialog" class="chip-dialog support-dialog" aria-labelledby="support-dialog-title">
   <form method="dialog">
     <h2 id="support-dialog-title">Support report</h2>
-    <p class="field-hint">Paste this into a bug report. It describes this computer and the
-      apps AAC Editor can see — no page names, button labels, or file names are included.</p>
+    <p class="field-hint">Paste this into a bug report. It describes this computer, the apps
+      AAC Editor can see, and the recent activity log as codes and timings — no page names,
+      button labels, or file names are included.</p>
     <pre id="support-report-text" class="support-report" tabindex="0">Collecting…</pre>
     <p id="support-copy-status" class="status-line" role="status" aria-live="polite"></p>
     <div class="dialog-actions">

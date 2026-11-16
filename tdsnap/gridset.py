@@ -53,12 +53,12 @@ from .grid3 import (
     Grid3Cell,
     Grid3Grid,
     Grid3Package,
-    _cell_kind,
-    _describe_cell,
-    _semantic,
-    _spoken_after_change,
-    _text,
 )
+from .grid3 import cell_kind as _cell_kind
+from .grid3 import describe_cell as _describe_cell
+from .grid3 import semantic as _semantic
+from .grid3 import spoken_after_change as _spoken_after_change
+from .grid3 import xml_text as _text
 
 FORMAT = "gridset"
 
@@ -320,8 +320,10 @@ def covered(grid: Grid3Grid) -> set[tuple[int, int]]:
     """Every square some cell element occupies, spans included."""
     squares = set()
     for cell in grid.cells:
-        for dx in range(max(1, cell.column_span)):
-            for dy in range(max(1, cell.row_span)):
+        # Only squares inside the grid matter, so a span reaching past its
+        # edge never costs more than the grid itself (REL-012).
+        for dx in range(max(1, min(cell.column_span, grid.cols - cell.x))):
+            for dy in range(max(1, min(cell.row_span, grid.rows - cell.y))):
                 squares.add((cell.x + dx, cell.y + dy))
     return squares
 

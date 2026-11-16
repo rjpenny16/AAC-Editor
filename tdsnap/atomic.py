@@ -13,6 +13,7 @@ import contextlib
 import os
 import shutil
 import tempfile
+import time
 from typing import Union
 
 
@@ -28,12 +29,26 @@ def _fsync_directory(directory: str) -> None:
             os.close(descriptor)
 
 
+# REL-020: on Windows a rename over a file that another handle has open
+# (an antivirus scan, a search indexer, a read that has not finished) fails
+# with PermissionError for a moment. It is retried briefly before failing.
+REPLACE_ATTEMPTS = 10
+REPLACE_PAUSE = 0.1
+
+
 def replace_durably(temporary: str, dest_path: str) -> None:
     """Flush *temporary* to disk, then rename it over *dest_path*."""
     # r+b, not rb: Windows refuses to fsync a handle that was not opened for writing
     with open(temporary, "r+b") as handle:
         os.fsync(handle.fileno())
-    os.replace(temporary, dest_path)
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(temporary, dest_path)
+            break
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_PAUSE)
     _fsync_directory(os.path.dirname(os.path.abspath(dest_path)))
 
 

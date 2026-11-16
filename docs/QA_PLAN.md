@@ -27,7 +27,9 @@ real TD Snap fixture tests (`scripts/fetch_fixture.py`), packaged exe and Authen
 
 ## Phase 1: Close the verification gaps
 
-- [x] Browser suite against the installed Chromium: 171 passed, 1 skipped. (The sandbox Chromium
+- [x] Browser suite against the installed Chromium: 171 passed, 1 skipped at the time. (As of
+      the November 2026 reliability work the suite has over 190 tests and also runs in Edge on
+      Windows in CI; see `docs/reliability/05-TESTING-AND-DIAGNOSTICS.md`.) (The sandbox Chromium
       build differs from the one Playwright pins, so a local config with `executablePath` was used
       and not committed.)
 - [x] Real fixture fetched; integration tests: 7 passed. Full Python suite with the fixture:

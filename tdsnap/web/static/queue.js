@@ -255,6 +255,14 @@ const OUTCOME_TEXT = {
   skipped: "Not attempted, because an earlier page could not be applied",
 };
 
+/* A failed page says what its outcome was (doc 04): "put back" is only true
+   when the server verified it. */
+const FAILED_TEXT = {
+  rolled_back: OUTCOME_TEXT.failed,
+  partial: "Failed — this page may be partly changed. Check it in TD Snap",
+  unknown: "Stopped here — check this page in TD Snap before doing anything else",
+};
+
 function renderBatchOutcome(data) {
   const wrap = $("batch-outcome-wrap");
   const list = $("batch-outcome");
@@ -275,7 +283,8 @@ function renderBatchOutcome(data) {
         report.moved ? `${report.moved} moved` : "",
         report.removed ? `${report.removed} removed` : "",
       ].filter(Boolean).join(", ") || "nothing to do"}`
-      : OUTCOME_TEXT[result.status] || result.status;
+      : (result.status === "failed" && FAILED_TEXT[result.outcome])
+        || OUTCOME_TEXT[result.status] || result.status;
     row.append(name, status);
     if (result.error) {
       const why = document.createElement("span");
