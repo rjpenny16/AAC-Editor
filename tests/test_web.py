@@ -292,8 +292,17 @@ def test_ai_status_requires_token_and_rejects_invalid_hosts(client, monkeypatch)
     assert response.status_code == 400
     assert calls == []
 
+    # Ollama is not probed unless it was chosen (REL-028)...
     response = client.get(
         "/api/ai/status?host=http://localhost:11434/",
+        headers=token_headers(),
+    )
+    assert response.status_code == 200
+    assert calls == []
+
+    # ... and when it was, the normalised host is what is probed.
+    response = client.get(
+        "/api/ai/status?host=http://localhost:11434/&engine=ollama",
         headers=token_headers(),
     )
     assert response.status_code == 200

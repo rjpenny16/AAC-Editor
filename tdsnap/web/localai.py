@@ -33,6 +33,7 @@ import errno
 import hashlib
 import os
 import shutil
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -301,6 +302,14 @@ def supported(choice: ModelChoice, memory: Optional[int] = None) -> tuple[bool, 
             f"{choice.name} needs about {choice.min_memory_bytes / GIB:.0f} GB."
         )
     return True, ""
+
+
+def launch_mode() -> str:
+    """"installed" in the packaged app (PyInstaller sets ``sys.frozen``),
+    "source" when started from a checkout by launch.bat, launch.sh or
+    ``python -m tdsnap.web``. The two can differ in whether the built-in
+    engine is present (REL-028), so the panel names which one is running."""
+    return "installed" if getattr(sys, "frozen", False) else "source"
 
 
 def engine_available() -> bool:

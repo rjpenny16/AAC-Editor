@@ -420,7 +420,7 @@ def test_ai_endpoints(ai_client, recording_grounding, monkeypatch):
     assert generated["reference"] == "REF:About Snacks"
     assert recording_grounding[-1]["requested"] is True
 
-    # A reachable Ollama takes precedence.
+    # A reachable Ollama is used only when chosen (REL-028).
     monkeypatch.setattr(
         ollama, "status",
         lambda host=None: {"reachable": True, "models": ["m"], "message": "ok"},
@@ -430,15 +430,18 @@ def test_ai_endpoints(ai_client, recording_grounding, monkeypatch):
     )
     data = client.post("/api/ai/words", json={"category": "Snacks"},
                        headers=headers).get_json()
+    assert data["engine"] == "local"
+    data = client.post("/api/ai/words", json={"category": "Snacks", "engine": "ollama"},
+                       headers=headers).get_json()
     assert data["engine"] == "ollama" and data["words"] == ["Juice"]
 
-    # ... but an Ollama server with no models falls back to the built-in
-    # engine instead of failing with "model not found".
+    # ... and a chosen Ollama server with no models falls back to the
+    # built-in engine instead of failing with "model not found".
     monkeypatch.setattr(
         ollama, "status",
         lambda host=None: {"reachable": True, "models": [], "message": "empty"},
     )
-    data = client.post("/api/ai/words", json={"category": "Snacks"},
+    data = client.post("/api/ai/words", json={"category": "Snacks", "engine": "ollama"},
                        headers=headers).get_json()
     assert data["engine"] == "local" and data["words"] == ["Chips", "Apple"]
 
@@ -658,9 +661,12 @@ def test_the_user_can_say_which_engine_writes_the_suggestions(
     )
     monkeypatch.setattr(ollama, "generate_words", lambda **kw: (["Juice"], None))
 
-    # Ollama would win on its own; an explicit choice overrules that.
+    # The built-in model is the default; Ollama only runs when chosen.
     assert client.post(
         "/api/ai/words", json={"category": "Snacks"}, headers=headers
+    ).get_json()["engine"] == "local"
+    assert client.post(
+        "/api/ai/words", json={"category": "Snacks", "engine": "ollama"}, headers=headers
     ).get_json()["engine"] == "ollama"
     data = client.post(
         "/api/ai/words", json={"category": "Snacks", "engine": "local"},

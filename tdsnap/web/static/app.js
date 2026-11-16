@@ -79,9 +79,10 @@ configReady.then(async () => {
     $("ai-style").checked = preferences.ai_style;
   }
   if (preferences.ai_model) $("ai-model-choice").dataset.preferred = preferences.ai_model;
-  if (["auto", "local", "ollama"].includes(preferences.ai_engine)) {
-    $("ai-engine").value = preferences.ai_engine;
-  }
+  // "local" was its own choice before the built-in model became the default
+  // (REL-028); it now means the default. "ollama" is kept as chosen.
+  if (preferences.ai_engine === "ollama") $("ai-engine").value = "ollama";
+  else if (["auto", "local"].includes(preferences.ai_engine)) $("ai-engine").value = "auto";
 
   selectProvider(state.provider);
   show("load");

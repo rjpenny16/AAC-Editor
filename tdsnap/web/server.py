@@ -2001,13 +2001,18 @@ def ai_status():
     preferred = _bounded_text(request.args.get("model_key"), "model_key", 20) or None
     engine = _validated_engine(request.args.get("engine"))
     named = _bounded_text(request.args.get("model"), "model", 120)
-    ollama_state = ollama.status(host)
+    # Ollama is only probed when somebody chose it (REL-028): the built-in
+    # model is the default, and an absent Ollama costs a 5 s probe and shows
+    # an error to people who never asked for it.
+    ollama_state = ollama.status(host) if engines.wants_ollama(engine) else engines.NOT_CHECKED
     local_state = localai.status(preferred)
     return jsonify({
         "ok": True,
         "ollama": ollama_state,
         "local": local_state,
-        "ai": engines.readiness(ollama_state, local_state, engine, named),
+        "ai": engines.readiness(
+            ollama_state, local_state, engine, named, localai.launch_mode()
+        ),
     })
 
 
@@ -2017,8 +2022,9 @@ def ai_download():
     if not localai.engine_available():
         return jsonify(
             {"ok": False,
-             "error": "This install doesn't include the built-in AI engine; "
-                      "use Ollama instead or install llama-cpp-python."}
+             "error": "This copy of AAC Editor doesn't include the built-in "
+                      "suggestion engine. Use the installed app, or start "
+                      "launch.bat again once the AI extra can install."}
         ), 400
     payload = _json_payload()
     key = _bounded_text(payload.get("model_key"), "model_key", 20) or None
@@ -2051,8 +2057,8 @@ def _labels_of(words) -> list:
 def ai_words():
     """Generate suggestions with whichever engine is ready.
 
-    Preference order: whichever engine the user chose, then a reachable Ollama
-    server, then the built-in downloaded model (see engines.choose).
+    The built-in model unless the user chose Ollama; a chosen Ollama that
+    cannot run is stood in for by the built-in model (see engines.choose).
     """
     payload = _json_payload()
     existing = _validated_existing(payload.get("existing", []))
@@ -2114,7 +2120,9 @@ def ai_words():
     )
     model_key = _bounded_text(payload.get("model_key"), "model_key", 20) or None
     preferred = _validated_engine(payload.get("engine"))
-    ollama_state = ollama.status(host)
+    ollama_state = (
+        ollama.status(host) if engines.wants_ollama(preferred) else engines.NOT_CHECKED
+    )
     local_state = localai.status(model_key)
     # An Ollama server with no models can't generate anything; engines.choose
     # falls through to the built-in engine instead of failing with "model not
@@ -2123,7 +2131,9 @@ def ai_words():
     if engine is None:
         return jsonify(
             {"ok": False, "words": [],
-             "error": engines.readiness(ollama_state, local_state)["summary"]}
+             "error": engines.readiness(
+                 ollama_state, local_state, preferred, "", localai.launch_mode()
+             )["summary"]}
         ), 400
 
     def generate(extra=None):

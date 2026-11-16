@@ -124,6 +124,8 @@ function renderState(failure = "") {
     $(id).hidden = name !== stateName;
   });
   $("ai-go").disabled = !(readiness && readiness.ready);
+  // Ollama steps are offered only to somebody who chose Ollama (REL-028).
+  $("ai-ollama-btn-alt").hidden = !(readiness && readiness.action === "ollama");
   renderTray();
 }
 
@@ -253,6 +255,12 @@ $("ai-upgrade-model").addEventListener("change", () => {
 function openOllamaSteps() {
   $("ai-options").open = true;
   $("ai-advanced").open = true;
+  // Asking for the Ollama steps is choosing Ollama: it is never used unasked.
+  if ($("ai-engine").value !== "ollama") {
+    $("ai-engine").value = "ollama";
+    void savePreference("ai_engine", "ollama");
+    checkAi();
+  }
   $("ai-host").focus();
 }
 

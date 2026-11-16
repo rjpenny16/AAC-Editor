@@ -77,9 +77,17 @@ const AI_DOWNLOADING = {
 };
 
 const AI_UNAVAILABLE = {
-  ready: false, engine: null, state: 'unavailable',
-  summary: "Suggestions aren't available in this installation.",
-  detail: 'Suggestions need Ollama running on this computer instead.',
+  ready: false, engine: null, state: 'unavailable', launch_mode: 'source',
+  summary: "Suggestions aren't included in this copy of AAC Editor.",
+  detail: 'Suggestions are not included when AAC Editor is started from launch.bat '
+    + 'or launch.sh without the AI extra. Use the installed app.',
+  action: '', note: '', can_download: false,
+};
+
+const AI_OLLAMA_OFF = {
+  ready: false, engine: null, state: 'unavailable', launch_mode: 'installed',
+  summary: "Your Ollama server isn't answering.",
+  detail: 'You chose Ollama in the suggestion settings. Start Ollama and choose Check again.',
   action: 'ollama', note: '', can_download: false,
 };
 
@@ -4005,14 +4013,13 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
 
   /* ---------- getting started ---------- */
 
-  test('a build with no engine of its own says so, and offers the one route it has', async ({ page }) => {
-    // Ollama is not an alternative in this build — it is the only way — and
-    // the steps used to sit folded behind a summary reading "Use my own Ollama
-    // model", which is not where somebody with no model at all would look.
+  test('a copy started without the AI extra says so and never mentions Ollama', async ({ page }) => {
+    // REL-028: launch.bat installed no engine, so the panel fell back to
+    // Ollama and showed its connection error to people who never chose it.
     await mockTD(page);
     await mockAi(page, [{ words: [] }], {
       status: readyStatus({
-        ollama: { reachable: false, models: [] },
+        ollama: { reachable: false, models: [], checked: false },
         ai: AI_UNAVAILABLE,
       }),
     });
@@ -4020,10 +4027,24 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
     await openSuggestions(page);
 
     await expect(page.locator('#ai-state-pill')).toHaveText('Not available');
-    await expect(page.locator('#ai-summary')).toContainText("aren't available");
+    await expect(page.locator('#ai-summary')).toContainText("aren't included");
+    await expect(page.locator('#ai-detail')).toContainText('launch.bat');
     await expect(page.locator('#ai-stage-ready')).toBeHidden();
     await expect(page.locator('#ai-stage-setup')).toBeHidden();
+    await expect(page.locator('#ai-ollama-btn-alt')).toBeHidden();
+    await expect(page.locator('#ai-summary')).not.toContainText('Ollama');
+  });
 
+  test('somebody who chose Ollama and has it stopped is told so, with the steps', async ({ page }) => {
+    await mockTD(page);
+    await mockSettings(page, { preferences: { ai_engine: 'ollama' } });
+    await mockAi(page, [{ words: [] }], {
+      status: readyStatus({ ollama: { reachable: false, models: [] }, ai: AI_OLLAMA_OFF }),
+    });
+    await existingItems(page);
+    await openSuggestions(page);
+
+    await expect(page.locator('#ai-summary')).toContainText('Ollama');
     await page.locator('#ai-ollama-btn-alt').click();
     await expect(page.locator('.ai-setup-steps')).toBeVisible();
     await expect(page.locator('.ai-setup-steps')).toContainText('ollama pull llama3.2');
@@ -4049,10 +4070,12 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
     await expect(page.locator('.ai-setup-steps')).toBeHidden();
     await expect(page.locator('#ai-advanced')).not.toHaveAttribute('open', '');
 
-    // ... but they are one click away for somebody who already runs Ollama.
+    // ... but they are one click away for somebody who already runs Ollama,
+    // and asking for them is choosing Ollama.
     await page.locator('#ai-ollama-btn').click();
     await expect(page.locator('#ai-advanced')).toHaveAttribute('open', '');
     await expect(page.locator('.ai-setup-steps')).toBeVisible();
+    await expect(page.locator('#ai-engine')).toHaveValue('ollama');
   });
 
   test('the panel knows where it stands before anybody opens anything', async ({ page }) => {
@@ -4471,9 +4494,9 @@ test.describe('suggestions: setup, steering, and what reaches the page', () => {
     expect(asked[0].engine).toBe('auto');
 
     await openSettings(page);
-    await page.locator('#ai-engine').selectOption('local');
+    await page.locator('#ai-engine').selectOption('ollama');
     await page.locator('#ai-go').click();
-    expect(asked[1].engine).toBe('local');
+    expect(asked[1].engine).toBe('ollama');
   });
 
   test('an engine that stood in for the chosen one says so', async ({ page }) => {
