@@ -90,9 +90,18 @@ function statusQuery() {
    Runs once on load rather than when the panel is opened: "is this ready?" is
    the first thing somebody wants to know about a feature they have never used,
    and a panel that only finds out after you open it cannot tell you. */
+let recheck = false;
+
 async function checkAi() {
-  if (checking) return;
+  // REL-022: a check asked for while one runs (the engine or host changed)
+  // used to be dropped, so the older answer was shown. It now runs again
+  // once the current one finishes.
+  if (checking) {
+    recheck = true;
+    return;
+  }
   checking = true;
+  recheck = false;
   try {
     const data = await api(`/api/ai/status?${statusQuery()}`, { background: true });
     readiness = data.ai || null;
@@ -106,6 +115,7 @@ async function checkAi() {
       "stopped responding — reload it, then try again.");
   } finally {
     checking = false;
+    if (recheck) void checkAi();
   }
 }
 
@@ -330,9 +340,15 @@ function trackDownload() {
   const text = $("ai-progress-text");
   text.textContent = "Starting…";
 
-  downloadTimer = setInterval(async () => {
+  // REL-022: this was a setInterval with an async body, so slow polls
+  // overlapped, and it retried every second for ever on errors. Each poll is
+  // now scheduled after the last one finished, and it stops after a run of
+  // failures with a message instead of spinning silently.
+  let failures = 0;
+  const poll = async () => {
     try {
       const data = await api("/api/ai/download", { background: true });
+      failures = 0;
       const download = data.download;
       if (download.status === "downloading") {
         if (download.total > 0) {
@@ -346,9 +362,9 @@ function trackDownload() {
         } else {
           text.textContent = `Downloaded ${(download.done / 1e9).toFixed(2)} GB so far…`;
         }
+        downloadTimer = setTimeout(poll, 1000);
         return;
       }
-      clearInterval(downloadTimer);
       downloadTimer = null;
       if (download.status === "ready") {
         fill.style.width = "100%";
@@ -367,10 +383,20 @@ function trackDownload() {
         renderState();
       }
     } catch {
-      /* transient poll failure; keep trying */
+      failures += 1;
+      if (failures >= MAX_POLL_FAILURES) {
+        downloadTimer = null;
+        text.textContent = "AAC Editor stopped hearing how the setup is going. It may "
+          + "still be downloading; choose Check again in a minute.";
+        return;
+      }
+      downloadTimer = setTimeout(poll, 1000 * Math.min(failures + 1, 5));
     }
-  }, 1000);
+  };
+  downloadTimer = setTimeout(poll, 1000);
 }
+
+const MAX_POLL_FAILURES = 10;
 
 /* ---------- settings ---------- */
 
@@ -477,8 +503,12 @@ function suggestionContext() {
 /* One request shape for all the ways of asking: the whole panel, more for the
    tray, one item regenerated, and "more like this". Only `count`, `like`, and
    `already` differ. */
+let latestRequest = 0;
+
 async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
   const context = suggestionContext();
+  latestRequest += 1;
+  const thisRequest = latestRequest;
   if (articleContext !== context) {
     state.aiChosenArticle = "";
     state.aiExcluded = [];
@@ -517,6 +547,13 @@ async function askForSuggestions({ count, like = [], alsoAvoid = [] }) {
     },
     AI_GENERATION_TIMEOUT_MS
   );
+  // D4: an answer to an older request that arrives after a newer one was
+  // asked for is dropped rather than shown over it.
+  if (thisRequest !== latestRequest) {
+    const superseded = new Error("A newer request for suggestions replaced this one.");
+    superseded.superseded = true;
+    throw superseded;
+  }
   if (context !== suggestionContext() || !["items", "layout"].includes(state.wizardStep)) {
     throw new Error("The page changed while suggestions were being generated. Suggest again for this page.");
   }
@@ -889,6 +926,7 @@ async function runSuggestion(button, busyLabel) {
     });
     reportRound(offer(data.words), data);
   } catch (error) {
+    if (error.superseded) return; // a newer request owns the panel now
     status.classList.add("error");
     status.textContent = `Suggestions couldn’t be generated. ${error.message}`;
     // A failure is also the moment the panel's idea of "ready" may be stale —
@@ -923,7 +961,7 @@ async function withItemBusy(button, work) {
   try {
     await work(index);
   } catch (error) {
-    status.textContent = `That didn’t work. ${error.message}`;
+    if (!error.superseded) status.textContent = `That didn’t work. ${error.message}`;
   } finally {
     setBusy(button, false);
   }

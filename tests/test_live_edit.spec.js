@@ -5722,3 +5722,52 @@ test('the assistant fallback is not shown once suggestions are ready', async ({ 
   await openSuggestions(page);
   await expect(page.locator('#ai-manual')).toBeHidden();
 });
+
+test('an answer to an older suggestion request never replaces a newer one', async ({ page }) => {
+  // Roadmap D4: the slower, older reply used to be shown over the newer one.
+  let calls = 0;
+  let releaseFirst;
+  const firstHeld = new Promise((resolve) => { releaseFirst = resolve; });
+  await mockTD(page);
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus()));
+  await page.route('**/api/ai/words', async (route) => {
+    calls += 1;
+    const words = calls === 1 ? ['Stale'] : ['Fresh'];
+    if (calls === 1) await firstHeld;
+    return fulfillJson(route, {
+      ok: true, engine: 'local', requested: 10, returned: 1, retried: false, note: '', words,
+    });
+  });
+  await existingItems(page);
+  await openSuggestions(page);
+  await expect(page.locator('#ai-go')).toBeEnabled();
+  await page.locator('#ai-go').click();
+  await expect.poll(() => calls).toBe(1);
+  await page.evaluate(() => document.getElementById('ai-go').removeAttribute('disabled'));
+  await page.locator('#ai-go').click();
+  await expect(page.locator('#ai-tray')).toContainText('Fresh');
+  releaseFirst();
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('#ai-tray')).not.toContainText('Stale');
+});
+
+test('the model download poll stops after repeated failures and says so', async ({ page }) => {
+  await page.clock.install();
+  let polls = 0;
+  await mockTD(page);
+  await page.route('**/api/ai/status*', (route) => fulfillJson(route, readyStatus({
+    ai: AI_DOWNLOADING, local: { ...LOCAL_MODEL, download: { status: 'downloading' } },
+  })));
+  await page.route('**/api/ai/download', (route) => {
+    polls += 1;
+    return fulfillJson(route, { ok: false, error: 'boom' }, 500);
+  });
+  await existingItems(page);
+  await runClock(page, 120_000);
+  const settled = polls;
+  await runClock(page, 60_000);
+  expect(polls).toBe(settled);
+  expect(polls).toBeLessThanOrEqual(10);
+  await openSuggestions(page);
+  await expect(page.locator('#ai-progress-text')).toContainText('stopped hearing');
+});
