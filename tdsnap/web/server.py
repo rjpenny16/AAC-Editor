@@ -1244,13 +1244,14 @@ def _unexpected_error(exc):
     in a sentence the user can act on, and keep the full traceback in the log.
     """
     app.logger.exception("Unhandled error in %s", request.path)
-    detail = str(exc).strip() or type(exc).__name__
+    # E1: the raw exception text used to be shown ("Something unexpected went
+    # wrong (...). Try again."). It can name a file or a button and tells the
+    # person nothing they can act on; its class and code go to the log and
+    # the support report, and the browser builds the rest of the message
+    # (what changed, is it safe, what next) from the outcome.
     return jsonify({
         "ok": False,
-        "error": (
-            f"Something unexpected went wrong ({detail[:200]}). Try again. If it keeps "
-            "happening, restart AAC Editor and copy a support report from the footer."
-        ),
+        "error": "AAC Editor ran into a problem it does not recognise.",
         **_error_fields(exc),
     }), 500
 

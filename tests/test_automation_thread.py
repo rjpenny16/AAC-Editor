@@ -113,8 +113,11 @@ def test_an_unexpected_failure_is_json_the_browser_can_show(client, monkeypatch)
     assert response.status_code == 500
     data = response.get_json()
     assert data["ok"] is False
-    assert "Something unexpected went wrong" in data["error"]
-    assert "unable to invoke" in data["error"]
+    # E1: a sentence the browser completes from the outcome, never the raw
+    # COM text, which goes to the log and the support report as a class.
+    assert data["error"] == "AAC Editor ran into a problem it does not recognise."
+    assert "unable to invoke" not in data["error"]
+    assert data["code"] == "UNEXPECTED" and data["outcome"] == "unknown"
 
 
 def test_an_unknown_api_path_is_json_too(client):
