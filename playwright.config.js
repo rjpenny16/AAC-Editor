@@ -9,6 +9,9 @@ module.exports = defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:8765',
     browserName: 'chromium',
+    // PW_CHANNEL=msedge runs the suite in installed Edge (the Windows CI job),
+    // which is the engine the desktop window uses.
+    ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
