@@ -1488,9 +1488,17 @@ def _has_label(window, control, label):
         return True
     # A custom message replaces Name, but the button editor still exposes
     # the actual label. Read it live rather than trusting unsaved disk data.
+    # REL-017: straight after the click the editor can still show the
+    # previously selected button, so the label is given a moment to arrive
+    # before it is judged wrong.
     _open_button_editor(window, control)
     try:
-        return _filled_label_field(window, label) is not None
+        return _wait_for(
+            lambda: _filled_label_field(window, label) is not None,
+            "label not shown", timeout=1.0, min_polls=2,
+        )
+    except PagesetError:
+        return False
     finally:
         _collapse_editor(window)
 

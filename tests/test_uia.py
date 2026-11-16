@@ -178,11 +178,54 @@ def test_wait_for_returns_the_first_truthy_value(monkeypatch):
 
 
 def test_wait_for_raises_with_the_given_message_on_timeout(monkeypatch):
-    ticks = iter([0, 0, 100])
-    monkeypatch.setattr(uia.time, "monotonic", lambda: next(ticks))
-    monkeypatch.setattr(uia.time, "sleep", lambda _seconds: None)
+    clock = [0.0]
+    monkeypatch.setattr(uia.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(uia.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
     with pytest.raises(PagesetError, match="gave up"):
         uia.wait_for(lambda: None, "gave up", timeout=1)
+
+
+def test_wait_for_polls_a_minimum_number_of_times_and_once_after_the_deadline(monkeypatch):
+    """REL-017: a short timeout on a slow PC used to get one or two polls,
+    and a value arriving during the last sleep was never seen."""
+    clock = [0.0]
+    monkeypatch.setattr(uia.time, "monotonic", lambda: clock[0])
+    # Each poll is a slow tree walk: 5 s, far past a 2 s timeout.
+    calls = []
+
+    def slow_callback():
+        calls.append(clock[0])
+        clock[0] += 5
+        return None
+
+    monkeypatch.setattr(uia.time, "sleep", lambda seconds: None)
+    with pytest.raises(PagesetError):
+        uia.wait_for(slow_callback, "x", timeout=2)
+    assert len(calls) == uia.WAIT_MIN_POLLS
+
+    # The value appears during the final sleep; the last poll catches it.
+    clock[0] = 0.0
+    state = {"n": 0}
+
+    def arrives_late():
+        state["n"] += 1
+        return "ready" if clock[0] >= 1.0 else None
+
+    monkeypatch.setattr(uia.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + 1.0))
+    assert uia.wait_for(arrives_late, "x", timeout=1, min_polls=1) == "ready"
+
+
+def test_wait_for_polls_again_when_the_element_vanished(monkeypatch):
+    monkeypatch.setattr(uia.time, "sleep", lambda _s: None)
+    attempts = []
+
+    def repainting():
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise OSError("element not available")
+        return "found"
+
+    assert uia.wait_for(repainting, "x") == "found"
 
 
 def test_wait_for_ignore_swallows_only_named_exceptions(monkeypatch):

@@ -268,27 +268,50 @@ def activate(
 # polling
 
 WAIT_DEFAULT_TIMEOUT = 8
+# Every wait gets at least this many polls, however short its timeout: a
+# 2 s wait on a slow PC used to get one or two tree walks (REL-017).
+WAIT_MIN_POLLS = 3
+
+# What a UI Automation read raises when the element went away between being
+# found and being read: COMError from comtypes on Windows, OSError otherwise.
+try:  # pragma: no cover - Windows only
+    from _ctypes import COMError as _COMError
+
+    VANISHED = (OSError, _COMError)
+except ImportError:  # pragma: no cover - non-Windows interpreters
+    VANISHED = (OSError,)
 
 
-def wait_for(callback, message, timeout=WAIT_DEFAULT_TIMEOUT, ignore=()):
+def wait_for(callback, message, timeout=WAIT_DEFAULT_TIMEOUT, ignore=(),
+             min_polls=WAIT_MIN_POLLS):
     """Poll *callback* until truthy, or raise ``PagesetError(message)``.
 
-    *ignore* names exception types that count as "not yet" instead of a hard
-    failure — see the module docstring for why this is a caller-supplied
-    parameter rather than a hard-coded default.
+    REL-017, roadmap C2:
+
+    - an element that vanishes during a read (the AAC app repainted) counts
+      as "not yet" and is polled again, instead of failing the operation;
+    - there is always one poll after the deadline has passed, so a value that
+      arrived during the last sleep is not missed;
+    - the wait lasts at least *timeout* seconds **and** *min_polls* polls.
+
+    *ignore* names further exception types that count as "not yet"; see the
+    module docstring for why that is a caller-supplied parameter.
     """
     started = time.monotonic()
     deadline = started + timeout
     polls = 0
-    while time.monotonic() < deadline:
+    tolerated = (*VANISHED, *tuple(ignore or ()))
+    while True:
         polls += 1
         try:
             value = callback()
-        except ignore:
+        except tolerated:
             value = None
         if value:
             _note_wait(started, polls, "ok")
             return value
+        if time.monotonic() >= deadline and polls >= min_polls:
+            break
         time.sleep(0.15)
     _note_wait(started, polls, "timeout")
     raise PagesetError(message)
