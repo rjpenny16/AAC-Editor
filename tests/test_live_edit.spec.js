@@ -200,6 +200,36 @@ async function openSuggestions(page) {
   if (!(await panel.evaluate((node) => node.open))) await panel.locator('> summary').click();
 }
 
+// Two autosave ticks (draft.js AUTOSAVE_INTERVAL_MS is 2000). Used with
+// page.clock.runFor, which runs every timer due in the span, so the ticks are
+// guaranteed to have fired rather than probably.
+const AUTOSAVE_TICKS = 4000;
+
+/* Advance the page's fake clock by *ms*, running every timer due in that
+   span, then wait until every request those timers started has finished.
+   Needs page.clock.install() before the page loads. This replaces "sleep N ms
+   and assert nothing happened", which proves nothing when N is close to the
+   interval being tested. */
+async function runClock(page, ms) {
+  const pending = new Set();
+  const start = (request) => pending.add(request);
+  const end = (request) => pending.delete(request);
+  page.on('request', start);
+  page.on('requestfinished', end);
+  page.on('requestfailed', end);
+  try {
+    await page.clock.runFor(ms);
+    // Two round trips let anything the timers queued reach the network.
+    await page.evaluate(() => Promise.resolve());
+    await page.evaluate(() => Promise.resolve());
+    await expect.poll(() => pending.size).toBe(0);
+  } finally {
+    page.off('request', start);
+    page.off('requestfinished', end);
+    page.off('requestfailed', end);
+  }
+}
+
 async function blockingViolations(page) {
   const results = await new AxeBuilder({ page }).analyze();
   return results.violations
@@ -269,6 +299,7 @@ test.describe('beginner word-adding regressions', () => {
   });
 
   test('the draft survives time spent reviewing and choosing a destination', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page, { preferences: { draft_autosave: true } });
     await mockTD(page);
     await existingItems(page);
@@ -276,11 +307,14 @@ test.describe('beginner word-adding regressions', () => {
     await page.locator('#word-input').press('Enter');
     await expect.poll(() => store.draft?.items.length).toBe(1);
     await page.locator('#build-btn').click();
-    await page.waitForTimeout(2200);
+    // runFor fires every autosave tick due in that span, so at least one tick
+    // is guaranteed to have run (a 2200 ms sleep against a 2000 ms interval
+    // was not).
+    await runClock(page, AUTOSAVE_TICKS);
     expect(store.draft.items[0].label).toBe('apple');
     await page.locator('#review-back-btn').click();
     await page.locator('#choose-page-btn').click();
-    await page.waitForTimeout(2200);
+    await runClock(page, AUTOSAVE_TICKS);
     expect(store.draft.items[0].label).toBe('apple');
   });
 
@@ -1348,6 +1382,7 @@ test('page suggestions are visible while typing', async ({ page }) => {
 });
 
 test('a new topic page is not changed by live page monitoring', async ({ page }) => {
+  await page.clock.install();
   let statusCalls = 0;
   await mockTD(page, {
     status: () => {
@@ -1370,7 +1405,17 @@ test('a new topic page is not changed by live page monitoring', async ({ page })
   await page.locator('#word-input').fill('Roar, Stomp, Chomp, Sleep, Run, Hide');
   await page.locator('#word-input').press('Enter');
   await expect(page.locator('#preview .cell.used')).toHaveCount(6);
-  await page.waitForTimeout(1200);
+  // Run three live-poll intervals (1.5 s each in livewatch.js) on the page's
+  // clock, so the poll timer is guaranteed to have fired, rather than sleeping
+  // for less than one interval and proving nothing.
+  let polled = 0;
+  page.on('request', (request) => {
+    if (request.url().includes('/api/tdsnap/status')) polled += 1;
+  });
+  await runClock(page, 4500);
+  // In new-page mode the builder owns the grid, so the monitor must not even
+  // ask TD Snap which page is open.
+  expect(polled).toBe(0);
   await expect(page.locator('#preview .cell.used')).toHaveCount(6);
   await expect(page.locator('#parent-select')).toHaveValue('Topics Menu Page');
 });
@@ -5038,17 +5083,16 @@ test.describe('private by default: what is kept, and what can leave', () => {
     });
     return asked;
   }
-  // Two autosave ticks (every 2 seconds), plus a margin.
-  const TWO_TICKS = 4600;
 
   test('nothing somebody builds is written to disk unless they asked for that', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page);
     await mockTD(page);
     await existingItems(page);
     await page.locator('#word-input').fill('private word, another one');
     await page.locator('#word-input').press('Enter');
     await expect(page.locator('#chipbox .chip')).toHaveCount(2);
-    await page.waitForTimeout(TWO_TICKS);
+    await runClock(page, AUTOSAVE_TICKS);
 
     expect(store.draft).toBeNull();
     expect(store.writes.every((body) => !body.draft)).toBe(true);
@@ -5056,6 +5100,7 @@ test.describe('private by default: what is kept, and what can leave', () => {
   });
 
   test('keeping an unfinished page is a choice: on saves it, off deletes it', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page);
     await mockTD(page);
     await existingItems(page);
@@ -5069,6 +5114,7 @@ test.describe('private by default: what is kept, and what can leave', () => {
 
     await page.locator('#word-input').fill('apple');
     await page.locator('#word-input').press('Enter');
+    await runClock(page, AUTOSAVE_TICKS);
     await expect.poll(() => store.draft?.items.length).toBe(1);
 
     await page.locator('#settings-panel-btn').click();
@@ -5083,7 +5129,7 @@ test.describe('private by default: what is kept, and what can leave', () => {
     // Off means off: what is typed from here on is not kept.
     await page.locator('#word-input').fill('pear');
     await page.locator('#word-input').press('Enter');
-    await page.waitForTimeout(TWO_TICKS);
+    await runClock(page, AUTOSAVE_TICKS);
     expect(store.draft).toBeNull();
   });
 
@@ -5116,17 +5162,19 @@ test.describe('private by default: what is kept, and what can leave', () => {
   });
 
   test('a draft is kept after it is answered when drafts are on', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page, {
       draft: olderDraft, preferences: { draft_autosave: true },
     });
     await mockTD(page);
     await openEditor(page);
     await page.locator('#draft-resume-btn').click();
-    await page.waitForTimeout(500);
+    await runClock(page, AUTOSAVE_TICKS);
     expect(store.draft).not.toBeNull();
   });
 
   test('the Wikipedia lookup starts off every time and is never remembered', async ({ page }) => {
+    await page.clock.install();
     const store = await mockSettings(page);
     await mockTD(page);
     await existingItems(page);
@@ -5135,7 +5183,8 @@ test.describe('private by default: what is kept, and what can leave', () => {
     await expect(page.locator('#ai-grounding')).not.toBeChecked();
     await page.locator('#ai-grounding').check();
     await expect(page.locator('#ai-grounding')).toBeChecked();
-    await page.waitForTimeout(300);
+    // Any debounced preference save would have fired inside this span.
+    await runClock(page, AUTOSAVE_TICKS);
     expect(JSON.stringify(store.writes)).not.toContain('ai_grounding');
 
     // The next launch starts unticked, whatever was chosen before.
