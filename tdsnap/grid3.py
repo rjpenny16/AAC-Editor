@@ -51,6 +51,9 @@ PROTECTED_MESSAGE = (
     "not support it. Edit it in Grid 3 directly."
 )
 
+# No real Grid 3 grid has this many rows or columns (REL-012).
+MAX_GRID_SIDE = 100
+
 
 @dataclass(frozen=True)
 class Grid3Style:
@@ -530,6 +533,17 @@ class Grid3Package:
             row_span = int(node.get("RowSpan", "1"))
         except ValueError as exc:
             raise PagesetError("The active Grid 3 grid has invalid cell coordinates.") from exc
+        # REL-012: spans and positions were accepted as any integer, and a
+        # crafted 3000x3000 span took 29 s and 1.3 GB to read. No real grid
+        # comes near MAX_GRID_SIDE in either direction.
+        if not (
+            0 <= x < MAX_GRID_SIDE and 0 <= y < MAX_GRID_SIDE
+            and 0 <= column_span <= MAX_GRID_SIDE and 0 <= row_span <= MAX_GRID_SIDE
+        ):
+            raise PagesetError(
+                "This grid has a cell whose position or size is outside any real grid, "
+                "so AAC Editor will not read it. The file may be damaged."
+            )
         safe_blank = (
             not label and not image and not commands and not content_type and not content_subtype
             and all(child.tag in allowed_blank_nodes for child in content)

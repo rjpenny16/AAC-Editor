@@ -611,3 +611,36 @@ def test_imported_board_names_become_usable_grid_names():
     assert gridset._safe_title("a/b: c?") == "a-b- c-"
     assert gridset._safe_title("Nul") == "Nul board"
     assert gridset._safe_title("...") == "Board"
+
+
+# ---------------------------------------------------------------------------
+# REL-012: a crafted grid set cannot exhaust memory (roadmap D5)
+
+
+def test_an_oversized_span_is_refused_quickly(tmp_path):
+    """The audit's reproduction: spans of 3000 x 3000 took 28.7 s and 1.3 GB."""
+    import time
+
+    hostile = grid_xml(['<Cell X="0" Y="0" ColumnSpan="3000" RowSpan="3000">'
+                        "<Content><CaptionAndImage><Caption>x</Caption></CaptionAndImage>"
+                        "</Content></Cell>"])
+    path = make(tmp_path, grids={"Home": hostile, "Food": FOOD})
+    started = time.monotonic()
+    with pytest.raises(PagesetError, match="outside any real grid"):
+        state(path)
+    assert time.monotonic() - started < 2
+
+
+@pytest.mark.parametrize("attributes", ['X="-1" Y="0"', 'X="0" Y="100000"'])
+def test_cells_placed_outside_any_real_grid_are_refused(tmp_path, attributes):
+    hostile = grid_xml([f"<Cell {attributes}><Content/></Cell>"])
+    with pytest.raises(PagesetError, match="outside any real grid"):
+        state(make(tmp_path, grids={"Home": hostile, "Food": FOOD}))
+
+
+def test_coverage_never_costs_more_than_the_grid_itself():
+    from types import SimpleNamespace
+
+    grid = SimpleNamespace(cols=3, rows=2, cells=[
+        SimpleNamespace(x=1, y=0, column_span=100, row_span=100)])
+    assert gridset.covered(grid) == {(1, 0), (2, 0), (1, 1), (2, 1)}

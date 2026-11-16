@@ -1512,7 +1512,17 @@ def get_settings():
     A draft left by an older version is still returned once, so the person can
     resume or discard it rather than losing it unseen.
     """
-    data = settings.load()
+    try:
+        data = settings.load()
+    except OSError as exc:
+        # The file exists but cannot be read (locked by a sync client, or its
+        # permissions changed). Saying so beats a generic error, and nothing
+        # treats the saved work as empty (doc 02 minor finding).
+        raise PagesetError(
+            "AAC Editor could not read its saved settings just now. They have not "
+            "been changed. Close anything that might have the file open, then reload.",
+            code="REFUSED",
+        ) from exc
     return jsonify({
         "ok": True,
         "preferences": _validated_preferences(data["preferences"]),
