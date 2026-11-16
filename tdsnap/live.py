@@ -3554,3 +3554,21 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ---------------------------------------------------------------------------
+# Public interface for grid3.py and the web server (roadmap E5)
+#
+# These used to be imported by their private names, so a change to a "private"
+# helper here could silently break Grid 3 editing.
+
+def desktop_unlocked() -> bool:
+    return _desktop_unlocked()
+
+
+def focus_window(window):
+    return _focus_window(window)
+
+
+def active_pageset_path(visible_page=None, visible_labels=()):
+    return _active_pageset_path(visible_page, visible_labels)

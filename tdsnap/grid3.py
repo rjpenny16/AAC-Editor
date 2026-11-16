@@ -24,7 +24,8 @@ from xml.etree import ElementTree as ET
 from . import errors, uia
 from .builder import _normalize_items
 from .errors import PagesetError
-from .live import _desktop_unlocked, _focus_window
+from .live import desktop_unlocked as _desktop_unlocked
+from .live import focus_window as _focus_window
 from .web import oplog
 
 GRID3_EXE = os.path.join(
@@ -2122,3 +2123,13 @@ def add_topic_page(title, items, link_slot=None, fingerprint=None) -> dict:
             f"Grid 3 could not choose a verified symbol for {expected_symbols - symbols} cell(s)."
         ] if symbols < expected_symbols else []),
     }
+
+
+# ---------------------------------------------------------------------------
+# Public interface for gridset.py (roadmap E5)
+
+cell_kind = _cell_kind
+describe_cell = _describe_cell
+semantic = _semantic
+spoken_after_change = _spoken_after_change
+xml_text = _text

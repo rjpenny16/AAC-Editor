@@ -2467,7 +2467,7 @@ def _obz_response(boardset: dict, name: str):
 
 
 def _live_pageset_path() -> str:
-    path = live._active_pageset_path(request.args.get("page") or None)
+    path = live.active_pageset_path(request.args.get("page") or None)
     if not path:
         raise PagesetError(
             "AAC Editor could not tell which page set TD Snap has open, so there is "
