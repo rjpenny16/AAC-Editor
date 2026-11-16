@@ -372,6 +372,26 @@ test.describe('accessibility past the first screen', () => {
     expect(await blockingViolations(page)).toEqual([]);
   });
 
+  // A modal makes everything behind it inert to axe, so a scan taken with a
+  // dialog open says nothing about the header. These scan each connected
+  // state with no dialog, which is how the badge's Label in Name defect hid.
+  test('the TD Snap connected screen is clean with no dialog open', async ({ page }) => {
+    await mockTD(page);
+    await existingItems(page);
+    await expect(page.locator('#file-badge')).toBeVisible();
+    await expect(page.locator('[role="dialog"]:visible, dialog[open]')).toHaveCount(0);
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test('the Grid 3 connected screen is clean with no dialog open', async ({ page }) => {
+    mockGrid3(page);
+    await connectGrid3(page);
+    await expect(page.locator('#file-badge')).toHaveText('Grid 3 · Change app');
+    await expect(page.locator('#file-badge')).toHaveAccessibleName('Grid 3 · Change app');
+    await expect(page.locator('[role="dialog"]:visible, dialog[open]')).toHaveCount(0);
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
   test('the review screen is clean', async ({ page }) => {
     await mockTD(page);
     await existingItems(page);
@@ -909,9 +929,10 @@ test('open-page path goes straight to Add and edits only after confirmation', as
   await expect(page.locator('#parent-select')).toHaveValue('Eating');
   await expect(page.locator('#current-page-label')).toHaveText('Eating');
   await expect(page.locator('#file-badge')).toHaveText('TD Snap · Change app');
-  await expect(page.locator('#file-badge')).toHaveAttribute(
-    'aria-label', 'Change app (currently TD Snap)',
-  );
+  // WCAG 2.5.3 (Label in Name): a voice-control user says what they see, so
+  // the accessible name is the visible text and nothing else.
+  await expect(page.locator('#file-badge')).toHaveAccessibleName('TD Snap · Change app');
+  await expect(page.locator('#file-badge')).not.toHaveAttribute('aria-label', /.*/);
   await page.locator('#choose-page-btn').click();
   await expect(page.locator('#wizard-destination')).toBeVisible();
   await expect(page.locator('#parent-select')).toHaveValue('Eating');
@@ -2904,6 +2925,13 @@ test.describe('exported file adds to an existing page', () => {
     });
     await expect(page.locator('#wizard-destination')).toBeVisible();
   }
+
+  test('the file connected screen is clean with no dialog open', async ({ page }) => {
+    await openFile(page);
+    await expect(page.locator('#file-badge')).toHaveAccessibleName('sample.sps · Change file');
+    await expect(page.locator('[role="dialog"]:visible, dialog[open]')).toHaveCount(0);
+    expect(await blockingViolations(page)).toEqual([]);
+  });
 
   test('switching from live search to a full exported page clears search and gives file guidance', async ({ page }) => {
     await mockTD(page);

@@ -41,12 +41,24 @@ function addPreviewCellContent(cell, label, fn = "", showSymbol = true) {
   cell.append(text);
 }
 
+/* A cell that is not a control but carries a description is a picture of a
+   cell: role="img" lets it carry aria-label (a plain div may not) without
+   becoming a widget whose name must match its visible text. */
+function finishCell(cell) {
+  if (cell.hasAttribute("aria-label") && !cell.hasAttribute("role")) {
+    cell.setAttribute("role", "img");
+  }
+  return cell;
+}
+
 function addCellState(cell, label) {
   const badge = document.createElement("span");
   badge.className = "cell-state";
   badge.textContent = label;
   badge.setAttribute("aria-hidden", "true");
-  cell.append(badge);
+  // The space keeps the badge a separate word ("apple New", not "appleNew")
+  // in the visible text that a cell's accessible name has to contain.
+  cell.append(" ", badge);
 }
 
 function selectableWord(cell, item) {
@@ -116,7 +128,7 @@ function renderGrid3Preview(preview) {
       selectableWord(cell, item);
       cell.setAttribute(
         "aria-label",
-        `${item.label}, row ${model.y + 1}, column ${model.x + 1}. ` +
+        `${item.label}, new, row ${model.y + 1}, column ${model.x + 1}. ` +
         "Drag or use arrow keys to move. This button retains the existing Grid 3 cell style."
       );
       cell.title = item.message
@@ -155,7 +167,7 @@ function renderGrid3Preview(preview) {
         else moveExistingButton(payload.slot, model.slot);
       });
     }
-    preview.append(cell);
+    preview.append(finishCell(cell));
   });
 }
 
@@ -410,7 +422,7 @@ function renderPreview() {
       selectableWord(cell, item);
       cell.setAttribute(
         "aria-label",
-        `${item.label}, row ${Math.floor(slot / state.grid.cols) + 1}, ` +
+        `${item.label}, new, row ${Math.floor(slot / state.grid.cols) + 1}, ` +
         `column ${(slot % state.grid.cols) + 1}. Drag or use arrow keys to move.`
       );
       if (item.fn) {
@@ -453,7 +465,7 @@ function renderPreview() {
       if (payload.kind === "word") movePreviewItem(payload.index, slot);
       else moveExistingButton(payload.slot, slot);
     });
-    preview.append(cell);
+    preview.append(finishCell(cell));
   }
 }
 

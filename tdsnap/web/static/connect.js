@@ -350,7 +350,6 @@ async function useFileSession(data) {
   setOperation("existing");
   renderParents("");
   $("file-badge").textContent = `${state.filename} · Change file`;
-  $("file-badge").setAttribute("aria-label", `Change exported file (currently ${state.filename})`);
   $("file-badge").hidden = false;
   $("build-sub").textContent =
     `${state.filename} · ${state.grid.cols}×${state.grid.rows} grid · ${state.pages.length} pages`;
@@ -472,7 +471,6 @@ $("live-connect-btn").addEventListener("click", async () => {
       });
       state.connected = true;
       $("file-badge").textContent = "Grid 3 · Change app";
-      $("file-badge").setAttribute("aria-label", "Change app (currently Grid 3)");
       $("file-badge").hidden = false;
       setProviderState("grid3", "Ready", "ready");
       status.textContent = data.compatibility_warning || "";
@@ -507,7 +505,6 @@ $("live-connect-btn").addEventListener("click", async () => {
     state.placementAdjusted = false;
 
     $("file-badge").textContent = "TD Snap · Change app";
-    $("file-badge").setAttribute("aria-label", "Change app (currently TD Snap)");
     $("build-sub").textContent =
       `Connected to “${data.page}” · ${data.grid.cols}×${data.grid.rows} grid · ` +
       `${state.pages.length} pages in this page set`;
