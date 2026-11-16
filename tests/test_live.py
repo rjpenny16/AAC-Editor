@@ -2949,3 +2949,39 @@ def test_a_changed_or_rearranged_page_is_still_refused(monkeypatch):
     # An old-style token is only ever equal to itself.
     assert live._same_page("abc", "abc") is True
     assert live._same_page(token, "abc") is False
+
+
+# ---------- REL-019: an unreadable page set is not guessed around (roadmap C4) ----------
+
+
+@pytest.mark.parametrize(("message", "code"), [
+    ("database is locked", "DB_LOCKED"),
+    ("file is not a database", "DB_UNREADABLE"),
+])
+def test_an_edit_whose_page_set_read_failed_is_refused_before_writing(monkeypatch, message, code):
+    _stub_live_page(monkeypatch, layouts=[[], []], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+    entered = []
+    monkeypatch.setattr(live, "_enter_edit_mode", lambda _w: entered.append(1))
+
+    def measuring_grid(_group):
+        live._db_fallback(sqlite3.OperationalError(message))
+        return live.Grid((10, 20), (30,), 8, 8)
+
+    monkeypatch.setattr(live, "_grid", measuring_grid)
+    with pytest.raises(PagesetError) as caught:
+        live.apply_page_edits("Eating", [{"label": "apple", "slot": 0}], [], [], [], "v1")
+    assert caught.value.code == code
+    assert errors.outcome_of(caught.value) == "refused"
+    assert entered == []
+
+
+def test_problems_from_an_earlier_edit_do_not_block_the_next_one(monkeypatch):
+    live._db_fallback(sqlite3.OperationalError("database is locked"))
+    _stub_live_page(monkeypatch, layouts=[[], [{"slot": 0, "label": "apple"}]], content={},
+                    grid=live.Grid((10, 20), (30,), 8, 8))
+    monkeypatch.setattr(live, "_add_button", lambda *_a, **_k: {
+        "symbol": False, "symbol_source": None, "border": True})
+    report = live.apply_page_edits(
+        "Eating", [{"label": "apple", "slot": 0, "symbol": False}], [], [], [], "v1")
+    assert report["outcome"] == "verified"

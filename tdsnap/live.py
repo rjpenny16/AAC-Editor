@@ -80,11 +80,41 @@ class Cell:
     height: int
 
 
+# Reads of TD Snap's page set that failed during the current edit (REL-019).
+_DB_PROBLEMS: list = []
+
+
 def _db_fallback(exc: BaseException) -> None:
-    """Note in the operation log that a read of TD Snap's page set failed and a
-    fallback was taken (REL-019). Records a code, never the message."""
+    """Note that a read of TD Snap's page set failed and a fallback was taken.
+
+    Logged as a code, never the message. The read itself already waited on a
+    lock (SQLite's busy timeout); a failure here means the file was locked
+    for longer than that, or could not be read at all, which is different
+    from "this page is not in the file".
+    """
     text = str(exc).lower()
-    oplog.fallback("DB_LOCKED" if "locked" in text or "busy" in text else "DB_UNREADABLE")
+    code = "DB_LOCKED" if "locked" in text or "busy" in text else "DB_UNREADABLE"
+    _DB_PROBLEMS.append(code)
+    oplog.fallback(code)
+
+
+def _require_readable_pageset() -> None:
+    """Refuse an edit whose page measurement had to guess (REL-019, roadmap C4).
+
+    When TD Snap's page set cannot be read, the grid is guessed from visible
+    button positions, hidden cells are no longer reserved and names are not
+    resolved to labels. That is acceptable for a preview, not for a write.
+    """
+    if not _DB_PROBLEMS:
+        return
+    locked = "DB_LOCKED" in _DB_PROBLEMS
+    raise PagesetError(
+        ("TD Snap was busy saving its page set" if locked else
+         "AAC Editor could not read TD Snap's page set")
+        + ", so it could not check this page's hidden cells and labels. Nothing was "
+        "changed. Wait a moment, then try again.",
+        code="DB_LOCKED" if locked else "DB_UNREADABLE",
+    )
 
 
 def _desktop_unlocked() -> bool:
@@ -2650,6 +2680,7 @@ def _classified(function):
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
         _reset_writes()
+        _DB_PROBLEMS.clear()
         try:
             return function(*args, **kwargs)
         except PagesetError:
@@ -2838,6 +2869,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         capacity,
     )
 
+    _require_readable_pageset()
     _reset_writes()
     _enter_edit_mode(window)
     symbol_results = []
@@ -3334,6 +3366,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     symbol_results = []
     styled = 0
     placed = []
+    _require_readable_pageset()
     _reset_writes()
     try:
         _enter_edit_mode(window)
