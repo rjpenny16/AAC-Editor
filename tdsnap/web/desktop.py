@@ -17,11 +17,14 @@ falls back to the classic browser mode so the app still works.
 import contextlib
 import ctypes
 import os
+import sqlite3
 import subprocess
 import sys
 import threading
 import time
 import urllib.request
+import zipfile
+import zlib
 from ctypes import wintypes
 from typing import Optional
 
@@ -29,6 +32,9 @@ from ..errors import PagesetError
 from . import localhttp, server
 
 WINDOW_TITLE = "AAC Editor"
+# What a damaged or hostile file raises while being read (doc 02, minor).
+_DAMAGED = (sqlite3.Error, zipfile.BadZipFile, zlib.error, ValueError, KeyError)
+
 FILE_TYPES = ("TD Snap page sets (*.sps;*.spb)", "All files (*.*)")
 
 
@@ -60,6 +66,12 @@ class NativeApi:
             return server.open_path(path)
         except (PagesetError, OSError) as exc:
             return {"ok": False, "error": str(exc)}
+        except _DAMAGED as exc:
+            # A corrupt file used to raise straight through to the window.
+            return {"ok": False, "code": "FILE_INVALID", "error": (
+                "This file could not be read as a page set; it may be damaged "
+                f"({type(exc).__name__}). Nothing was changed."
+            )}
 
     def save_pageset(self, session_id):
         """Native save dialog → write the edited copy where the user picks."""
@@ -77,8 +89,15 @@ class NativeApi:
             path = chosen[0] if isinstance(chosen, (list, tuple)) else chosen
             server.save_current_as(session_id, path)
             return {"ok": True, "path": path}
-        except (PagesetError, OSError) as exc:
+        except PagesetError as exc:
+            return {"ok": False, "code": getattr(exc, "code", None), "error": str(exc)}
+        except OSError as exc:
             return {"ok": False, "error": str(exc)}
+        except _DAMAGED as exc:
+            return {"ok": False, "code": "SAVE_INVALID", "error": (
+                f"The edited copy could not be saved ({type(exc).__name__}). "
+                "The working copy is unchanged."
+            )}
 
     def restart_elevated_for_grid3(self):
         """Request UAC elevation, leaving this instance intact on cancel."""

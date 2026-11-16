@@ -55,6 +55,7 @@ from .. import (
 from ..atomic import atomic_copy, atomic_write, replace_durably
 from ..errors import PagesetError
 from ..pageset import Pageset, is_sqlite_file
+from ..sqliteuri import sqlite_ro_uri
 from . import (
     diagnostics,
     engines,
@@ -675,6 +676,12 @@ def _current_path(session_id: str) -> str:
     return os.path.join(_session_dir(session_id), "current")
 
 
+def _ro_uri(path: str) -> str:
+    """A read-only SQLite URI for *path* that survives '#', '%', '?' and spaces
+    in folder names (REL-013)."""
+    return sqlite_ro_uri(path)
+
+
 def _is_gridset(path: str) -> bool:
     """True when a session's copy is a Grid 3 grid set rather than a TD Snap page set."""
     return not is_sqlite_file(path) and gridset.is_gridset_file(path)
@@ -684,7 +691,7 @@ def _list_pages(path: str):
     if _is_gridset(path):
         with gridset.GridsetFile(path) as source:
             return source.pages()
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = sqlite3.connect(_ro_uri(path), uri=True)
     conn.row_factory = sqlite3.Row
     try:
         return [
@@ -710,7 +717,7 @@ def _home_page_id(path: str) -> Optional[int]:
         with gridset.GridsetFile(path) as source:
             return source.home_page_id()
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+        with contextlib.closing(sqlite3.connect(_ro_uri(path), uri=True)) as conn:
             row = conn.execute(
                 "SELECT p.Id FROM Page p JOIN PageSetProperties s "
                 "ON p.UniqueId = s.DefaultHomePageUniqueId WHERE p.PageType = 1 LIMIT 1"
@@ -743,7 +750,7 @@ def _page_state(path: str, page_id: int, include_buttons: bool = True) -> dict:
     if _is_gridset(path):
         with gridset.GridsetFile(path) as source:
             return source.page_state(page_id, include_buttons=include_buttons)
-    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as conn:
+    with contextlib.closing(sqlite3.connect(_ro_uri(path), uri=True)) as conn:
         conn.row_factory = sqlite3.Row
         layout = builder.layout_for_page(conn, page_id, pageset.grid_dimension(conn))
         cols, rows = schema.parse_grid(layout["PageLayoutSetting"])
@@ -908,6 +915,12 @@ def open_path(path: str) -> dict:
     session_id, session_dir = _new_session_dir()
     try:
         shutil.copyfile(path, os.path.join(session_dir, "original"))
+        # Where it was opened from, so a save can refuse to write over it
+        # (REL-006). Kept beside the working copy, never logged.
+        atomic_write(
+            os.path.join(session_dir, "source.json"),
+            json.dumps({"path": os.path.realpath(path)}), prefix=".source-",
+        )
         return _register_session(session_id, session_dir, os.path.basename(path))
     except Exception:
         shutil.rmtree(session_dir, ignore_errors=True)
@@ -925,12 +938,93 @@ def _default_extension(session_id: str) -> str:
     return ".gridset" if _is_gridset(_current_path(session_id)) else ".sps"
 
 
+def _source_path(session_id: str) -> Optional[str]:
+    """The file a natively opened session came from, if it was recorded."""
+    try:
+        with open(os.path.join(_session_dir(session_id), "source.json"), encoding="utf-8") as h:
+            path = json.load(h).get("path")
+    except (OSError, ValueError, AttributeError, PagesetError):
+        return None
+    return path if isinstance(path, str) and path else None
+
+
+def _same_file(first: str, second: str) -> bool:
+    """The guard Pageset.save_as uses: samefile, else normalised real paths."""
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return (
+            os.path.normcase(os.path.realpath(first))
+            == os.path.normcase(os.path.realpath(second))
+        )
+
+
+def _file_digest(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _check_saved_copy(saved: str, current: str) -> None:
+    """Re-open the saved copy and check it before "saved" is shown (F10).
+
+    It must be byte-for-byte the working copy, and must open as what it is:
+    a sound SQLite database for a TD Snap page set, a readable zip for a grid
+    set.
+    """
+    if _file_digest(saved) != _file_digest(current):
+        raise PagesetError(
+            "The saved copy does not match the edited working copy. Save again; "
+            "the working copy is unchanged.", code="SAVE_INVALID",
+        )
+    try:
+        if is_sqlite_file(saved):
+            with contextlib.closing(sqlite3.connect(_ro_uri(saved), uri=True)) as conn:
+                result = conn.execute("PRAGMA quick_check").fetchone()
+                if not result or result[0] != "ok":
+                    raise PagesetError("quick_check failed")
+        else:
+            with zipfile.ZipFile(saved) as archive:
+                if archive.testzip() is not None:
+                    raise PagesetError("zip entry failed")
+    except (sqlite3.Error, zipfile.BadZipFile, OSError, PagesetError) as exc:
+        raise PagesetError(
+            "The saved copy could not be re-opened cleanly. Save again to a different "
+            "place; the working copy is unchanged.", code="SAVE_INVALID",
+        ) from exc
+
+
 def save_current_as(session_id: str, dest_path: str) -> None:
-    """Write the current session copy to *dest_path*."""
+    """Write the current session copy to *dest_path*, then check it.
+
+    REL-006: this used to copy over whatever path the native dialog returned,
+    including the file the session was opened from, despite the promise in
+    docs/IMPORT_SAFETY.md that only a separate file is ever written. The
+    source is now refused, and the saved copy is re-opened and checked
+    before success is reported.
+    """
     current = _current_path(session_id)
     if not os.path.exists(current):
-        raise PagesetError("Nothing to save yet; re-upload the file.")
-    atomic_copy(current, dest_path, prefix=".aac-editor-")
+        raise PagesetError("Nothing to save yet; re-upload the file.", code="SESSION_EXPIRED")
+    source = _source_path(session_id)
+    if source and os.path.exists(dest_path) and _same_file(source, dest_path):
+        raise PagesetError(
+            "That is the original file. AAC Editor never saves over it, so the "
+            "original stays as it was. Choose a different name, such as the "
+            f"suggested {os.path.basename(edited_filename(session_id))!r}.",
+            code="SAVE_SAME_AS_SOURCE",
+        )
+    try:
+        atomic_copy(current, dest_path, prefix=".aac-editor-")
+    except PermissionError as exc:
+        raise PagesetError(
+            "The file could not be saved there: it is open in another program or the "
+            "folder is read-only. Close it or choose another folder; the working copy "
+            "is unchanged.", code="SAVE_LOCKED",
+        ) from exc
+    _check_saved_copy(dest_path, current)
     session = _sessions.get(session_id)
     if session is not None:
         session["saved_edits"] = session.get("edits", 0)
@@ -1554,7 +1648,7 @@ def pageset_summary(session_id):
         kind = formats.GRIDSET
     else:
         with contextlib.closing(
-            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+            sqlite3.connect(_ro_uri(current), uri=True)
         ) as conn:
             conn.row_factory = sqlite3.Row
             cols, rows = pageset.grid_dimension(conn)
@@ -1595,7 +1689,7 @@ def pageset_vocabulary(session_id):
                             "samples": source.label_samples()})
     try:
         with contextlib.closing(
-            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+            sqlite3.connect(_ro_uri(current), uri=True)
         ) as conn:
             conn.row_factory = sqlite3.Row
             labels = pageset.labels_by_page(conn)
@@ -1922,7 +2016,7 @@ def _import_plan(current: str, boardset: dict, parent_page_id: int) -> tuple[dic
         plan = gridset.plan_import(current, boardset, parent_page_id)
     else:
         with contextlib.closing(
-            sqlite3.connect(f"file:{current}?mode=ro", uri=True)
+            sqlite3.connect(_ro_uri(current), uri=True)
         ) as conn:
             conn.row_factory = sqlite3.Row
             grid = pageset.grid_dimension(conn)
@@ -2059,7 +2153,7 @@ def apply_board_import(session_id):
 def _exported_boards(path: str) -> dict:
     if _is_gridset(path):
         return gridset.to_boardset(path)
-    with contextlib.closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+    with contextlib.closing(sqlite3.connect(_ro_uri(path), uri=True, timeout=2)) as conn:
         conn.row_factory = sqlite3.Row
         return obf.export_pageset(conn)
 

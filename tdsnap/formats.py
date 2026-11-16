@@ -38,6 +38,7 @@ from . import gridset
 from .errors import PagesetError
 from .grid3 import PROTECTED_MESSAGE
 from .pageset import harden_untrusted, is_sqlite_file
+from .sqliteuri import sqlite_ro_uri
 
 SPS = "sps"
 GRIDSET = "gridset"
@@ -69,6 +70,7 @@ MAX_XML_BYTES = 16 * 1024 * 1024
 SAMPLE_BYTES = 4096
 _TEXT_EXTENSIONS = {"", ".xml", ".json", ".db", ".sqlite", ".sqlite3", ".c4v", ".ini",
                     ".txt", ".dat", ".bin", ".plist", ".cfg", ".config", ".manifest"}
+
 
 
 def detect(path: str, filename: str | None = None) -> str:
@@ -185,7 +187,7 @@ def _json_shape(data: bytes) -> dict:
 
 
 def _sqlite_shape(path: str) -> dict:
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = sqlite3.connect(sqlite_ro_uri(path), uri=True)
     try:
         harden_untrusted(conn)
         tables = []

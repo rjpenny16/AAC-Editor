@@ -608,9 +608,28 @@ def test_the_open_page_set_is_never_opened_for_writing():
         source = (ROOT / name).read_text(encoding="utf-8")
         for match in re.finditer(r"sqlite3\.connect\(", source):
             call = source[match.start():match.start() + 160]
-            if "mode=ro" not in call:
+            # sqlite_ro_uri (and server's _ro_uri wrapper) always ask for
+            # mode=ro; that is pinned by the next test.
+            if "mode=ro" not in call and "_ro_uri(" not in call:
                 offenders.append(f"{name}: {call.splitlines()[0]}")
     assert not offenders, offenders
+
+
+@pytest.mark.parametrize("folder", ["plain", "with#hash", "with%41", "sp ace", "q?m"])
+def test_the_read_only_uri_helper_is_read_only_for_any_folder_name(tmp_path, folder):
+    from tdsnap.sqliteuri import sqlite_ro_uri
+
+    path = tmp_path / folder / "set.sps"
+    path.parent.mkdir()
+    with contextlib.closing(sqlite3.connect(path)) as conn:
+        conn.execute("CREATE TABLE t (x)")
+        conn.commit()
+    uri = sqlite_ro_uri(path)
+    assert uri.endswith("?mode=ro")
+    with contextlib.closing(sqlite3.connect(uri, uri=True)) as conn:
+        assert conn.execute("SELECT count(*) FROM t").fetchone() == (0,)
+        with pytest.raises(sqlite3.OperationalError):
+            conn.execute("INSERT INTO t VALUES (1)")
 
 
 def test_only_the_private_working_copy_is_opened_read_write():

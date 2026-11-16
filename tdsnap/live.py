@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from . import colors, errors, pageset, templates, uia
 from .builder import MAX_LABEL_LENGTH, MAX_MESSAGE_LENGTH, _normalize_items
 from .errors import PagesetError
+from .sqliteuri import sqlite_ro_uri
 from .web import oplog
 
 DEFAULT_PARENT = "Topics Menu Page"
@@ -343,7 +344,7 @@ def _has_column(conn, table, column) -> bool:
 def _pageset_matches_visible_page(path, page, labels):
     try:
         with closing(sqlite3.connect(
-            f"file:{path}?mode=ro", uri=True, timeout=1
+            sqlite_ro_uri(path), uri=True, timeout=1
         )) as conn:
             rows = conn.execute(
                 "SELECT Id FROM Page WHERE PageType = 1 AND Title = ? COLLATE NOCASE",
@@ -395,7 +396,7 @@ def _active_pageset_path(visible_page=None, visible_labels=()):
     for settings_path in settings_files:
         try:
             with closing(sqlite3.connect(
-                f"file:{settings_path}?mode=ro", uri=True, timeout=1
+                sqlite_ro_uri(settings_path), uri=True, timeout=1
             )) as conn:
                 row = conn.execute(
                     "SELECT PageSetGuid FROM UserSettings LIMIT 1"
@@ -431,7 +432,7 @@ def _active_pageset_pages(visible_page=None, visible_labels=()):
         return []
     try:
         with closing(sqlite3.connect(
-            f"file:{pageset_path}?mode=ro", uri=True, timeout=1
+            sqlite_ro_uri(pageset_path), uri=True, timeout=1
         )) as conn:
             rows = conn.execute(
                 "SELECT COALESCE(NULLIF(Title, ''), 'Page ' || Id) "
@@ -450,7 +451,7 @@ def _page_route(start, target, visible_labels=()):
         return None
     try:
         with closing(sqlite3.connect(
-            f"file:{pageset_path}?mode=ro", uri=True, timeout=1
+            sqlite_ro_uri(pageset_path), uri=True, timeout=1
         )) as conn:
             rows = conn.execute(
                 "SELECT source.Title, source.PageType, button.Label, target.Title "
@@ -495,7 +496,7 @@ def _stored_sparse_grid(group, buttons, width, height):
         # Read-only like every other read of TD Snap's own file: this only ever
         # selects, and a person's real page set must never be opened for writing.
         with closing(sqlite3.connect(
-            f"file:{pageset_path}?mode=ro", uri=True, timeout=1
+            sqlite_ro_uri(pageset_path), uri=True, timeout=1
         )) as connection:
             layouts = connection.execute(
                 """
@@ -609,7 +610,7 @@ def _stored_empty_grid(group):
         return None
     try:
         with closing(sqlite3.connect(
-            f"file:{pageset_path}?mode=ro", uri=True, timeout=1
+            sqlite_ro_uri(pageset_path), uri=True, timeout=1
         )) as connection:
             settings = connection.execute(
                 """
@@ -779,7 +780,7 @@ def _hidden_page_buttons(page, grid):
         return []
     cols, rows = len(grid.xs), len(grid.ys)
     try:
-        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+        with closing(sqlite3.connect(sqlite_ro_uri(path), uri=True, timeout=2)) as conn:
             records = conn.execute(
                 "SELECT b.Label, ep.GridPosition, ep.GridSpan, pl.PageLayoutSetting "
                 "FROM Page p JOIN PageLayout pl ON pl.PageId = p.Id "
@@ -928,7 +929,7 @@ def _stored_page_content(page, visible_names=()):
         return None
     try:
         with closing(sqlite3.connect(
-            f"file:{path}?mode=ro", uri=True, timeout=2
+            sqlite_ro_uri(path), uri=True, timeout=2
         )) as conn:
             conn.row_factory = sqlite3.Row
             pages = conn.execute(
@@ -2204,7 +2205,7 @@ def vocabulary(visible_page=None, visible_labels=()):
     if not path:
         return {"available": False, "labels": {}, "samples": []}
     try:
-        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as conn:
+        with closing(sqlite3.connect(sqlite_ro_uri(path), uri=True, timeout=2)) as conn:
             conn.row_factory = sqlite3.Row
             # `samples` rides along on the same read: a spread of labels with
             # their real capitalization, which the AI panel passes to a local

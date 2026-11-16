@@ -1507,3 +1507,68 @@ def test_instance_running_ignores_a_stranger_on_the_port():
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+# ---------------------------------------------------------------------------
+# Save safety (REL-006, roadmap B2)
+
+
+def _native_session(tmp_path, seeded_source):
+    source = tmp_path / "client.sps"
+    source.write_bytes(open(seeded_source, "rb").read())
+    opened = server.open_path(str(source))
+    return opened["session_id"], source
+
+
+def test_saving_over_the_opened_file_is_refused(client, tmp_path, seeded_source):
+    """The audit's reproduction: save_current_as with the source path replaced
+    the original's contents."""
+    session_id, source = _native_session(tmp_path, seeded_source)
+    before = source.read_bytes()
+    with pytest.raises(PagesetError) as caught:
+        server.save_current_as(session_id, str(source))
+    assert caught.value.code == "SAVE_SAME_AS_SOURCE"
+    assert "client.edited.sps" in str(caught.value)
+    assert source.read_bytes() == before
+
+
+def test_a_saved_copy_reopens_and_matches_the_working_copy(client, tmp_path, seeded_source):
+    session_id, _source = _native_session(tmp_path, seeded_source)
+    target = tmp_path / "client.edited.sps"
+    server.save_current_as(session_id, str(target))
+    assert target.read_bytes() == open(server._current_path(session_id), "rb").read()
+    reopened = server.open_path(str(target))
+    assert reopened["ok"] is True
+
+
+def test_a_saved_copy_that_does_not_match_is_reported(client, tmp_path, seeded_source, monkeypatch):
+    session_id, _source = _native_session(tmp_path, seeded_source)
+    real_copy = server.atomic_copy
+
+    def corrupting_copy(src, dest, **kwargs):
+        real_copy(src, dest, **kwargs)
+        with open(dest, "r+b") as handle:
+            handle.seek(200)
+            handle.write(b"\x00garbage\x00")
+
+    monkeypatch.setattr(server, "atomic_copy", corrupting_copy)
+    with pytest.raises(PagesetError) as caught:
+        server.save_current_as(session_id, str(tmp_path / "out.sps"))
+    assert caught.value.code == "SAVE_INVALID"
+
+
+def test_the_suggested_name_is_the_edited_copy(client, tmp_path, seeded_source):
+    session_id, _source = _native_session(tmp_path, seeded_source)
+    assert server.edited_filename(session_id) == "client.edited.sps"
+
+
+@pytest.mark.parametrize("folder", ["plain", "with#hash", "with%41pct", "sp ace", "q?mark"])
+def test_sessions_open_from_folders_with_awkward_names(tmp_path, seeded_source, monkeypatch, folder):
+    """REL-013: '#' or '%' in a folder (the temp folder holds the user name)
+    broke every file-mode read."""
+    root = tmp_path / folder / "sessions"
+    root.mkdir(parents=True)
+    monkeypatch.setattr(server, "_SESSION_ROOT", str(root))
+    monkeypatch.setattr(server, "_sessions", {})
+    session_id, _source = _native_session(tmp_path / folder, seeded_source)
+    assert server._list_pages(server._current_path(session_id))
