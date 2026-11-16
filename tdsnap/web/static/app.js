@@ -122,6 +122,38 @@ configReady.then(async () => {
   if (!state.connected) await offerRecoverableCopy();
 });
 
+/* ---------- a live edit a previous run never finished (doc 04, L15) ---------- */
+
+const APP_NAMES = { tdsnap: "TD Snap", grid3: "Grid 3" };
+
+async function reportInterruptedEdits() {
+  let edits = [];
+  try {
+    ({ edits } = await api("/api/interrupted", { background: true }));
+  } catch {
+    return;
+  }
+  if (!edits.length) return;
+  $("interrupted-text").textContent = edits.map((edit) => {
+    const when = edit.at ? new Date(edit.at * 1000).toLocaleString() : "an earlier session";
+    const app = APP_NAMES[edit.app] || "the AAC app";
+    return `A ${app} edit started at ${when} did not finish (reference ${edit.op}).`;
+  }).join(" ");
+  $("interrupted-banner").hidden = false;
+  $("interrupted-banner").focus();
+}
+
+$("interrupted-ack-btn").addEventListener("click", async () => {
+  $("interrupted-banner").hidden = true;
+  try {
+    await api("/api/interrupted/ack", { method: "POST" });
+  } catch {
+    // Shown again at the next start; that is the safe direction to fail.
+  }
+});
+
+configReady.then(reportInterruptedEdits);
+
 /* ---------- edited copies a previous run left unsaved (REL-007, REL-021) ---------- */
 
 let recoverable = null;

@@ -5584,3 +5584,22 @@ test.describe('quitting and coming back', () => {
     await expect(page.locator('#header-save-btn')).toBeVisible();
   });
 });
+
+test('an edit a previous run never finished is reported at start', async ({ page }) => {
+  let acknowledged = 0;
+  await mockTD(page);
+  await page.route('**/api/interrupted', (route) => fulfillJson(route, {
+    ok: true, edits: [{ op: 'aa11', app: 'tdsnap', kind: 'post:tdsnap.edit-plan', at: 1700000000 }],
+  }));
+  await page.route('**/api/interrupted/ack', (route) => {
+    acknowledged += 1;
+    return fulfillJson(route, { ok: true });
+  });
+  await openEditor(page);
+  await expect(page.locator('#interrupted-banner')).toBeVisible();
+  await expect(page.locator('#interrupted-text')).toContainText('TD Snap edit');
+  await expect(page.locator('#interrupted-text')).toContainText('reference aa11');
+  await page.locator('#interrupted-ack-btn').click();
+  await expect(page.locator('#interrupted-banner')).toBeHidden();
+  await expect.poll(() => acknowledged).toBe(1);
+});

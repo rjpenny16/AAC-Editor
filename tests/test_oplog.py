@@ -178,3 +178,67 @@ def test_errors_outcome_classification_defaults():
     assert errors.code_of(RuntimeError("COM")) == "UNEXPECTED"
     assert errors.code_of(PagesetError("x", code="NOT_FOREGROUND")) == "NOT_FOREGROUND"
     assert errors.code_of(PagesetError("x", code="made up")) == "REFUSED"
+
+
+# ---------------------------------------------------------------------------
+# Intent journal (doc 04 L15, roadmap B4)
+
+
+def test_an_edit_that_never_finished_is_reported_at_the_next_start(monkeypatch):
+    oplog.journal_begin("aa11", "tdsnap", "post:tdsnap.edit-plan")
+    oplog.journal_begin("bb22", "grid3", "post:grid3.edit-plan")
+    oplog.journal_end("bb22", "verified")
+    # The same run's unfinished edit is in progress, not interrupted.
+    assert oplog.interrupted() == []
+
+    monkeypatch.setattr(oplog, "INSTANCE", "next")
+    found = oplog.interrupted()
+    assert [(item["op"], item["app"]) for item in found] == [("aa11", "tdsnap")]
+    assert isinstance(found[0]["at"], float)
+
+    oplog.acknowledge_interrupted()
+    assert oplog.interrupted() == []
+
+
+def test_the_journal_never_names_a_page(_isolated_operation_log):
+    oplog.journal_begin("cc33", "tdsnap", "Breakfast Foods page")
+    text = open(os.path.join(str(_isolated_operation_log), "journal.jsonl"), encoding="utf-8").read()
+    assert "Breakfast" not in text
+
+
+def test_live_writes_are_journaled_and_reads_are_not(client, monkeypatch):
+    from tdsnap import live
+
+    began, ended = [], []
+    monkeypatch.setattr(oplog, "journal_begin", lambda op, app, kind: began.append(kind))
+    monkeypatch.setattr(oplog, "journal_end", lambda op, outcome: ended.append(outcome))
+    monkeypatch.setattr(live, "apply_page_edits", lambda *a, **k: {
+        "outcome": "verified", "page": "Eating", "checks": {}})
+    monkeypatch.setattr(live, "last_edit", lambda: None)
+    headers = {"X-TDSnap-Token": server.API_TOKEN, "X-TDSnap-Editor": "1"}
+    client.post("/api/tdsnap/edit-plan", headers=headers, json={
+        "operation": "edit_page", "page": "Eating", "fingerprint": "f",
+        "items": [{"label": "apple", "slot": 0}]})
+    assert began == ["post:tdsnap.edit-plan"] and ended == ["verified"]
+
+    def boom(*_a, **_k):
+        raise PagesetError("x", outcome="partial", page_touched=True)
+
+    monkeypatch.setattr(live, "apply_page_edits", boom)
+    client.post("/api/tdsnap/edit-plan", headers=headers, json={
+        "operation": "edit_page", "page": "Eating", "fingerprint": "f",
+        "items": [{"label": "apple", "slot": 0}]})
+    assert ended[-1] == "partial"
+
+    monkeypatch.setattr(live, "status", lambda *a, **k: {"running": False})
+    client.get("/api/tdsnap/status", headers=headers)
+    assert len(began) == 2
+
+
+def test_the_interrupted_endpoints(client, monkeypatch):
+    oplog.journal_begin("dd44", "tdsnap", "post:tdsnap.edit-plan")
+    monkeypatch.setattr(oplog, "INSTANCE", "later")
+    token = {"X-TDSnap-Token": server.API_TOKEN}
+    assert client.get("/api/interrupted", headers=token).get_json()["edits"][0]["op"] == "dd44"
+    client.post("/api/interrupted/ack", headers=token)
+    assert client.get("/api/interrupted", headers=token).get_json()["edits"] == []

@@ -108,13 +108,43 @@ def _drive(call):
     so live.py and grid3.py can note fallbacks, steps and Undo presses on it.
     """
     op = _current_op()
+    journaled = op is not None and _is_live_write()
 
     def bound_call():
         with oplog.bound(op):
             return call()
 
     with _LIVE_LOCK:
-        return _AUTOMATION.run(bound_call)
+        if journaled:
+            oplog.journal_begin(op.id, op.app, op.kind)
+        outcome = errors.UNKNOWN
+        try:
+            result = _AUTOMATION.run(bound_call)
+            if isinstance(result, dict):
+                outcome = result.get("outcome") or "ok"
+            return result
+        except BaseException as exc:
+            outcome = errors.outcome_of(exc)
+            raise
+        finally:
+            if journaled:
+                oplog.journal_end(op.id, outcome)
+
+
+# Requests that send input to TD Snap or Grid 3 and so are written to the
+# intent journal (doc 04 L15).
+_LIVE_WRITES = {
+    "/api/tdsnap/edit-plan", "/api/tdsnap/batch", "/api/tdsnap/undo", "/api/tdsnap/page",
+    "/api/grid3/edit-plan", "/api/grid3/undo", "/api/grid3/probe",
+}
+
+
+def _is_live_write() -> bool:
+    try:
+        rule = request.url_rule.rule if request.url_rule is not None else ""
+    except RuntimeError:
+        return False
+    return rule in _LIVE_WRITES
 
 
 def _current_op():
@@ -1473,6 +1503,18 @@ def quit_app():
         }), 409
     threading.Timer(0.3, shutdown).start()
     return jsonify({"ok": True, "kept": len(unsaved)})
+
+
+@app.get("/api/interrupted")
+def list_interrupted():
+    """Live edits an earlier run started and never finished (doc 04 L15)."""
+    return jsonify({"ok": True, "edits": oplog.interrupted()})
+
+
+@app.post("/api/interrupted/ack")
+def acknowledge_interrupted():
+    oplog.acknowledge_interrupted()
+    return jsonify({"ok": True})
 
 
 @app.get("/api/pageset/recoverable")

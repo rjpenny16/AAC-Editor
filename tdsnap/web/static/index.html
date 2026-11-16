@@ -66,6 +66,16 @@
   </div>
 </div>
 
+<div id="interrupted-banner" class="alert app-error" role="alert" tabindex="-1" hidden>
+  <strong>An edit was interrupted before it finished</strong>
+  <p id="interrupted-text"></p>
+  <p class="field-hint">AAC Editor was closed or stopped while it was changing the page. Look at the
+    page you were editing and compare it with what you meant to do before making another edit.</p>
+  <div class="app-error-actions">
+    <button type="button" id="interrupted-ack-btn" class="btn btn-secondary btn-compact">I have checked the page</button>
+  </div>
+</div>
+
 <div id="recover-banner" class="alert app-error" role="status" tabindex="-1" hidden>
   <strong id="recover-banner-text"></strong>
   <p class="field-hint">AAC Editor kept the edited copy on this computer because it had not been

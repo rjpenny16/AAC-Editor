@@ -387,6 +387,88 @@ def last_failed() -> Optional[dict]:
 def clear() -> None:
     """Delete the log and diagnostic state (part of "Clear all saved data")."""
     with _lock:
-        for path in [*_files_newest_first(), _diagnostic_path()]:
+        for path in [*_files_newest_first(), _diagnostic_path(), _journal_path()]:
             with contextlib.suppress(FileNotFoundError):
                 os.remove(path)
+
+
+# ---------------------------------------------------------------------------
+# Intent journal for live edits (doc 04 L15, roadmap B4)
+#
+# Before the first input of a live edit, one line says it began; after it
+# ends, one line says how. A "begin" with no "done" at the next start means
+# the editor was closed or killed mid-edit, and the person is told to check
+# the page. Like the log, it records the app, the kind of edit, the time and
+# an operation ID, never a page name or label.
+
+
+def _journal_path() -> str:
+    return os.path.join(log_dir(), "journal.jsonl")
+
+
+def _journal_write(entry: dict) -> None:
+    try:
+        with _lock:
+            settings.ensure_private_dir(log_dir())
+            fd = os.open(_journal_path(), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(_clean(entry) | {"state": entry["state"]}) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+    except Exception:  # noqa: S110 - the journal must never stop an edit
+        pass
+
+
+def journal_begin(op_id: str, app: Optional[str], kind: str) -> None:
+    _journal_write({"op": op_id, "app": app, "kind": kind, "t": time.time(),
+                    "instance": INSTANCE, "state": "begin"})
+
+
+def journal_end(op_id: str, outcome: Optional[str]) -> None:
+    _journal_write({"op": op_id, "outcome": outcome or "ok", "state": "done"})
+
+
+def _journal_entries() -> list:
+    try:
+        with open(_journal_path(), encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return []
+    entries = []
+    for line in lines:
+        with contextlib.suppress(ValueError):
+            item = json.loads(line)
+            if isinstance(item, dict):
+                entries.append(item)
+    return entries
+
+
+def interrupted() -> list:
+    """Live edits that began in an earlier run and never recorded an end."""
+    begun, closed = {}, set()
+    for entry in _journal_entries():
+        op = entry.get("op")
+        if entry.get("state") == "begin" and entry.get("instance") != INSTANCE:
+            begun[op] = entry
+        elif entry.get("state") in ("done", "ack"):
+            closed.add(op)
+    return [
+        {"op": op, "app": entry.get("app"), "kind": entry.get("kind"), "at": entry.get("t")}
+        for op, entry in begun.items() if op not in closed
+    ]
+
+
+def acknowledge_interrupted() -> None:
+    """The person has been told; keep only this run's unfinished entries."""
+    with _lock:
+        keep = [
+            entry for entry in _journal_entries()
+            if entry.get("instance") == INSTANCE and entry.get("state") == "begin"
+        ]
+        try:
+            settings.ensure_private_dir(log_dir())
+            with open(_journal_path(), "w", encoding="utf-8") as handle:
+                for entry in keep:
+                    handle.write(json.dumps(entry) + "\n")
+        except OSError:
+            pass
