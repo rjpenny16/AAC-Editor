@@ -5603,3 +5603,43 @@ test('an edit a previous run never finished is reported at start', async ({ page
   await expect(page.locator('#interrupted-banner')).toBeHidden();
   await expect.poll(() => acknowledged).toBe(1);
 });
+
+test('a restarted app is reported as a restart, not as TD Snap going away', async ({ page }) => {
+  // REL-009: a restarted server has a new token; every protected call then
+  // failed with 403 and the live poll called that "TD Snap not found".
+  let token = 'token-one';
+  await page.route('**/api/config', (route) => fulfillJson(route, {
+    ok: true, token, native: false, elevated: false,
+  }));
+  await mockTD(page);
+  await page.route('**/api/tdsnap/status', (route) => {
+    if (route.request().headers()['x-tdsnap-token'] !== token) {
+      return fulfillJson(route, { ok: false, code: 'TOKEN_STALE', error: 'stale' }, 403);
+    }
+    return fulfillJson(route, defaultStatus());
+  });
+  await connect(page);
+  token = 'token-two';  // the app restarts
+  await expect(page.locator('#restart-banner')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#live-lost')).toBeHidden();
+});
+
+test('a token that never loaded is fetched again and the request retried', async ({ page }) => {
+  let configCalls = 0;
+  await page.route('**/api/config', (route) => {
+    configCalls += 1;
+    return configCalls === 1
+      ? route.abort()
+      : fulfillJson(route, { ok: true, token: 'late-token', native: false, elevated: false });
+  });
+  await mockTD(page);
+  await page.route('**/api/tdsnap/status', (route) => {
+    if (route.request().headers()['x-tdsnap-token'] !== 'late-token') {
+      return fulfillJson(route, { ok: false, code: 'TOKEN_STALE', error: 'stale' }, 403);
+    }
+    return fulfillJson(route, defaultStatus());
+  });
+  await connect(page);
+  await expect(page.locator('#restart-banner')).toBeHidden();
+  expect(configCalls).toBeGreaterThan(1);
+});

@@ -22,17 +22,52 @@ async function fetchWithDeadline(path, options = {}, timeoutMs = API_TIMEOUT_MS)
   }
 }
 
+async function loadConfig() {
+  const response = await fetchWithDeadline("/api/config");
+  const config = await response.json();
+  state.native = Boolean(config.native);
+  state.elevated = Boolean(config.elevated);
+  return config.token || "";
+}
+
 const configReady = (async () => {
   try {
-    const response = await fetchWithDeadline("/api/config");
-    const config = await response.json();
-    state.apiToken = config.token || "";
-    state.native = Boolean(config.native);
-    state.elevated = Boolean(config.elevated);
+    state.apiToken = await loadConfig();
   } catch {
-    /* keep going; the server will reject protected POSTs if it is older */
+    /* keep going; a protected request re-fetches the token (REL-009) */
   }
 })();
+
+/* REL-009: the token used to be fetched once. A restarted app has a new
+   one, every protected call then failed with 403, and the live poll counted
+   those as "TD Snap not found". Now a stale token is re-fetched once: if it
+   was never loaded, the request is retried; if it changed, the app
+   restarted, which is said plainly (state.appRestarted) instead. */
+async function refreshToken() {
+  const before = state.apiToken;
+  try {
+    const token = await loadConfig();
+    if (!token) return "failed";
+    state.apiToken = token;
+    if (before && token !== before) {
+      state.appRestarted = true;
+      window.dispatchEvent(new CustomEvent("aac-app-restarted"));
+      return "restarted";
+    }
+    return "loaded";
+  } catch {
+    return "failed";
+  }
+}
+
+/* What kind of failure an error is, so callers stop guessing from text:
+   timeout, unreachable, restarted, unauthorised, refused, failed. */
+function typedError(message, kind, extra = {}) {
+  const error = new Error(message);
+  error.kind = kind;
+  Object.assign(error, extra);
+  return error;
+}
 
 /* Reading a whole page from TD Snap or Grid 3 walks every control on it, and
    a TD Snap page read may navigate to that page first; on a slow computer
@@ -66,26 +101,45 @@ async function api(path, options, timeoutMs = defaultTimeout(path)) {
   }
 }
 
-async function request(path, options, timeoutMs) {
+async function request(path, options, timeoutMs, retried = false) {
   await configReady;
-  options.headers = Object.assign(
+  const headers = Object.assign(
     {},
     options.headers,
     state.apiToken ? { "X-TDSnap-Token": state.apiToken } : {}
   );
-  const response = await fetchWithDeadline(path, options, timeoutMs).catch((error) => {
-    if (error.name === "AbortError") {
-      const timeout = new Error("The request took too long and was stopped.");
-      timeout.name = "TimeoutError";
-      throw timeout;
-    }
-    throw new Error("The local editor isn’t responding. Try again; if it continues, restart the app.");
-  });
+  const response = await fetchWithDeadline(path, { ...options, headers }, timeoutMs)
+    .catch((error) => {
+      if (error.name === "AbortError") {
+        const timeout = typedError("The request took too long and was stopped.", "timeout");
+        timeout.name = "TimeoutError";
+        throw timeout;
+      }
+      throw typedError(
+        "The local editor isn’t responding. Try again; if it continues, restart the app.",
+        "unreachable",
+      );
+    });
   let data = null;
   try {
     data = await response.json();
   } catch {
-    throw new Error(`Unexpected response from the app (${response.status}).`);
+    throw typedError(`Unexpected response from the app (${response.status}).`, "failed",
+      { status: response.status });
+  }
+  if (response.status === 403 && data && data.code === "TOKEN_STALE" && !retried) {
+    const refreshed = await refreshToken();
+    const method = String(options.method || "GET").toUpperCase();
+    // A read is safe to repeat; a write after a restart is not, because the
+    // review it was built from belongs to the app that stopped.
+    if (refreshed === "loaded" || (refreshed === "restarted" && method === "GET")) {
+      return request(path, options, timeoutMs, true);
+    }
+    if (refreshed === "restarted") {
+      throw typedError("AAC Editor restarted since this page was opened. Reload the page, "
+        + "then review the edit again.", "restarted",
+      { code: "TOKEN_STALE", outcome: "refused", status: 403 });
+    }
   }
   if (!response.ok || data.ok === false) {
     const error = new Error(data.error || `Request failed (${response.status}).`);
@@ -96,6 +150,8 @@ async function request(path, options, timeoutMs) {
     error.outcome = data.outcome || null;
     error.op = data.op || response.headers.get("X-AAC-Op") || null;
     error.status = response.status;
+    error.kind = response.status === 403 ? "unauthorised"
+      : response.status < 500 ? "refused" : "failed";
     noteFailure(path, error);
     throw error;
   }
@@ -120,4 +176,4 @@ function noteFailure(path, error) {
   if (state.recentFailures.length > MAX_RECENT_FAILURES) state.recentFailures.shift();
 }
 
-export { api, configReady, fetchWithDeadline, userRequestInFlight };
+export { api, configReady, fetchWithDeadline, refreshToken, userRequestInFlight };

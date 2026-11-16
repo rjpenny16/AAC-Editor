@@ -789,7 +789,10 @@ async function syncLivePreview() {
     $("preview-live-text").textContent = `Live · ${layout.page}`;
     renderParents(parentFilter.value);
     renderWords();
-  } catch {
+  } catch (error) {
+    // REL-009: only a failure to reach TD Snap counts against TD Snap. The
+    // app itself restarting, or not answering, is said as what it is.
+    if (["restarted", "unauthorised", "unreachable"].includes(error.kind)) return;
     // TD Snap briefly has no page grid while navigating, so one miss is
     // normal; livewatch.js only reports it after several in a row.
     noteLiveMiss();

@@ -36,6 +36,8 @@ const requestedProvider = new URLSearchParams(window.location.search).get("provi
 const state = {
   // Failed requests as {at, route, status, code, op}, for the support report.
   recentFailures: [],
+  // Set when the server's token changed under this page: the app restarted.
+  appRestarted: false,
   provider: ["tdsnap", "grid3", "file"].includes(requestedProvider)
     ? requestedProvider : "tdsnap",
   mode: "live",

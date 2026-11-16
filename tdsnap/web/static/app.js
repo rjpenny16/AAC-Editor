@@ -154,6 +154,18 @@ $("interrupted-ack-btn").addEventListener("click", async () => {
 
 configReady.then(reportInterruptedEdits);
 
+/* ---------- the app restarted under this page (REL-009) ---------- */
+
+window.addEventListener("aac-app-restarted", () => {
+  $("restart-banner").hidden = false;
+  $("restart-banner").focus();
+});
+
+$("restart-reload-btn").addEventListener("click", () => {
+  // The leave warning still applies: planned words live only in this tab.
+  window.location.reload();
+});
+
 /* ---------- edited copies a previous run left unsaved (REL-007, REL-021) ---------- */
 
 let recoverable = null;
