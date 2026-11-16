@@ -1664,3 +1664,42 @@ def test_discarding_a_recovered_copy_removes_it(client, seeded_source):
     server._sessions.clear()
     assert client.post(f"/api/pageset/{session_id}/close", headers=token_headers()).status_code == 200
     assert not os.path.isdir(record["dir"])
+
+
+def test_two_identical_submissions_cannot_both_apply(client, seeded_source, monkeypatch):
+    """The fingerprint check for TD Snap file edits ran outside the session
+    lock, so two identical submissions racing could both pass it and the
+    buttons were added twice (doc 02, minor findings). It now runs inside."""
+    import threading
+
+    from tdsnap import builder
+
+    session = upload(client, seeded_source).get_json()
+    session_id = session["session_id"]
+    page = next(p for p in session["pages"] if p["title"] == "Home Page")
+    layout = client.get(f"/api/pageset/{session_id}/page/{page['id']}/layout").get_json()
+    body = {"items": [{"label": "chips", "slot": layout["free_slots"][0]}],
+            "fingerprint": layout["fingerprint"]}
+    real_add = builder.add_buttons_to_page
+
+    def slow_add(*args, **kwargs):
+        time.sleep(0.3)  # widen the window between check and write
+        return real_add(*args, **kwargs)
+
+    monkeypatch.setattr(builder, "add_buttons_to_page", slow_add)
+    statuses = []
+
+    def submit():
+        response = server.app.test_client().post(
+            f"/api/pageset/{session_id}/page/{page['id']}/buttons",
+            json=body, headers=token_headers(),
+        )
+        statuses.append(response.status_code)
+
+    threads = [threading.Thread(target=submit) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(statuses) == [200, 400]
+    assert server._session_record(session_id)["edits"] == 1

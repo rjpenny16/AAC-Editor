@@ -69,3 +69,33 @@ def test_copy_is_all_or_nothing(tmp_path, monkeypatch):
         atomic.atomic_copy(str(source), str(target))
     assert target.read_bytes() == b"data"
     assert litter(tmp_path) == []
+
+
+def test_a_failure_while_writing_the_data_keeps_the_original(tmp_path, monkeypatch):
+    """doc 04 F1-F4 for atomic.py itself: the temp file's own write fails."""
+    import os
+
+    from tdsnap import atomic
+
+    dest = tmp_path / "settings.json"
+    dest.write_text("old", encoding="utf-8")
+    real_fdopen = os.fdopen
+
+    class Failing:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.handle.close()
+
+        def write(self, _data):
+            raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(atomic.os, "fdopen", lambda fd, *a, **k: Failing(real_fdopen(fd, *a, **k)))
+    with pytest.raises(OSError):
+        atomic.atomic_write(str(dest), "new")
+    assert dest.read_text(encoding="utf-8") == "old"
+    assert [p.name for p in tmp_path.iterdir()] == ["settings.json"]

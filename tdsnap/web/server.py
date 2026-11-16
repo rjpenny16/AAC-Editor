@@ -1876,6 +1876,60 @@ def page_layout(session_id, page_id):
     return jsonify({"ok": True, **_page_state(current, page_id)})
 
 
+def _validated_file_edit(session, build, specific, fingerprint_check=None):
+    """One validate, snapshot, edit, check, save cycle for a TD Snap file (E3).
+
+    There were three near-identical copies of this block (add buttons, add a
+    page, import boards). *build(ps)* makes the edit and returns its report;
+    *specific(conn, report)* returns the edit's own problems. Nothing reaches
+    ``current`` unless every check passes, and ``current`` is replaced
+    atomically. *fingerprint_check* runs inside the session lock, so two
+    identical submissions cannot both pass it (doc 02 minor finding).
+
+    Returns ``(report, problems, checks)``; *problems* empty means saved.
+    """
+    current = os.path.join(session["dir"], "current")
+    scratch = os.path.join(session["dir"], "scratch")
+    # One edit at a time per session: concurrent requests would share the
+    # same scratch working copy and corrupt each other.
+    with session["lock"]:
+        if fingerprint_check is not None:
+            fingerprint_check()
+        with Pageset(current, working_copy=scratch, cleanup=True) as ps:
+            baseline = validate.validate_pageset(ps.conn)
+            before = validate.table_snapshot(ps.conn)
+            report = build(ps)
+            after = validate.table_snapshot(ps.conn)
+            result = validate.validate_pageset(ps.conn)
+            roundtrip = validate.check_roundtrip(before, after)
+            problems = (
+                roundtrip + specific(ps.conn, report) + result["problems"]
+                + validate.new_warnings(baseline, result)
+            )
+            checks = {
+                "sqlite_integrity": "pass",
+                "linkage_chains": "pass" if not problems else "fail",
+                "roundtrip_diff": "pass" if not roundtrip else "fail",
+            }
+            if problems:
+                return report, problems, checks
+            ps.save_as(current, allow_source_overwrite=True)
+            session["edits"] += 1
+            _write_session_meta(
+                session["dir"], session["filename"], session["baseline_warnings"],
+                session["edits"],
+            )
+    return report, [], checks
+
+
+def _validation_failed(problems, checks):
+    return jsonify(
+        {"ok": False, "error": "Validation failed; nothing was saved.",
+         "problems": problems, "checks": checks, "code": "REFUSED",
+         "outcome": errors.REFUSED}
+    ), 422
+
+
 @app.post("/api/pageset/<session_id>/page/<int:page_id>/buttons")
 def add_buttons(session_id, page_id):
     """Add reviewed buttons to a page that already exists in an exported file.
@@ -1895,43 +1949,23 @@ def add_buttons(session_id, page_id):
         )
     if _is_gridset(current):
         return _gridset_edit(session_id, page_id, items, (), (), (), fingerprint)
-    if _page_state(current, page_id)["fingerprint"] != fingerprint:
-        raise PagesetError(
-            "This page changed after the preview. Reload the page and review the "
-            "edit again."
-        )
     session = _session_record(session_id)
-    scratch = os.path.join(session["dir"], "scratch")
 
-    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
-        baseline = validate.validate_pageset(ps.conn)
-        before = validate.table_snapshot(ps.conn)
-        report = builder.add_buttons_to_page(ps, page_id, items)
-        after = validate.table_snapshot(ps.conn)
+    def unchanged_since_review():
+        if _page_state(current, page_id)["fingerprint"] != fingerprint:
+            raise PagesetError(
+                "This page changed after the preview. Reload the page and review the "
+                "edit again.", code="FINGERPRINT_CHANGED",
+            )
 
-        result = validate.validate_pageset(ps.conn)
-        roundtrip = validate.check_roundtrip(before, after)
-        problems = (
-            roundtrip
-            + validate.validate_added_buttons(ps.conn, report)
-            + result["problems"]
-            + validate.new_warnings(baseline, result)
-        )
-        checks = {
-            "sqlite_integrity": "pass",
-            "linkage_chains": "pass" if not problems else "fail",
-            "roundtrip_diff": "pass" if not roundtrip else "fail",
-        }
-        if problems:
-            return jsonify(
-                {"ok": False, "error": "Validation failed; nothing was saved.",
-                 "problems": problems, "checks": checks}
-            ), 422
-        ps.save_as(current, allow_source_overwrite=True)
-        session["edits"] += 1
-        _write_session_meta(
-            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
-        )
+    report, problems, checks = _validated_file_edit(
+        session,
+        lambda ps: builder.add_buttons_to_page(ps, page_id, items),
+        validate.validate_added_buttons,
+        unchanged_since_review,
+    )
+    if problems:
+        return _validation_failed(problems, checks)
     checks["target_page"] = "pass"
     checks["positions"] = "pass"
     return jsonify(
@@ -1960,7 +1994,6 @@ def add_page(session_id):
 
     session = _session_record(session_id)  # raises, and rehydrates from disk, as needed
     current = os.path.join(session["dir"], "current")
-    scratch = os.path.join(session["dir"], "scratch")
     if _is_gridset(current):
         report, failure = _gridset_write(session_id, lambda source, dest: gridset.add_grid(
             source, dest, title, items, parent_page_id))
@@ -1973,37 +2006,13 @@ def add_page(session_id):
             "warnings": report["warnings"], "edits": session["edits"],
         })
 
-    # One edit at a time per session: concurrent requests would share the
-    # same scratch working copy and corrupt each other.
-    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
-        baseline = validate.validate_pageset(ps.conn)
-        before = validate.table_snapshot(ps.conn)
-        report = builder.add_category_page(ps, title, items, parent_page_id)
-        after = validate.table_snapshot(ps.conn)
-
-        result = validate.validate_pageset(ps.conn)
-        roundtrip = validate.check_roundtrip(before, after)
-        problems = (
-            roundtrip
-            + validate.validate_new_page(ps.conn, report)
-            + result["problems"]
-            + validate.new_warnings(baseline, result)
-        )
-        checks = {
-            "sqlite_integrity": "pass",
-            "linkage_chains": "pass" if not problems else "fail",
-            "roundtrip_diff": "pass" if not roundtrip else "fail",
-        }
-        if problems:
-            return jsonify(
-                {"ok": False, "error": "Validation failed; nothing was saved.",
-                 "problems": problems, "checks": checks}
-            ), 422
-        ps.save_as(current, allow_source_overwrite=True)
-        session["edits"] += 1
-        _write_session_meta(
-            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
-        )
+    report, problems, checks = _validated_file_edit(
+        session,
+        lambda ps: builder.add_category_page(ps, title, items, parent_page_id),
+        validate.validate_new_page,
+    )
+    if problems:
+        return _validation_failed(problems, checks)
     return jsonify(
         {
             "ok": True,
@@ -2270,9 +2279,9 @@ def apply_board_import(session_id):
     plan, expected = _import_plan(current, stash["boardset"], stash["parent_page_id"])
     if expected != fingerprint:
         raise PagesetError(
-            "The page set changed after the import was reviewed. Review the import again."
+            "The page set changed after the import was reviewed. Review the import again.",
+            code="FINGERPRINT_CHANGED",
         )
-    scratch = os.path.join(session["dir"], "scratch")
     if _is_gridset(current):
         report, failure = _gridset_write(session_id, lambda source, dest: gridset.import_boards(
             source, dest, plan, stash["parent_page_id"]))
@@ -2288,35 +2297,25 @@ def apply_board_import(session_id):
             "parent": plan["parent"], "checks": report["checks"],
             "edits": session["edits"],
         })
-    with session["lock"], Pageset(current, working_copy=scratch, cleanup=True) as ps:
-        baseline = validate.validate_pageset(ps.conn)
-        before = validate.table_snapshot(ps.conn)
-        report = builder.add_linked_pages(ps, plan, stash["parent_page_id"])
-        after = validate.table_snapshot(ps.conn)
+    def unchanged_since_review():
+        # Again inside the lock: a second identical submission must find the
+        # page set already changed by the first.
+        if _import_plan(current, stash["boardset"], stash["parent_page_id"])[1] != fingerprint:
+            raise PagesetError(
+                "The page set changed after the import was reviewed. Review the import again.",
+                code="FINGERPRINT_CHANGED",
+            )
 
-        result = validate.validate_pageset(ps.conn)
-        roundtrip = validate.check_roundtrip(before, after)
-        imported = validate.validate_imported_pages(ps.conn, report)
-        problems = (
-            roundtrip + imported + result["problems"] + validate.new_warnings(baseline, result)
-        )
-        checks = {
-            "sqlite_integrity": "pass",
-            "linkage_chains": "pass" if not problems else "fail",
-            "roundtrip_diff": "pass" if not roundtrip else "fail",
-        }
-        if problems:
-            return jsonify(
-                {"ok": False, "error": "Validation failed; nothing was saved.",
-                 "problems": problems, "checks": checks}
-            ), 422
-        ps.save_as(current, allow_source_overwrite=True)
-        session["edits"] += 1
-        _write_session_meta(
-            session["dir"], session["filename"], session["baseline_warnings"], session["edits"]
-        )
-        with contextlib.suppress(OSError):
-            os.remove(_import_stash(session["dir"]))
+    report, problems, checks = _validated_file_edit(
+        session,
+        lambda ps: builder.add_linked_pages(ps, plan, stash["parent_page_id"]),
+        validate.validate_imported_pages,
+        unchanged_since_review,
+    )
+    if problems:
+        return _validation_failed(problems, checks)
+    with contextlib.suppress(OSError):
+        os.remove(_import_stash(session["dir"]))
     checks.update({"positions": "pass", "board_links": "pass", "navigation": "pass"})
     pages = report["pages"]
     return jsonify({
