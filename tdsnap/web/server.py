@@ -80,6 +80,8 @@ MAX_ACTIVE_SESSIONS = 4
 # How slow a first suggestion round may be and still earn a second one. The
 # browser gives a generation 150 seconds; two rounds have to fit inside that.
 RETRY_BUDGET_SECONDS = 45
+# Inside the browser's 150 s for a suggestion request (state.js).
+AI_REQUEST_DEADLINE_SECONDS = 130
 MAX_SESSION_STORAGE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_ITEMS = 200
 MAX_TITLE_CHARS = 60
@@ -2586,6 +2588,7 @@ def ai_words():
     The built-in model unless the user chose Ollama; a chosen Ollama that
     cannot run is stood in for by the built-in model (see engines.choose).
     """
+    request_started = time.monotonic()
     payload = _json_payload()
     existing = _validated_existing(payload.get("existing", []))
     category = _bounded_text(
@@ -2746,7 +2749,13 @@ def ai_words():
     # push the whole request past the browser's deadline. A thin answer is
     # still an answer; a request that times out is nothing at all.
     retried = False
-    if len(words) < max(1, count // 2) and elapsed <= RETRY_BUDGET_SECONDS:
+    # REL-022: the retry budget used to look at the first call only, so a
+    # slow reference lookup plus two rounds could pass the browser's 150 s.
+    # A second round is only started if one more round as long as the first
+    # still finishes inside AI_REQUEST_DEADLINE_SECONDS of the request.
+    spent = time.monotonic() - request_started
+    if (len(words) < max(1, count // 2) and elapsed <= RETRY_BUDGET_SECONDS
+            and spent + elapsed <= AI_REQUEST_DEADLINE_SECONDS):
         retried = True
         more, retry_error = generate({"already": [*already, *_labels_of(words)]})
         if not retry_error:

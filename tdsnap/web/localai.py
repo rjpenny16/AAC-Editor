@@ -282,6 +282,62 @@ def _windows_memory_bytes() -> int:
     return 0
 
 
+def available_memory_bytes() -> int:
+    """Physical memory free right now, or 0 when it cannot be measured."""
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            class MemoryStatusEx(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MemoryStatusEx()
+            status.dwLength = ctypes.sizeof(MemoryStatusEx)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.ullAvailPhys)
+        except Exception:
+            return 0
+        return 0
+    try:
+        return int(os.sysconf("SC_PAGE_SIZE")) * int(os.sysconf("SC_AVPHYS_PAGES"))
+    except (AttributeError, ValueError, OSError):
+        return 0
+
+
+# A loaded model needs roughly its file size plus working memory.
+LOAD_HEADROOM = 1.3
+
+
+def _memory_refusal(path: str, available: Optional[int] = None) -> Optional[str]:
+    """Why the model should not be loaded now, judged on *available* memory.
+
+    REL-022: the memory gate used total RAM, so a machine with other programs
+    open could pass it and then abort inside llama.cpp, which takes the whole
+    editor down with it. Unmeasurable memory does not refuse (the size gate in
+    ``supported`` still applies).
+    """
+    try:
+        needed = int(os.path.getsize(path) * LOAD_HEADROOM)
+    except OSError:
+        return None
+    free = available_memory_bytes() if available is None else available
+    if free <= 0 or free >= needed:
+        return None
+    return (
+        f"There isn't enough free memory to start suggestions right now (they need "
+        f"about {needed / GIB:.1f} GB free; {free / GIB:.1f} GB is free). Close other "
+        "programs and try again. Editing is not affected."
+    )
+
+
 def supported(choice: ModelChoice, memory: Optional[int] = None) -> tuple[bool, str]:
     """``(ok, reason)`` for running *choice* on this machine.
 
@@ -688,6 +744,9 @@ def _load_llm(key: Optional[str] = None):
     with _llm_lock:
         if _llm is None or _llm_path != path:
             error = _validation_error(key, wait=True)
+            if error:
+                raise RuntimeError(error)
+            error = _memory_refusal(path)
             if error:
                 raise RuntimeError(error)
             from llama_cpp import Llama

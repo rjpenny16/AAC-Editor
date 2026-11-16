@@ -1416,3 +1416,45 @@ def test_a_killed_downloads_leftover_is_removed_at_startup_only_with_the_lock(is
     assert os.path.exists(leftover)  # another copy may be writing it
     localai.cleanup_at_startup(holds_single_instance_lock=True)
     assert not os.path.exists(leftover)
+
+
+def test_loading_is_refused_cleanly_when_free_memory_is_short(tmp_path):
+    """REL-022: the gate used total RAM; an out-of-memory abort inside
+    llama.cpp ends the whole editor."""
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"GGUF" + b"\0" * 1000)
+    refusal = localai._memory_refusal(str(model), available=500)
+    assert refusal and "free memory" in refusal and "Editing is not affected" in refusal
+    assert localai._memory_refusal(str(model), available=10**9) is None
+    assert localai._memory_refusal(str(model), available=0) is None  # unmeasured
+
+
+def test_a_retry_is_skipped_when_it_would_pass_the_request_deadline(ai_client, monkeypatch):
+    """REL-022: a slow first round plus a retry could pass the browser's 150 s."""
+    import types
+
+    from tdsnap.web import server as web_server
+
+    client, headers = ai_client
+    _ready_local(monkeypatch, [["Chips"]])
+    now = [0.0]
+    monkeypatch.setattr(web_server, "time", types.SimpleNamespace(monotonic=lambda: now[0]))
+    calls = []
+
+    def slow_generate(**_kwargs):
+        calls.append(1)
+        now[0] += 40.0 if len(calls) == 1 else 1.0  # under RETRY_BUDGET_SECONDS
+        return ["Chips"], None
+
+    monkeypatch.setattr(localai, "generate_words", slow_generate)
+    now[0] = 0.0
+    data = client.post("/api/ai/words", json={"category": "Snacks", "count": 10},
+                       headers=headers).get_json()
+    assert data["retried"] is True  # 40 s spent, 40 s more fits inside 130 s
+
+    calls.clear()
+    monkeypatch.setattr(web_server, "AI_REQUEST_DEADLINE_SECONDS", 70)
+    data = client.post("/api/ai/words", json={"category": "Snacks", "count": 10},
+                       headers=headers).get_json()
+    assert data["retried"] is False  # 40 + 40 would pass 70
+    assert calls == [1]
