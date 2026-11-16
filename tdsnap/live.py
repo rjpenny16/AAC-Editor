@@ -41,7 +41,7 @@ from contextlib import closing, suppress
 from ctypes import wintypes
 from dataclasses import dataclass
 
-from . import colors, pageset, templates, uia
+from . import colors, errors, pageset, templates, uia
 from .builder import MAX_LABEL_LENGTH, MAX_MESSAGE_LENGTH, _normalize_items
 from .errors import PagesetError
 from .web import oplog
@@ -1234,10 +1234,92 @@ def _navigate_to_parent(window, parent):
     return parent
 
 
+# ---------------------------------------------------------------------------
+# Counting what an edit wrote (REL-002, roadmap B6)
+#
+# Rollback presses TD Snap's Undo. TD Snap's undo history is not limited to
+# this app's edit, so pressing it more often than this edit wrote could undo
+# somebody's earlier work. Every UI write below is counted here, and rollback
+# never presses Undo more times than the count. Each action (add, change, move,
+# remove) is counted by ``apply_page_edits`` as it starts, so a failure after
+# that point is never mistaken for "nothing written"; the helpers count the
+# further field writes an action makes (label, message, symbol, border). The
+# assumption that one field write is one undo step is checked by session T3-1; if TD Snap records fewer,
+# rollback stops early at the baseline; if it records more, rollback stops at
+# the cap and reports the page as partly restored rather than guessing.
+
+_WRITES = 0
+
+
+def _reset_writes() -> None:
+    global _WRITES
+    _WRITES = 0
+
+
+def _note_write(kind: str) -> None:
+    global _WRITES
+    _WRITES += 1
+    oplog.count(kind)
+
+
+def _writes() -> int:
+    return _WRITES
+
+
 def _undo_if_needed(window):
+    global _WRITES
     undo = _find(window, automation_id="UndoButton", control_type="ButtonControl")
     if undo and undo.IsEnabled:
         _activate(undo)
+        oplog.note_undo()
+        _WRITES = max(0, _WRITES - 1)
+
+
+# ---------------------------------------------------------------------------
+# Dirty state (REL-002, roadmap B5)
+#
+# UWP's ContentDialog exposes its buttons with these automation IDs, which is
+# how TD Snap's own prompts appear to UI Automation. Their presence means a
+# dialog is open, and keys or clicks would go to it.
+# CloseButton is left out on purpose: a control with that ID is common outside
+# dialogs, and a false "dialog open" would refuse every edit.
+_DIALOG_BUTTON_IDS = ("PrimaryButton", "SecondaryButton")
+
+
+def _in_edit_mode(window) -> bool:
+    return _find(window, automation_id="DoneButton", control_type="ButtonControl") is not None
+
+
+def _open_dialog(window):
+    """A button of an open TD Snap dialog, or None when no dialog is open."""
+    for control, _ in _walk(window, 12):
+        if (control.AutomationId or "") in _DIALOG_BUTTON_IDS \
+                and control.ControlTypeName == "ButtonControl":
+            rect = control.BoundingRectangle
+            if rect.right > rect.left and rect.bottom > rect.top:
+                return control
+    return None
+
+
+def _require_clean_state(window) -> None:
+    """Refuse, before anything is pressed, to start inside somebody else's work.
+
+    An edit used to start on top of an edit session the user had open in TD
+    Snap: navigation pressed Done for them, committing whatever they had
+    half-made, and a rollback could then undo their changes along with ours.
+    """
+    if _open_dialog(window) is not None:
+        raise PagesetError(
+            "TD Snap has a message or dialog open. Answer or close it in TD Snap, "
+            "check the page, then try again. Nothing was changed.",
+            code="DIALOG_OPEN",
+        )
+    if _in_edit_mode(window):
+        raise PagesetError(
+            "TD Snap is already in edit mode. Finish or cancel that edit in TD Snap "
+            "(press Done), check the page, then try again. Nothing was changed.",
+            code="EDIT_MODE_BUSY",
+        )
 
 
 def _window_dpi(window):
@@ -1482,20 +1564,46 @@ def _restore_page_state(window, baseline, content=None, maximum=0):
             and _content_restored(window, content)
         )
 
-    for _ in range(maximum + 1):
-        if restored():
-            return
+    # Never more Undo presses than this edit wrote (see "Counting what an edit
+    # wrote"). A read that fails outright is not caught here: the caller
+    # stops and reports the page state as unknown rather than pressing on.
+    presses = 0
+    while not restored():
+        if presses >= maximum:
+            break
         undo = _find(window, automation_id="UndoButton", control_type="ButtonControl")
         if undo is None or not getattr(undo, "IsEnabled", False):
             break
+        before = _fingerprint(_page_group(window))
         _activate(undo)
+        presses += 1
         oplog.note_undo()
-        time.sleep(0.12)
+        _settle_after_undo(window, before)
+    else:
+        return
     if not restored():
         raise PagesetError(
             "TD Snap could not verify restoration of the reviewed page. "
-            "Inspect the page before making another edit."
+            "Inspect the page before making another edit.",
+            code="ROLLBACK_INCOMPLETE", outcome=errors.PARTIAL, page_touched=True,
         )
+
+
+def _settle_after_undo(window, before) -> None:
+    """Wait for TD Snap to repaint after an Undo instead of a fixed 0.12 s.
+
+    An Undo of a label or message change may not change the page's shape, so
+    "nothing changed within the wait" is allowed; what this removes is the
+    old fixed sleep that read a page TD Snap had not finished repainting and
+    pressed Undo again because of it (REL-002).
+    """
+    with suppress(PagesetError):
+        _wait_for(
+            lambda: _fingerprint(_page_group(window)) != before,
+            "TD Snap did not repaint after Undo.",
+            timeout=1.5,
+        )
+    time.sleep(0.05)
 
 
 def _restore_page_fingerprint(window, baseline, maximum):
@@ -1791,6 +1899,7 @@ def _change_button(auto, window, cell, current, label=None, message=None):
     message_box = _find(window, automation_id="MessageBox", control_type="EditControl")
     if message_box is None:
         raise PagesetError(f"TD Snap did not expose the spoken-message field for {name!r}.")
+    _note_write("change")
     _set_value(message_box, message)
     _wait_for(
         lambda: (_value(message_box) or "") == message,
@@ -1807,7 +1916,6 @@ def _change_button(auto, window, cell, current, label=None, message=None):
 # Grid 3, where a feature stops at whatever the app does not expose.
 _DELETE_AUTOMATION_IDS = ("DeleteButton", "DeleteElementButton", "RemoveButton")
 _DELETE_NAMES = {"delete", "delete button", "remove", "remove button", "delete cell"}
-_CONFIRM_NAMES = ("Delete", "Remove", "Yes", "OK")
 _ACTIONABLE = {"ButtonControl", "ListItemControl", "MenuItemControl"}
 
 
@@ -1829,33 +1937,48 @@ def _delete_action(window):
     return None
 
 
+def _removal_settled(window, label, message=None):
+    """"gone" once the button has left the page, "dialog" once TD Snap is
+    asking a question, else None. One condition, polled as one (REL-004)."""
+    if _grid_button(_page_group(window), label, message) is None:
+        return "gone"
+    if _open_dialog(window) is not None:
+        return "dialog"
+    return None
+
+
 def _confirm_removal(window, label, message=None):
-    """Answer TD Snap's confirmation prompt, if it showed one.
+    """Answer TD Snap's confirmation prompt, if it shows one, then wait for the
+    button to go.
 
-    Only consulted while the button is still on the page. Activating a stray
-    dialog control when no dialog opened would be a click into whatever the
-    editing panel happens to be showing, which is exactly the class of blind
-    action this module exists to avoid.
+    REL-004: this used to look once for "still on the page" and, if so,
+    activate the first enabled control named Delete, Remove, Yes or OK. When
+    TD Snap had simply not repainted yet, that could be the editor's own
+    delete button, deleting whatever was selected next; and a dialog that
+    appeared late was left open for the next step to click into.
 
-    "Still on the page" is read through ``_grid_button``: a button that speaks
-    a custom message carries that message as its accessibility name, so a
-    label-only lookup called every such button already gone and returned
-    without answering the prompt — leaving the dialog open for the next step
-    to click into.
+    Now it waits for one combined condition, "the button is gone" or "a
+    dialog is open", and only ever activates a control that belongs to a
+    dialog (UWP ContentDialog's PrimaryButton).
     """
-    group = _page_group(window)
-    # Resolved labels are consulted here — one read, not in a poll loop —
-    # because leaving this prompt unanswered is the costliest way to be
-    # wrong: the dialog stays open and the next step clicks into it.
-    if _grid_button(group, label, message, _accessible_labels(group)) is None:
+    state = _wait_for(
+        lambda: _removal_settled(window, label, message),
+        f"TD Snap did not remove the {label!r} button.",
+    )
+    if state == "gone":
         return
     confirm = _find(window, automation_id="PrimaryButton", control_type="ButtonControl")
-    for name in _CONFIRM_NAMES:
-        if confirm is not None:
-            break
-        confirm = _find(window, name=name, control_type="ButtonControl")
-    if confirm is not None:
-        _activate(confirm)
+    if confirm is None:
+        raise PagesetError(
+            f"TD Snap asked a question while removing {label!r} that AAC Editor does "
+            "not recognise, so it pressed nothing. Answer it in TD Snap and check the page.",
+            code="DIALOG_OPEN", outcome=errors.UNKNOWN, page_touched=True,
+        )
+    _activate(confirm)
+    _wait_for(
+        lambda: _grid_button(_page_group(window), label, message) is None,
+        f"TD Snap did not remove the {label!r} button.",
+    )
 
 
 def _remove_button(auto, window, cell, label, message=None):
@@ -1870,10 +1993,6 @@ def _remove_button(auto, window, cell, label, message=None):
         )
     _activate(action)
     _confirm_removal(window, label, message)
-    _wait_for(
-        lambda: _grid_button(_page_group(window), label, message) is None,
-        f"TD Snap did not remove the {label!r} button.",
-    )
 
 
 # TD Snap's accessibility tree exposes no "put this button in that cell"
@@ -1994,6 +2113,7 @@ def _add_button(auto, window, cell, label, message=None,
             timeout=6,
         )
         opened = True
+        _note_write("add")
         _set_value(textbox, label)
         _wait_for(
             lambda: _find(_page_group(window), name=label, control_type="ButtonControl"),
@@ -2010,6 +2130,7 @@ def _add_button(auto, window, cell, label, message=None,
                 raise PagesetError(
                     f"TD Snap did not expose the spoken-message field for {label!r}."
                 )
+            _note_write("add")
             _set_value(message_box, message)
             _wait_for(
                 lambda: _value(message_box) == message,
@@ -2019,10 +2140,15 @@ def _add_button(auto, window, cell, label, message=None,
             try:
                 _expand_editor(window)
                 if use_symbol:
+                    _note_write("symbol")
                     symbol_source = _choose_symbol(window, symbol_query or label)
+                if border_color is not None:
+                    _note_write("border")
                 border_applied = _apply_border(window, border_color)
             except PagesetError:
-                pass
+                # Symbols and borders are extras: the edit goes on without
+                # them and reports them unverified (verified_with_gaps).
+                oplog.fallback("EXTRA_SKIPPED")
         return {
             "symbol": symbol_source is not None,
             "symbol_source": symbol_source,
@@ -2283,6 +2409,83 @@ def _prior_content(page, changes, removals, moves, by_slot, known=None,
     return prior
 
 
+def _failed_edit(exc: BaseException, restore, window=None) -> PagesetError:
+    """The one error an edit that failed after entering edit mode raises.
+
+    REL-003: the old ``except``/``finally`` pair let a failure to leave edit
+    mode replace the real error, and with it the "page was touched" marker
+    that tells a batch to stop. Here the outcome is decided once, from what
+    actually happened, and carried as a field (doc 04):
+
+    - nothing was written yet: ``refused``, nothing to undo;
+    - restoration verified: ``rolled_back``;
+    - restoration ran but the page still differs: ``partial``;
+    - the page could not be read during restoration: ``unknown``.
+
+    The primary error's code is kept (an unexpected exception is
+    ``AUTOMATION_FAILED``); the rollback's own error is added to the message,
+    never substituted for it.
+    """
+    code = errors.code_of(exc)
+    if code in ("REFUSED", "UNEXPECTED"):
+        code = "AUTOMATION_FAILED" if _writes() else "REFUSED"
+    if not _writes():
+        return PagesetError(
+            f"{_sentence(exc)} Nothing on the page was changed.",
+            code=code, outcome=errors.REFUSED, page_touched=False,
+        )
+    # L12: with a dialog open, Undo would go to the dialog. Stop and press
+    # nothing; the same when the failure itself already said "unknown".
+    dialog = False
+    with suppress(Exception):
+        dialog = window is not None and _open_dialog(window) is not None
+    if dialog or getattr(exc, "outcome", None) == errors.UNKNOWN:
+        return PagesetError(
+            f"{_sentence(exc)} AAC Editor stopped without pressing anything more. "
+            "Check this page in TD Snap before doing anything else.",
+            code="DIALOG_OPEN" if dialog else code, outcome=errors.UNKNOWN,
+            page_touched=True,
+        )
+    try:
+        restore()
+    except PagesetError as rollback_error:
+        outcome = getattr(rollback_error, "outcome", None) or errors.UNKNOWN
+        if outcome not in (errors.PARTIAL, errors.UNKNOWN):
+            outcome = errors.UNKNOWN
+        return PagesetError(
+            f"{_sentence(exc)} {rollback_error}", code=code, outcome=outcome,
+            page_touched=True,
+        )
+    except Exception:
+        # A failed read during restoration: stop, press nothing more, and say
+        # the state is not known rather than guess.
+        return PagesetError(
+            f"{_sentence(exc)} AAC Editor could not read the page while putting it "
+            "back, so it stopped. Check this page in TD Snap before doing anything else.",
+            code=code, outcome=errors.UNKNOWN, page_touched=True,
+        )
+    return PagesetError(
+        f"{_sentence(exc)} The original page was restored.",
+        code=code, outcome=errors.ROLLED_BACK, page_touched=True,
+    )
+
+
+def _leave_edit_mode_after(window, failure: PagesetError) -> None:
+    """Press Done after a failure without ever replacing *failure* (L10).
+
+    If TD Snap will not leave edit mode, the failure's outcome stands and the
+    message says so, so the person knows to press Done themselves.
+    """
+    try:
+        _exit_edit_mode(window)
+    except Exception:
+        failure.still_in_edit_mode = True
+        failure.args = (
+            f"{failure.args[0] if failure.args else ''} TD Snap is still in edit mode: "
+            "press Done in TD Snap and check the page.".strip(),
+        )
+
+
 def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
                      fingerprint=None, *, _known_content=None, _undoing=False):
     """Add, change, move, and remove reviewed buttons on one existing TD Snap page.
@@ -2316,6 +2519,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
     auto = _automation()
     window = _window(auto)
     _focus_window(window)
+    _require_clean_state(window)
     requested = str(page or "").strip()
     if not requested:
         raise PagesetError("Choose an existing TD Snap page.")
@@ -2463,6 +2667,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         capacity,
     )
 
+    _reset_writes()
     _enter_edit_mode(window)
     symbol_results = []
     styled = 0
@@ -2472,6 +2677,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         for slot in removals:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
+            _note_write("remove")
             _remove_button(
                 auto, window, _cell_at(edit_grid, slot),
                 prior[slot]["label"], prior[slot]["message"],
@@ -2479,10 +2685,12 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         for source, target, label in move_steps:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
+            _note_write("move")
             _move_button(auto, window, edit_grid, source, target, label)
         for change in changes:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
+            _note_write("change")
             _change_button(
                 auto, window, _cell_at(edit_grid, placed(change["slot"])),
                 prior[change["slot"]]["label"], change["label"], change["message"],
@@ -2490,6 +2698,7 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         for item in normalized:
             _collapse_editor(window)
             edit_grid = _grid(_page_group(window))
+            _note_write("add")
             result = _add_button(
                 auto, window, _cell_at(edit_grid, item["slot"]), item["label"],
                 item["message"], item["border_color"], item.get("symbol", True),
@@ -2527,23 +2736,12 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
             )
         settled = _fingerprint_token(final_group)
     except Exception as exc:
-        # Everything above this point refuses without writing; from here on the
-        # page has been edited, so a failure is marked as such — see
-        # ``PagesetError.page_touched`` and ``apply_batch``.
-        steps = len(normalized) + len(changes) + len(removals) + len(move_steps)
-        try:
-            _restore_page_state(window, baseline, restore_content, steps * 6 + 8)
-        except PagesetError as rollback_error:
-            failed = PagesetError(f"{_sentence(exc)} {rollback_error}")
-            failed.page_touched = True
-            raise failed from exc
-        restored = PagesetError(
-            f"{_sentence(exc)} The original page was restored."
+        failure = _failed_edit(
+            exc, lambda: _restore_page_state(window, baseline, restore_content, _writes()),
+            window,
         )
-        restored.page_touched = True
-        raise restored from exc
-    finally:
-        _exit_edit_mode(window)
+        _leave_edit_mode_after(window, failure)
+        raise failure from exc
 
     expected_symbols = sum(entry["requested"] for entry in symbol_results)
     symbols = sum(entry["applied"] for entry in symbol_results)
@@ -2566,12 +2764,17 @@ def apply_page_edits(page, items=(), changes=(), removals=(), moves=(),
         checks["untouched_buttons"] = "pass"
     if _undoing:
         checks["undone"] = "pass"
+    # REL-014: symbols and topic borders are extras that are not read back,
+    # so an edit whose extras did not all apply is verified with gaps.
+    gaps = [name for name in ("symbols", "topic_format") if checks[name] != "pass"]
     unmatched = [
         entry["label"] for entry in symbol_results
         if entry["requested"] and not entry["applied"]
     ]
     web_images = [entry["label"] for entry in symbol_results if entry["source"] == "web"]
     report = {
+        "outcome": errors.VERIFIED_WITH_GAPS if gaps else errors.VERIFIED,
+        "unverified": gaps,
         "page": _page_name(window, final_group),
         "buttons": len(normalized),
         "changed": len(changes),
@@ -2633,12 +2836,15 @@ def _batch_stop(error):
     cells filled up. Nothing was written, the next page is unaffected, and
     stopping would strand work the user queued for no reason.
 
-    A page that was written to and restored is different. Something on screen
-    was not what the automation expected, and the next thing it would do is
-    drive a *different* page while in that state. That is the one situation
-    where continuing could write to the wrong place, so it stops.
+    Anything else stops it (doc 04: only ``refused`` and ``verified`` let a
+    batch continue). A page that was written to, whether restored, partly
+    restored or unknown, means something on screen was not what the
+    automation expected, and the next thing it would do is drive a
+    *different* page in that state. An exception that is not a
+    ``PagesetError`` at all (a raw COM error, say) is ``unknown`` by
+    definition, so it stops too.
     """
-    return bool(getattr(error, "page_touched", False))
+    return errors.outcome_of(error) not in errors.CLEAN_OUTCOMES
 
 
 def apply_batch(entries):
@@ -2652,8 +2858,13 @@ def apply_batch(entries):
 
     ``applied``  the page's edit landed and verified; carries its full report.
     ``refused``  nothing was written to this page, and why.
-    ``failed``   this page was edited and put back; the batch stopped here.
+    ``failed``   this page was edited, and its ``outcome`` says whether it was
+                 put back (``rolled_back``), partly (``partial``) or whether
+                 its state is ``unknown``; the batch stopped here.
     ``skipped``  never attempted, because an earlier page failed.
+
+    REL-003: any exception, not only ``PagesetError``, ends the run at that
+    page, and the results for the pages before it are still returned.
 
     Single-level undo is unchanged and therefore covers the *last page
     applied* only, which ``undo_page`` names so the caller can say so rather
@@ -2694,22 +2905,44 @@ def apply_batch(entries):
                 entry.get("moves", ()),
                 entry.get("fingerprint"),
             )
-        except PagesetError as error:
+        except Exception as error:
             stopped = _batch_stop(error)
+            message = str(error) if isinstance(error, PagesetError) else (
+                "AAC Editor lost track of TD Snap while editing this page. "
+                "Check this page in TD Snap before doing anything else."
+            )
             results.append({
                 "page": page,
                 "status": "failed" if stopped else "refused",
-                "error": str(error),
+                "outcome": errors.outcome_of(error),
+                "code": errors.code_of(error),
+                "error": message,
             })
             continue
-        results.append({"page": report["page"], "status": "applied", "report": report})
+        results.append({
+            "page": report["page"], "status": "applied",
+            "outcome": report.get("outcome", errors.VERIFIED), "report": report,
+        })
 
     applied = [result for result in results if result["status"] == "applied"]
     return {
         "results": results,
         "applied": len(applied),
+        "outcome": _batch_outcome(results),
         "undo_page": applied[-1]["page"] if applied else None,
     }
+
+
+# Worst first: the outcome a whole batch reports is the worst of its pages.
+_SEVERITY = (
+    errors.UNKNOWN, errors.PARTIAL, errors.ROLLED_BACK, errors.VERIFIED_WITH_GAPS,
+    errors.REFUSED, errors.VERIFIED,
+)
+
+
+def _batch_outcome(results) -> str:
+    seen = {result.get("outcome") for result in results if result.get("outcome")}
+    return next((outcome for outcome in _SEVERITY if outcome in seen), errors.REFUSED)
 
 
 # ---------------------------------------------------------------------------
@@ -2917,6 +3150,7 @@ def add_topic_page(title, items, parent=DEFAULT_PARENT):
     auto = _automation()
     window = _window(auto)
     _focus_window(window)
+    _require_clean_state(window)
     parent = str(parent or DEFAULT_PARENT).strip()
     actual_parent = _navigate_to_parent(window, parent)
     parent_group = _page_group(window)
